@@ -31,8 +31,8 @@ jobs:
             goarch: amd64
             ext: ".exe"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26.3"
           cache: true
@@ -43,7 +43,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: aitok-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/aitok-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}

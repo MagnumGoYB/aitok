@@ -28,6 +28,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - The build workflow reads the repository `VERSION` file through `tools/version` before producing artifacts.
 - Build artifacts are uploaded for inspection without publishing a release.
 - `make build` remains the local single-platform build gate.
+- GitHub Actions workflows use Node 24 action majors such as `actions/checkout@v6`, `actions/setup-go@v6`, `actions/upload-artifact@v6`, and `actions/github-script@v8`.
 
 ## Release Flow
 
@@ -37,6 +38,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums, platform archives, and the Homebrew cask.
 - The Homebrew cask is published to the `MagnumGoYB/homebrew-aitok` tap and installs with `brew tap MagnumGoYB/aitok` followed by `brew install --cask aitok`.
 - GitHub Releases use `GITHUB_TOKEN`; publishing the tap requires the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`, because the default workflow token cannot write to the separate `homebrew-aitok` repository.
+- The release workflow pins GoReleaser v2 instead of using `latest`.
 - Release automation does not add external network telemetry or usage upload.
 
 ## Dependabot

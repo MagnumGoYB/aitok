@@ -118,6 +118,54 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 	}
 }
 
+func TestGitHubActionsUseCurrentRuntimeAndPinnedTooling(t *testing.T) {
+	workflows := strings.Join([]string{
+		read(t, ".github", "workflows", "build.yml"),
+		read(t, ".github", "workflows", "ci.yml"),
+		read(t, ".github", "workflows", "pr.yml"),
+		read(t, ".github", "workflows", "pr-review.yml"),
+		read(t, ".github", "workflows", "release.yml"),
+	}, "\n")
+	for _, forbidden := range []string{
+		"actions/checkout@v4",
+		"actions/setup-go@v5",
+		"actions/upload-artifact@v4",
+		"actions/github-script@v7",
+		"goreleaser/goreleaser-action@v6",
+		"FORCE_JAVASCRIPT_ACTIONS_TO_NODE24",
+	} {
+		if strings.Contains(workflows, forbidden) {
+			t.Fatalf("GitHub workflows must not use deprecated Node 20 action/runtime config %s", forbidden)
+		}
+	}
+	for _, expected := range []string{
+		"actions/checkout@v6",
+		"actions/setup-go@v6",
+		"actions/upload-artifact@v6",
+		"actions/github-script@v8",
+		"goreleaser/goreleaser-action@v7",
+	} {
+		if !strings.Contains(workflows, expected) {
+			t.Fatalf("GitHub workflows must contain %s", expected)
+		}
+	}
+
+	release := read(t, ".github", "workflows", "release.yml")
+	if strings.Contains(release, "version: latest") {
+		t.Fatal("release workflow must pin GoReleaser action version instead of using latest")
+	}
+	if !strings.Contains(release, `version: "~> v2"`) {
+		t.Fatal("release workflow must use the GoReleaser v2 version range")
+	}
+
+	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
+	for _, expected := range []string{"Node 24", "checkout@v6", "setup-go@v6", "GoReleaser v2"} {
+		if !strings.Contains(docs, expected) {
+			t.Fatalf("GitHub automation docs must mention %s", expected)
+		}
+	}
+}
+
 func TestBuildAndReleaseAutomationUseProjectVersion(t *testing.T) {
 	for _, path := range []string{
 		"VERSION",

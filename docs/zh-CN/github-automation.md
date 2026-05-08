@@ -28,6 +28,7 @@
 - Build workflow 会通过 `tools/version` 读取仓库内 `VERSION` 文件后再产出构建物。
 - 构建产物会上传供检查，但不会发布 release。
 - `make build` 仍是本地单平台构建门禁。
+- GitHub Actions workflows 使用 Node 24 action major，例如 `actions/checkout@v6`、`actions/setup-go@v6`、`actions/upload-artifact@v6` 和 `actions/github-script@v8`。
 
 ## Release 流程
 
@@ -37,6 +38,7 @@
 - 在匹配的 `v*` tag 上，release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和、多平台 archive 和 Homebrew cask。
 - Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew tap MagnumGoYB/aitok` 后执行 `brew install --cask aitok` 安装。
 - GitHub Release 使用 `GITHUB_TOKEN`；发布 tap 需要仓库 secret `HOMEBREW_TAP_GITHUB_TOKEN`，因为默认 workflow token 不能写入独立的 `homebrew-aitok` 仓库。
+- Release workflow 固定使用 GoReleaser v2，不使用 `latest`。
 - Release 自动化不新增外部 telemetry 或 usage 上传。
 
 ## Dependabot
