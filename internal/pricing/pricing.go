@@ -85,11 +85,23 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 	if cacheMake == 0 {
 		cacheMake = price.InputUSDPerMTok
 	}
-	usd := perMillion(event.Usage.Input, price.InputUSDPerMTok) +
+	usd := perMillion(billableInput(event), price.InputUSDPerMTok) +
 		perMillion(event.Usage.Output+event.Usage.Reasoning, price.OutputUSDPerMTok) +
 		perMillion(event.Usage.CachedInput, price.CacheHitUSDPerMTok) +
 		perMillion(event.Usage.CacheCreation, cacheMake)
 	return Cost{USD: usd * multiplier, Currency: "USD", Multiplier: multiplier, Source: price.Source}
+}
+
+func billableInput(event usage.UsageEvent) int64 {
+	input := event.Usage.Input
+	if event.Tool != usage.ToolCodex {
+		return input
+	}
+	cached := event.Usage.CachedInput + event.Usage.CacheCreation
+	if input <= cached {
+		return 0
+	}
+	return input - cached
 }
 
 func (c Catalog) match(event usage.UsageEvent) (ModelPrice, bool) {

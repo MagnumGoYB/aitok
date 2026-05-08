@@ -37,6 +37,50 @@ func TestCalculateUsesDefaultPricesAndMultiplier(t *testing.T) {
 	}
 }
 
+func TestCostForCodexDoesNotChargeCachedInputAtFullInputRate(t *testing.T) {
+	catalog := Catalog{
+		Models: []ModelPrice{{
+			Match:              "gpt-5.5",
+			InputUSDPerMTok:    5,
+			OutputUSDPerMTok:   30,
+			CacheHitUSDPerMTok: 0.5,
+		}},
+	}
+	cost := catalog.CostFor(usage.UsageEvent{
+		Tool:  usage.ToolCodex,
+		Model: "gpt-5.5",
+		Usage: usage.TokenUsage{
+			Input:       10_000_000,
+			CachedInput: 8_000_000,
+		},
+	})
+	if got, want := cost.USD, 14.0; got != want {
+		t.Fatalf("cost = %.4f, want %.4f", got, want)
+	}
+}
+
+func TestCostForClaudeKeepsInputAndCacheSeparate(t *testing.T) {
+	catalog := Catalog{
+		Models: []ModelPrice{{
+			Match:              "claude-sonnet-4",
+			InputUSDPerMTok:    3,
+			OutputUSDPerMTok:   15,
+			CacheHitUSDPerMTok: 0.3,
+		}},
+	}
+	cost := catalog.CostFor(usage.UsageEvent{
+		Tool:  usage.ToolClaude,
+		Model: "claude-sonnet-4",
+		Usage: usage.TokenUsage{
+			Input:       10_000_000,
+			CachedInput: 8_000_000,
+		},
+	})
+	if got, want := cost.USD, 32.4; got != want {
+		t.Fatalf("cost = %.4f, want %.4f", got, want)
+	}
+}
+
 func TestLoadCatalogMergesUserConfigOverDefaults(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, ".aitok", "pricing.json")
