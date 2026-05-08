@@ -23,8 +23,28 @@ func TestSummaryIntegrationJSON(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"tool": "codex"`) || !strings.Contains(out.String(), `"total": 12`) {
+	if !strings.Contains(out.String(), `"tool": "codex"`) || !strings.Contains(out.String(), `"requests": 1`) || !strings.Contains(out.String(), `"cost_usd"`) || !strings.Contains(out.String(), `"total": 12`) {
 		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestSummaryUsesCustomPricingFile(t *testing.T) {
+	home := t.TempDir()
+	pricingPath := filepath.Join(home, "pricing.json")
+	writeFixture(t, pricingPath, `{"models":[{"match":"gpt-5.4","input_usd_per_mtok":2,"output_usd_per_mtok":20,"multiplier":2}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"output_tokens":1000000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--pricing", pricingPath, "summary", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"cost_usd": 44`) {
+		t.Fatalf("custom pricing not applied: %s", out.String())
 	}
 }
 

@@ -29,3 +29,24 @@ func TestAggregateFiltersAndGroups(t *testing.T) {
 		t.Fatalf("day = %s, want 2026-05-08", got)
 	}
 }
+
+func TestAggregateIncludesRequestsAndCost(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 1_000_000}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Output: 100_000}},
+	}
+	results := AggregateWithCosts(events, window, Filters{}, GroupBy{"tool", "model"}, func(event usage.UsageEvent) Cost {
+		return Cost{USD: float64(event.Usage.Input)/1_000_000 + float64(event.Usage.Output)/100_000}
+	})
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if got := results[0].Requests; got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+	if got := results[0].CostUSD; got != 2 {
+		t.Fatalf("cost = %.4f, want 2", got)
+	}
+}

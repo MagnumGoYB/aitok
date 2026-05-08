@@ -36,14 +36,17 @@ func Write(w io.Writer, format string, payload Payload) error {
 
 func WriteTable(w io.Writer, results []query.Result) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "GROUP\tEVENTS\tINPUT\tOUTPUT\tCACHED\tREASONING\tTOOL\tTOTAL")
+	fmt.Fprintln(tw, "GROUP\tREQUESTS\tEVENTS\tCOST_USD\tINPUT\tOUTPUT\tCACHED\tCACHE_CREATE\tREASONING\tTOOL\tTOTAL")
 	for _, result := range results {
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
 			formatKey(result.Key),
+			result.Requests,
 			result.Events,
+			FormatUSD(result.CostUSD),
 			result.Usage.Input,
 			result.Usage.Output,
 			result.Usage.CachedInput,
+			result.Usage.CacheCreation,
 			result.Usage.Reasoning,
 			result.Usage.Tool,
 			result.Usage.NormalizedTotal(),
@@ -53,21 +56,28 @@ func WriteTable(w io.Writer, results []query.Result) error {
 }
 
 func WriteMarkdown(w io.Writer, results []query.Result) error {
-	fmt.Fprintln(w, "| Group | Events | Input | Output | Cached | Reasoning | Tool | Total |")
-	fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Fprintln(w, "| Group | Requests | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |")
+	fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, result := range results {
-		fmt.Fprintf(w, "| %s | %d | %d | %d | %d | %d | %d | %d |\n",
+		fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
+			result.Requests,
 			result.Events,
+			FormatUSD(result.CostUSD),
 			result.Usage.Input,
 			result.Usage.Output,
 			result.Usage.CachedInput,
+			result.Usage.CacheCreation,
 			result.Usage.Reasoning,
 			result.Usage.Tool,
 			result.Usage.NormalizedTotal(),
 		)
 	}
 	return nil
+}
+
+func FormatUSD(value float64) string {
+	return fmt.Sprintf("$%.4f", value)
 }
 
 func formatKey(key map[string]string) string {

@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
+	"github.com/MagnumGoYB/aitok/internal/pricing"
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/MagnumGoYB/aitok/internal/setup"
 	"github.com/MagnumGoYB/aitok/internal/sources"
 	"github.com/MagnumGoYB/aitok/internal/tui"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +33,7 @@ type flags struct {
 	providers []string
 	cwd       string
 	home      string
+	pricing   string
 	dryRun    bool
 }
 
@@ -51,6 +55,7 @@ func New(app App) *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().StringVar(&f.home, "home", "", "home directory override")
+	root.PersistentFlags().StringVar(&f.pricing, "pricing", "", "pricing JSON override")
 
 	summary := &cobra.Command{
 		Use:   "summary",
@@ -153,13 +158,34 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	if err != nil {
 		return report.Payload{}, err
 	}
-	results := query.Aggregate(events, window, query.Filters{
+	catalog, err := loadPricing(f, opts.Home)
+	if err != nil {
+		return report.Payload{}, err
+	}
+	results := query.AggregateWithCosts(events, window, query.Filters{
 		Tools:     query.SplitCSV(f.tools),
 		Models:    query.SplitCSV(f.models),
 		Providers: query.SplitCSV(f.providers),
 		CWD:       f.cwd,
-	}, query.ParseGroupBy(f.groupBy))
+	}, query.ParseGroupBy(f.groupBy), func(event usage.UsageEvent) query.Cost {
+		return query.Cost{USD: catalog.CostFor(event).USD}
+	})
 	return report.Payload{GeneratedAt: now, Window: window, GroupBy: query.ParseGroupBy(f.groupBy), Results: results}, nil
+}
+
+func loadPricing(f *flags, home string) (pricing.Catalog, error) {
+	if f.pricing == "" {
+		return pricing.Load(home)
+	}
+	data, err := os.ReadFile(f.pricing)
+	if err != nil {
+		return pricing.Catalog{}, err
+	}
+	var catalog pricing.Catalog
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		return pricing.Catalog{}, err
+	}
+	return catalog, nil
 }
 
 func runDoctor(ctx context.Context, out io.Writer, home string) error {

@@ -74,6 +74,37 @@ func TestPrivacyAndOfflineConstraintsStayVisible(t *testing.T) {
 	}
 }
 
+func TestOfflineCostEstimationContractStaysVisible(t *testing.T) {
+	if _, err := os.Stat(filepath.Join(repoRoot(t), "internal", "pricing", "pricing.go")); err != nil {
+		t.Fatalf("missing offline pricing package: %v", err)
+	}
+	combinedDocs := strings.Join([]string{
+		read(t, "README.md"),
+		read(t, "README.zh-CN.md"),
+		read(t, "AGENTS.md"),
+		read(t, "AGENTS.zh-CN.md"),
+	}, "\n")
+	for _, expected := range []string{
+		"~/.aitok/pricing.json",
+		"--pricing",
+		"USD",
+		"multiplier",
+		"离线价格表",
+	} {
+		if !strings.Contains(combinedDocs, expected) {
+			t.Fatalf("cost estimation docs must mention %s", expected)
+		}
+	}
+	for _, forbidden := range []string{
+		"cost estimation or billing reconciliation",
+		"费用估算或账单对账",
+	} {
+		if strings.Contains(combinedDocs, forbidden) {
+			t.Fatalf("agent docs must not mark offline cost estimation out of scope: %s", forbidden)
+		}
+	}
+}
+
 func TestPublicDocsHaveChineseCounterparts(t *testing.T) {
 	pairs := map[string]string{
 		"README.md":                             "README.zh-CN.md",

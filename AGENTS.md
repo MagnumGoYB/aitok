@@ -7,6 +7,7 @@ This file is the execution guide for AI coding agents working in this repository
 ## 1) Project Mission
 
 `aitok` is an offline-first Go CLI for summarizing local token usage from Claude Code, Codex, and Gemini CLI.
+It may estimate USD costs from local token counts using an offline price catalog and local user overrides.
 
 Current codebase shape:
 
@@ -14,6 +15,7 @@ Current codebase shape:
 - Single-binary CLI: `cmd/aitok`
 - Source adapters: `internal/sources`
 - Query aggregation: `internal/query`
+- Price catalog and cost estimation: `internal/pricing`
 - Report output: `internal/report`
 - Gemini local telemetry setup: `internal/setup`
 - TUI: `internal/tui`
@@ -23,7 +25,7 @@ Out of scope unless explicitly requested:
 
 - network upload, remote sync, or cloud reporting
 - reading, storing, printing, hashing, or fingerprinting raw API keys
-- cost estimation or billing reconciliation
+- billing reconciliation or claims of exact provider billing
 - turning the TUI or future Web dashboard into a persistent background service
 
 ## 2) Dev Commands
@@ -72,6 +74,7 @@ Before every product or harness iteration, do a short internal review:
 - Every source adapter emits `usage.UsageEvent`.
 - Do not read, store, or display raw API keys. Provider grouping may only use provider/auth_type metadata already present in CLI logs, or `unknown`.
 - Do not add network transmission. Future network features must be off by default, explicitly opt-in, and guarded by harness sensors.
+- Cost estimation must remain offline by default. Default prices may be updated from public provider pricing, but automatic network sync must be explicitly requested and opt-in.
 - Gemini CLI historical data depends on an existing local telemetry outfile. When it is not configured, report no parseable historical data.
 - CLI output must stay stable; JSON field changes need tests.
 - Markdown/table reports should remain readable and scriptable.

@@ -7,6 +7,7 @@
 ## 1) 项目使命
 
 `aitok` 是一个离线优先的 Go CLI，用于统计本机 Claude Code、Codex、Gemini CLI 的 Token 用量。
+它可以基于本地 Token 统计、离线价格表和用户本地覆盖配置预估 USD 成本。
 
 当前代码库形态：
 
@@ -14,6 +15,7 @@
 - 单二进制 CLI：`cmd/aitok`
 - 适配器：`internal/sources`
 - 查询聚合：`internal/query`
+- 价格表和成本估算：`internal/pricing`
 - 报告输出：`internal/report`
 - Gemini 本地 telemetry 设置：`internal/setup`
 - TUI：`internal/tui`
@@ -23,7 +25,7 @@
 
 - 网络上传、远程同步或云端统计
 - 读取、保存、打印、哈希或指纹化真实 API Key
-- 费用估算或账单对账
+- 账单对账或声称与 provider 账单完全一致
 - 把 TUI/Web 仪表盘做成后台常驻服务
 
 ## 2) 开发命令
@@ -72,6 +74,7 @@
 - 所有 source adapter 输出统一的 `usage.UsageEvent`。
 - 不读取、不保存、不展示真实 API Key。provider 维度只能来自 CLI 日志中的 provider/auth_type 或 `unknown`。
 - 不新增网络传输能力；未来如需网络功能，必须默认关闭、显式 opt-in，并更新 Harness 传感器。
+- 成本估算必须默认保持离线。默认价格可基于公开 provider 价格更新，但自动网络同步必须明确请求且显式 opt-in。
 - Gemini CLI 历史数据以已有 local telemetry outfile 为准；未开启时必须如实报告没有可解析历史数据。
 - CLI 输出必须稳定，JSON 字段变更需有测试覆盖。
 - Markdown/table 报告要保持可读且可脚本化。

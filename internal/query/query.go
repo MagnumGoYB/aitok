@@ -17,9 +17,15 @@ type Filters struct {
 
 type GroupBy []string
 
+type Cost struct {
+	USD float64 `json:"usd"`
+}
+
 type Result struct {
 	Key      map[string]string `json:"key"`
 	Events   int               `json:"events"`
+	Requests int               `json:"requests"`
+	CostUSD  float64           `json:"cost_usd"`
 	Usage    usage.TokenUsage  `json:"usage"`
 	Examples map[string]string `json:"examples,omitempty"`
 }
@@ -46,6 +52,10 @@ func ParseGroupBy(raw string) GroupBy {
 }
 
 func Aggregate(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy) []Result {
+	return AggregateWithCosts(events, window, filters, groupBy, nil)
+}
+
+func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) []Result {
 	buckets := map[string]*Result{}
 	for _, event := range events {
 		if !window.Contains(event.Timestamp) || !matches(event, filters) {
@@ -57,7 +67,11 @@ func Aggregate(events []usage.UsageEvent, window Window, filters Filters, groupB
 			buckets[bucketKey] = &Result{Key: key, Examples: map[string]string{}}
 		}
 		buckets[bucketKey].Events++
+		buckets[bucketKey].Requests++
 		buckets[bucketKey].Usage = buckets[bucketKey].Usage.Add(event.Usage)
+		if costFor != nil {
+			buckets[bucketKey].CostUSD += costFor(event).USD
+		}
 		if event.CWD != "" && buckets[bucketKey].Examples["cwd"] == "" {
 			buckets[bucketKey].Examples["cwd"] = event.CWD
 		}

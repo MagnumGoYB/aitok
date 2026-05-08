@@ -4,7 +4,7 @@
 
 `aitok` 是一个轻量、离线优先的 CLI，用于统计本机 Claude Code、Codex 和 Gemini CLI 的 Token 用量。
 
-它不会上传数据、读取 API Key 或估算费用。所有统计都来自本机工具日志。
+它不会上传数据或读取 API Key。用量和 USD 成本统计都来自本机工具日志。
 
 ## 安装
 
@@ -58,6 +58,31 @@ aitok setup gemini --dry-run
 ```bash
 --group-by tool,model,provider,day,cwd
 ```
+
+报告会返回请求数量、Token 总量、缓存 Token 和预估 USD 成本。成本默认使用基于官方公开价格快照的离线 model 价格表，也支持本地覆盖：
+
+```json
+{
+  "models": [
+    {
+      "match": "gpt-5.4",
+      "input_usd_per_mtok": 1.25,
+      "output_usd_per_mtok": 10,
+      "cache_hit_usd_per_mtok": 0.125,
+      "cache_make_usd_per_mtok": 1.25,
+      "multiplier": 1
+    }
+  ]
+}
+```
+
+保存为 `~/.aitok/pricing.json`，或通过参数显式指定：
+
+```bash
+aitok summary --pricing ./pricing.json --format json
+```
+
+价格单位是 USD / 1M tokens。Reasoning tokens 按 output tokens 计费。`multiplier` 默认是 `1`。
 
 ## 数据源
 

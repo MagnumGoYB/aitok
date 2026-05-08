@@ -4,7 +4,7 @@
 
 `aitok` is a lightweight offline CLI for summarizing local token usage from Claude Code, Codex, and Gemini CLI.
 
-It does not upload data, read API keys, or estimate cost. All summaries are built from local tool logs.
+It does not upload data or read API keys. Usage and USD cost summaries are built from local tool logs.
 
 ## Install
 
@@ -58,6 +58,31 @@ Grouping:
 ```bash
 --group-by tool,model,provider,day,cwd
 ```
+
+Reports include request count, token totals, cache tokens, and estimated USD cost. Cost uses an offline default model price catalog based on an official public pricing snapshot and can be overridden locally:
+
+```json
+{
+  "models": [
+    {
+      "match": "gpt-5.4",
+      "input_usd_per_mtok": 1.25,
+      "output_usd_per_mtok": 10,
+      "cache_hit_usd_per_mtok": 0.125,
+      "cache_make_usd_per_mtok": 1.25,
+      "multiplier": 1
+    }
+  ]
+}
+```
+
+Save this as `~/.aitok/pricing.json`, or pass a file explicitly:
+
+```bash
+aitok summary --pricing ./pricing.json --format json
+```
+
+Prices are USD per 1M tokens. Reasoning tokens are charged as output tokens. `multiplier` defaults to `1`.
 
 ## Data Sources
 
