@@ -54,4 +54,7 @@ func TestWriteTableIncludesRequestsAndCost(t *testing.T) {
 	if !strings.Contains(got, "REQUESTS") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "$1.2345") {
 		t.Fatalf("table missing request/cost fields: %s", got)
 	}
+	if !strings.Contains(got, "+-") || !strings.Contains(got, "| GROUP") || !strings.Contains(got, "| REQUESTS") {
+		t.Fatalf("table must render borders and column separators: %s", got)
+	}
 }

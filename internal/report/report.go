@@ -6,7 +6,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
@@ -35,24 +34,74 @@ func Write(w io.Writer, format string, payload Payload) error {
 }
 
 func WriteTable(w io.Writer, results []query.Result) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "GROUP\tREQUESTS\tEVENTS\tCOST_USD\tINPUT\tOUTPUT\tCACHED\tCACHE_CREATE\tREASONING\tTOOL\tTOTAL")
+	headers := []string{"GROUP", "REQUESTS", "EVENTS", "COST_USD", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+	rows := make([][]string, 0, len(results))
 	for _, result := range results {
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		rows = append(rows, []string{
 			formatKey(result.Key),
-			result.Requests,
-			result.Events,
+			fmt.Sprint(result.Requests),
+			fmt.Sprint(result.Events),
 			FormatUSD(result.CostUSD),
-			result.Usage.Input,
-			result.Usage.Output,
-			result.Usage.CachedInput,
-			result.Usage.CacheCreation,
-			result.Usage.Reasoning,
-			result.Usage.Tool,
-			result.Usage.NormalizedTotal(),
-		)
+			fmt.Sprint(result.Usage.Input),
+			fmt.Sprint(result.Usage.Output),
+			fmt.Sprint(result.Usage.CachedInput),
+			fmt.Sprint(result.Usage.CacheCreation),
+			fmt.Sprint(result.Usage.Reasoning),
+			fmt.Sprint(result.Usage.Tool),
+			fmt.Sprint(result.Usage.NormalizedTotal()),
+		})
 	}
-	return tw.Flush()
+	writeBorderedTable(w, headers, rows)
+	return nil
+}
+
+func writeBorderedTable(w io.Writer, headers []string, rows [][]string) {
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = len(header)
+	}
+	for _, row := range rows {
+		for i, value := range row {
+			if len(value) > widths[i] {
+				widths[i] = len(value)
+			}
+		}
+	}
+	border := tableBorder(widths)
+	fmt.Fprintln(w, border)
+	writeTableRow(w, headers, widths)
+	fmt.Fprintln(w, border)
+	for _, row := range rows {
+		writeTableRow(w, row, widths)
+	}
+	fmt.Fprintln(w, border)
+}
+
+func tableBorder(widths []int) string {
+	var b strings.Builder
+	b.WriteString("+")
+	for _, width := range widths {
+		b.WriteString(strings.Repeat("-", width+2))
+		b.WriteString("+")
+	}
+	return b.String()
+}
+
+func writeTableRow(w io.Writer, row []string, widths []int) {
+	var b strings.Builder
+	b.WriteString("|")
+	for i, value := range row {
+		b.WriteString(" ")
+		if i == 0 {
+			b.WriteString(value)
+			b.WriteString(strings.Repeat(" ", widths[i]-len(value)))
+		} else {
+			b.WriteString(strings.Repeat(" ", widths[i]-len(value)))
+			b.WriteString(value)
+		}
+		b.WriteString(" |")
+	}
+	fmt.Fprintln(w, b.String())
 }
 
 func WriteMarkdown(w io.Writer, results []query.Result) error {

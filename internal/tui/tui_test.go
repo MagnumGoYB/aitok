@@ -161,6 +161,24 @@ func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	}
 }
 
+func TestModelUsageTableOutputDoesNotIncludeReasoning(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{{
+			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"},
+			Requests: 1,
+			Usage:    usage.TokenUsage{Input: 1000, Output: 200, Reasoning: 50, CachedInput: 25},
+			CostUSD:  0.1234,
+		}},
+	}
+	view := RenderWidth(payload, 140)
+	if !strings.Contains(view, "gpt-5.5 (bcb)") || !strings.Contains(view, "         200") {
+		t.Fatalf("model usage table output must match summary output tokens without reasoning: %s", view)
+	}
+	if strings.Contains(view, "         250") {
+		t.Fatalf("model usage table output must not add reasoning tokens into output: %s", view)
+	}
+}
+
 func samplePayload() report.Payload {
 	return report.Payload{
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},

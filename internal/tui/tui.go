@@ -270,7 +270,7 @@ func (m model) table(results []query.Result) string {
 			result.Requests,
 			report.FormatUSD(result.CostUSD),
 			compact(result.Usage.Input),
-			compact(result.Usage.Output+result.Usage.Reasoning),
+			compact(result.Usage.Output),
 			compact(result.Usage.CachedInput+result.Usage.CacheCreation),
 		))
 		if strings.TrimSpace(b.String()) != "" && strings.Count(b.String(), "\n") > 12 {
