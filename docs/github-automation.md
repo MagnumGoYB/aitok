@@ -16,6 +16,7 @@ This repository uses GitHub-native automation for pull requests, CodeRabbit revi
 - CodeRabbit reviews use zh-CN comments, an assertive profile, request-changes workflow, and path-specific instructions for Go code, GitHub workflows, docs, and harness files.
 - CodeRabbit must still be installed as the GitHub App for repository PRs; the YAML file only defines repository-specific behavior.
 - `.github/workflows/pr-review.yml` posts a checklist comment on new or updated pull requests.
+- The checklist workflow runs with `issues: write` and `pull-requests: write` so `actions/github-script` can create or update the PR issue comment under branch protection.
 - The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, and release impact.
 - `.github/CODEOWNERS` requests review for core areas such as adapters, query/report code, harness, and GitHub workflows.
 

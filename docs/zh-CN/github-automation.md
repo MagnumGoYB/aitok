@@ -16,6 +16,7 @@
 - CodeRabbit review 使用 zh-CN 评论、assertive profile、request-changes workflow，并对 Go 代码、GitHub workflows、docs 和 harness 文件设置路径级审查指令。
 - 仓库 PR 仍需要安装 CodeRabbit GitHub App；YAML 文件只定义仓库级行为。
 - `.github/workflows/pr-review.yml` 会在新建或更新 PR 时发布 checklist 评论。
+- Checklist workflow 使用 `issues: write` 和 `pull-requests: write`，确保 `actions/github-script` 能在 branch protection 下创建或更新 PR issue comment。
 - Checklist 提醒 reviewer 检查离线/隐私边界、source adapter 流式扫描、fixture 覆盖、CLI 输出稳定性和 release 影响。
 - `.github/CODEOWNERS` 为 adapter、query/report、harness 和 GitHub workflows 等核心区域请求 review。
 

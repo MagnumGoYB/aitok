@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+![aitok 封面图](README.jpg)
+
 `aitok` 是一个轻量、离线优先的 CLI，用于统计本机 Claude Code、Codex 和 Gemini CLI 的 Token 用量。
 
 它不会上传数据或读取 API Key。用量和 USD 成本统计都来自本机工具日志。

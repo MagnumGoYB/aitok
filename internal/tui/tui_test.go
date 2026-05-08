@@ -86,6 +86,39 @@ func TestModelDoesNotStartBackgroundRefresh(t *testing.T) {
 	}
 }
 
+func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openai"},
+				Requests: 1909,
+				Usage:    usage.TokenUsage{Input: 256_100_000, Output: 652_300},
+				CostUSD:  195.7068,
+			},
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openrouter"},
+				Requests: 307,
+				Usage:    usage.TokenUsage{Input: 35_500_000, Output: 166_100},
+				CostUSD:  30.6730,
+			},
+		},
+	}
+	view := RenderWidth(payload, 140)
+	for _, expected := range []string{"gpt-5.5 (openai)", "gpt-5.5 (openrouter)"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("view missing provider-qualified model label %q: %s", expected, view)
+		}
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "gpt-5.5 (openai)") && strings.Contains(line, "$195.7068") {
+			gap := strings.SplitN(line, "gpt-5.5 (openai)", 2)[1]
+			if !strings.HasPrefix(gap, "  ") || !strings.Contains(gap, "1909") {
+				t.Fatalf("model table row must keep right padding before requests column: %q", line)
+			}
+		}
+	}
+}
+
 func samplePayload() report.Payload {
 	return report.Payload{
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},

@@ -2,6 +2,8 @@
 
 [中文](README.zh-CN.md)
 
+![aitok cover](README.jpg)
+
 `aitok` is a lightweight offline CLI for summarizing local token usage from Claude Code, Codex, and Gemini CLI.
 
 It does not upload data or read API keys. Usage and USD cost summaries are built from local tool logs.

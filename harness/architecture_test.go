@@ -178,6 +178,19 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 			t.Fatalf("GitHub automation docs must mention %s", path)
 		}
 	}
+
+	prReview := read(t, ".github", "workflows", "pr-review.yml")
+	for _, expected := range []string{
+		"pull_request_target:",
+		"pull-requests: write",
+		"issues: write",
+		"issues.createComment",
+		"issues.updateComment",
+	} {
+		if !strings.Contains(prReview, expected) {
+			t.Fatalf("PR review workflow must contain %s", expected)
+		}
+	}
 }
 
 func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *testing.T) {

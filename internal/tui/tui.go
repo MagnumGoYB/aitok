@@ -210,8 +210,9 @@ func (m model) chart(results []query.Result, max int64) string {
 		if width == 0 && total > 0 {
 			width = 1
 		}
-		lines = append(lines, fmt.Sprintf("%-28s %s %s",
-			truncate(resultLabel(result), 28),
+		lines = append(lines, fmt.Sprintf("%-*s  %s %s",
+			modelColumnWidth,
+			truncate(resultLabel(result), modelColumnWidth),
 			barStyle.Render(strings.Repeat("█", width)),
 			mutedStyle.Render(formatInt(total)),
 		))
@@ -224,11 +225,12 @@ func (m model) chart(results []query.Result, max int64) string {
 
 func (m model) table(results []query.Result) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render(fmt.Sprintf("%-28s %8s %10s %12s %12s %12s", "Model", "Req", "Cost", "Input", "Output", "Cached")))
+	b.WriteString(mutedStyle.Render(fmt.Sprintf("%-*s  %8s %10s %12s %12s %12s", modelColumnWidth, "Model", "Req", "Cost", "Input", "Output", "Cached")))
 	b.WriteString("\n")
 	for _, result := range results {
-		b.WriteString(fmt.Sprintf("%-28s %8d %10s %12s %12s %12s\n",
-			truncate(resultLabel(result), 28),
+		b.WriteString(fmt.Sprintf("%-*s  %8d %10s %12s %12s %12s\n",
+			modelColumnWidth,
+			truncate(resultLabel(result), modelColumnWidth),
 			result.Requests,
 			report.FormatUSD(result.CostUSD),
 			compact(result.Usage.Input),
@@ -282,6 +284,9 @@ func summarize(results []query.Result) totals {
 
 func resultLabel(result query.Result) string {
 	if model := result.Key["model"]; model != "" && model != "unknown" {
+		if provider := result.Key["provider"]; provider != "" && provider != "unknown" {
+			return fmt.Sprintf("%s (%s)", model, provider)
+		}
 		return model
 	}
 	if tool := result.Key["tool"]; tool != "" {
@@ -424,6 +429,8 @@ func clamp(value, min, max int) int {
 }
 
 var (
+	modelColumnWidth = 32
+
 	blue   = lipgloss.Color("39")
 	green  = lipgloss.Color("35")
 	purple = lipgloss.Color("99")
