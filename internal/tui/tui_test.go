@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -80,9 +81,43 @@ func TestModelTogglesLanguage(t *testing.T) {
 	}
 }
 
-func TestModelDoesNotStartBackgroundRefresh(t *testing.T) {
-	if cmd := NewModel(samplePayload()).Init(); cmd != nil {
-		t.Fatalf("TUI must not start background refresh commands: %#v", cmd)
+func TestModelStartsBackgroundRefreshWhenLoaderIsConfigured(t *testing.T) {
+	m := NewModelWithRefresh(samplePayload(), LanguageEnglish, func() (report.Payload, error) {
+		return samplePayload(), nil
+	})
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("interactive TUI must schedule background refresh")
+	}
+}
+
+func TestModelRefreshResultUpdatesPayloadAndSchedulesNextRefresh(t *testing.T) {
+	m := NewModelWithRefresh(samplePayload(), LanguageEnglish, func() (report.Payload, error) {
+		return samplePayload(), nil
+	})
+	next := samplePayload()
+	next.Results[0].Key["model"] = "gpt-5.5"
+	next.Results[0].Usage.Input = 2000
+	updated, cmd := m.Update(refreshResultMsg{payload: next})
+	m = updated.(model)
+	if !strings.Contains(m.View(), "gpt-5.5") || !strings.Contains(m.View(), "2,225") {
+		t.Fatalf("refresh result did not update TUI payload: %s", m.View())
+	}
+	if cmd == nil {
+		t.Fatal("refresh result must schedule the next background refresh")
+	}
+}
+
+func TestModelRefreshErrorKeepsCurrentPayloadAndSchedulesRetry(t *testing.T) {
+	m := NewModelWithRefresh(samplePayload(), LanguageEnglish, func() (report.Payload, error) {
+		return samplePayload(), nil
+	})
+	updated, cmd := m.Update(refreshResultMsg{err: io.ErrUnexpectedEOF})
+	m = updated.(model)
+	if !strings.Contains(m.View(), "gpt-5.4") {
+		t.Fatalf("refresh error should keep existing payload: %s", m.View())
+	}
+	if cmd == nil {
+		t.Fatal("refresh error must schedule a retry")
 	}
 }
 

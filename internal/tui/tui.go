@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
@@ -14,6 +15,8 @@ import (
 )
 
 const allTools = "all"
+
+const refreshInterval = 5 * time.Second
 
 type Language string
 
@@ -29,6 +32,12 @@ type model struct {
 	searching  bool
 	width      int
 	language   Language
+	refresh    func() (report.Payload, error)
+}
+
+type refreshResultMsg struct {
+	payload report.Payload
+	err     error
 }
 
 func NewModel(payload report.Payload) model {
@@ -39,12 +48,24 @@ func NewModelWithLanguage(payload report.Payload, language Language) model {
 	return model{payload: payload, activeTool: allTools, width: 120, language: normalizeLanguage(language)}
 }
 
+func NewModelWithRefresh(payload report.Payload, language Language, refresh func() (report.Payload, error)) model {
+	m := NewModelWithLanguage(payload, language)
+	m.refresh = refresh
+	return m
+}
+
 func Run(out io.Writer, payload report.Payload) error {
 	return RunWithLanguage(out, payload, LanguageEnglish)
 }
 
 func RunWithLanguage(out io.Writer, payload report.Payload, language Language) error {
 	program := tea.NewProgram(NewModelWithLanguage(payload, language), tea.WithOutput(out), tea.WithAltScreen())
+	_, err := program.Run()
+	return err
+}
+
+func RunWithRefresh(out io.Writer, payload report.Payload, language Language, refresh func() (report.Payload, error)) error {
+	program := tea.NewProgram(NewModelWithRefresh(payload, language, refresh), tea.WithOutput(out), tea.WithAltScreen())
 	_, err := program.Run()
 	return err
 }
@@ -66,11 +87,16 @@ func RenderWidthWithLanguage(payload report.Payload, width int, language Languag
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return m.scheduleRefresh()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case refreshResultMsg:
+		if msg.err == nil {
+			m.payload = msg.payload
+		}
+		return m, m.scheduleRefresh()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
@@ -113,6 +139,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) scheduleRefresh() tea.Cmd {
+	if m.refresh == nil {
+		return nil
+	}
+	return tea.Tick(refreshInterval, func(time.Time) tea.Msg {
+		payload, err := m.refresh()
+		return refreshResultMsg{payload: payload, err: err}
+	})
 }
 
 func (m model) View() string {

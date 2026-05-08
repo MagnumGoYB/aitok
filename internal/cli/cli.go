@@ -134,7 +134,10 @@ func New(app App) *cobra.Command {
 				fmt.Fprint(app.Out, tui.RenderWidthWithLanguage(payload, 140, tui.Language(f.lang)))
 				return nil
 			}
-			return tui.RunWithLanguage(app.Out, payload, tui.Language(f.lang))
+			refresh := func() (report.Payload, error) {
+				return buildPayload(cmd.Context(), f, app.Now())
+			}
+			return tui.RunWithRefresh(app.Out, payload, tui.Language(f.lang), refresh)
 		},
 	}
 	addQueryFlags(tuiCmd, f)
