@@ -44,7 +44,7 @@ func Run(out io.Writer, payload report.Payload) error {
 }
 
 func RunWithLanguage(out io.Writer, payload report.Payload, language Language) error {
-	program := tea.NewProgram(NewModelWithLanguage(payload, language), tea.WithOutput(out), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	program := tea.NewProgram(NewModelWithLanguage(payload, language), tea.WithOutput(out), tea.WithAltScreen())
 	_, err := program.Run()
 	return err
 }

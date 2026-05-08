@@ -80,6 +80,12 @@ func TestModelTogglesLanguage(t *testing.T) {
 	}
 }
 
+func TestModelDoesNotStartBackgroundRefresh(t *testing.T) {
+	if cmd := NewModel(samplePayload()).Init(); cmd != nil {
+		t.Fatalf("TUI must not start background refresh commands: %#v", cmd)
+	}
+}
+
 func samplePayload() report.Payload {
 	return report.Payload{
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},
