@@ -15,20 +15,36 @@ import (
 
 const allTools = "all"
 
+type Language string
+
+const (
+	LanguageEnglish Language = "en"
+	LanguageChinese Language = "zh-CN"
+)
+
 type model struct {
 	payload    report.Payload
 	activeTool string
 	search     string
 	searching  bool
 	width      int
+	language   Language
 }
 
 func NewModel(payload report.Payload) model {
-	return model{payload: payload, activeTool: allTools, width: 120}
+	return NewModelWithLanguage(payload, LanguageEnglish)
+}
+
+func NewModelWithLanguage(payload report.Payload, language Language) model {
+	return model{payload: payload, activeTool: allTools, width: 120, language: normalizeLanguage(language)}
 }
 
 func Run(out io.Writer, payload report.Payload) error {
-	program := tea.NewProgram(NewModel(payload), tea.WithOutput(out), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	return RunWithLanguage(out, payload, LanguageEnglish)
+}
+
+func RunWithLanguage(out io.Writer, payload report.Payload, language Language) error {
+	program := tea.NewProgram(NewModelWithLanguage(payload, language), tea.WithOutput(out), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := program.Run()
 	return err
 }
@@ -38,7 +54,11 @@ func Render(payload report.Payload) string {
 }
 
 func RenderWidth(payload report.Payload, width int) string {
-	m := NewModel(payload)
+	return RenderWidthWithLanguage(payload, width, LanguageEnglish)
+}
+
+func RenderWidthWithLanguage(payload report.Payload, width int, language Language) string {
+	m := NewModelWithLanguage(payload, language)
 	if width > 0 {
 		m.width = width
 	}
@@ -77,6 +97,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "/":
 			m.searching = true
+		case "l":
+			m.language = toggleLanguage(m.language)
 		case "esc":
 			m.search = ""
 			m.searching = false
@@ -99,19 +121,20 @@ func (m model) View() string {
 	}
 	results := m.filteredResults()
 	summary := summarize(results)
+	copy := copyFor(m.language)
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("使用统计"))
+	b.WriteString(titleStyle.Render(copy.title))
 	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("查看 AI 模型的使用情况和成本统计"))
+	b.WriteString(subtitleStyle.Render(copy.subtitle))
 	b.WriteString("\n\n")
-	b.WriteString(m.toolbar())
+	b.WriteString(m.toolbar(copy))
 	b.WriteString("\n\n")
-	b.WriteString(m.cards(summary))
+	b.WriteString(m.cards(summary, copy))
 	b.WriteString("\n\n")
-	b.WriteString(sectionStyle.Render("模型用量"))
+	b.WriteString(sectionStyle.Render(copy.modelUsage))
 	b.WriteString("\n")
 	if len(results) == 0 {
-		b.WriteString(mutedStyle.Render("No usage events found for this query."))
+		b.WriteString(mutedStyle.Render(copy.empty))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(m.chart(results, summary.total))
@@ -119,25 +142,25 @@ func (m model) View() string {
 		b.WriteString(m.table(results))
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("1 全部  2 Claude Code  3 Codex  4 Gemini  / 搜索  esc 清空  q 退出"))
+	b.WriteString(helpStyle.Render(copy.help))
 	b.WriteString("\n")
 	return b.String()
 }
 
-func (m model) toolbar() string {
+func (m model) toolbar(copy localizedCopy) string {
 	tabs := []string{
-		m.tab(allTools, "全部"),
+		m.tab(allTools, copy.all),
 		m.tab(string(usage.ToolClaude), "Claude Code"),
 		m.tab(string(usage.ToolCodex), "Codex"),
 		m.tab(string(usage.ToolGemini), "Gemini"),
 	}
-	search := "Search: " + m.search
+	search := copy.search + ": " + m.search
 	if m.searching {
 		search += "▌"
 	}
 	date := m.payload.Window.Start.Format("2006-01-02")
 	if m.payload.Window.Start.IsZero() {
-		date = "当日"
+		date = copy.today
 	}
 	right := mutedStyle.Render("↻ 30s   📅 " + date)
 	content := lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(tabs, "  "), "     ", search, "     ", right)
@@ -149,16 +172,16 @@ func (m model) toolbar() string {
 		Render(content)
 }
 
-func (m model) cards(summary totals) string {
+func (m model) cards(summary totals, copy localizedCopy) string {
 	cardWidth := 24
 	if m.width >= 132 {
 		cardWidth = (m.width - 14) / 4
 	}
 	cards := []string{
-		cardWithWidth("总请求数", formatInt(int64(summary.requests)), "↯", blue, cardWidth),
-		cardWithWidth("总成本", report.FormatUSD(summary.cost), "$", green, cardWidth),
-		cardWithWidth("总 Token 数", formatInt(summary.total), "▱", purple, cardWidth),
-		cardWithWidth("缓存 Token", formatInt(summary.cached), "◉", orange, cardWidth),
+		cardWithWidth(copy.requests, formatInt(int64(summary.requests)), "↯", blue, cardWidth),
+		cardWithWidth(copy.cost, report.FormatUSD(summary.cost), "$", green, cardWidth),
+		cardWithWidth(copy.totalTokens, formatInt(summary.total), "▱", purple, cardWidth),
+		cardWithWidth(copy.cachedTokens, formatInt(summary.cached), "◉", orange, cardWidth),
 	}
 	if m.width < 96 {
 		return lipgloss.JoinVertical(lipgloss.Left,
@@ -274,6 +297,70 @@ func formatKey(key map[string]string) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ", ")
+}
+
+type localizedCopy struct {
+	title        string
+	subtitle     string
+	all          string
+	search       string
+	today        string
+	requests     string
+	cost         string
+	totalTokens  string
+	cachedTokens string
+	modelUsage   string
+	empty        string
+	help         string
+}
+
+func copyFor(language Language) localizedCopy {
+	if normalizeLanguage(language) == LanguageChinese {
+		return localizedCopy{
+			title:        "使用统计",
+			subtitle:     "查看 AI 模型的使用情况和成本统计",
+			all:          "全部",
+			search:       "Search",
+			today:        "当日",
+			requests:     "总请求数",
+			cost:         "总成本",
+			totalTokens:  "总 Token 数",
+			cachedTokens: "缓存 Token",
+			modelUsage:   "模型用量",
+			empty:        "当前查询没有找到用量事件。",
+			help:         "1 全部  2 Claude Code  3 Codex  4 Gemini  / 搜索  esc 清空  l 语言  q 退出",
+		}
+	}
+	return localizedCopy{
+		title:        "Usage Dashboard",
+		subtitle:     "Monitor AI model usage and estimated cost",
+		all:          "All",
+		search:       "Search",
+		today:        "Today",
+		requests:     "Requests",
+		cost:         "Estimated Cost",
+		totalTokens:  "Total Tokens",
+		cachedTokens: "Cached Tokens",
+		modelUsage:   "Model Usage",
+		empty:        "No usage events found for this query.",
+		help:         "1 All  2 Claude Code  3 Codex  4 Gemini  / search  esc clear  l language  q quit",
+	}
+}
+
+func normalizeLanguage(language Language) Language {
+	switch Language(strings.ToLower(string(language))) {
+	case "zh", "zh-cn", "cn":
+		return LanguageChinese
+	default:
+		return LanguageEnglish
+	}
+}
+
+func toggleLanguage(language Language) Language {
+	if normalizeLanguage(language) == LanguageChinese {
+		return LanguageEnglish
+	}
+	return LanguageChinese
 }
 
 func card(label, value, icon string, color lipgloss.Color) string {

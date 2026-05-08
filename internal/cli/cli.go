@@ -34,6 +34,7 @@ type flags struct {
 	cwd       string
 	home      string
 	pricing   string
+	lang      string
 	renderTUI bool
 	dryRun    bool
 }
@@ -93,14 +94,15 @@ func New(app App) *cobra.Command {
 				return err
 			}
 			if f.renderTUI {
-				fmt.Fprint(app.Out, tui.RenderWidth(payload, 140))
+				fmt.Fprint(app.Out, tui.RenderWidthWithLanguage(payload, 140, tui.Language(f.lang)))
 				return nil
 			}
-			return tui.Run(app.Out, payload)
+			return tui.RunWithLanguage(app.Out, payload, tui.Language(f.lang))
 		},
 	}
 	addQueryFlags(tuiCmd, f)
 	tuiCmd.Flags().BoolVar(&f.renderTUI, "render", false, "render the dashboard once without starting the interactive TUI")
+	tuiCmd.Flags().StringVar(&f.lang, "lang", "en", "TUI language: en or zh-CN")
 
 	doctor := &cobra.Command{
 		Use:   "doctor",

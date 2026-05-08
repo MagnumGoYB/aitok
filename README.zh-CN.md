@@ -36,9 +36,12 @@ aitok summary --period today
 aitok summary --period this-week --group-by tool,model,provider --format markdown
 aitok report --period last-week --format json
 aitok tui
+aitok tui --lang zh-CN
 aitok doctor
 aitok setup gemini --dry-run
 ```
+
+TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也可以在 TUI 中按 `l` 切换语言。
 
 时间范围：
 

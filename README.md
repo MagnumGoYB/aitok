@@ -36,9 +36,12 @@ aitok summary --period today
 aitok summary --period this-week --group-by tool,model,provider --format markdown
 aitok report --period last-week --format json
 aitok tui
+aitok tui --lang zh-CN
 aitok doctor
 aitok setup gemini --dry-run
 ```
+
+The TUI uses English by default. Pass `--lang zh-CN` to start in Chinese, or press `l` inside the TUI to switch languages.
 
 Periods:
 
