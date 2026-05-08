@@ -24,14 +24,17 @@
 
 ## Build 流程
 
-- `.github/workflows/build.yml` 在 PR 和 push 上构建 Linux、macOS 和 Windows 产物。
+- `.github/workflows/build.yml` 只在代码合并到 `main` 或推送 `v*` tag 时构建 Linux、macOS 和 Windows 产物。
+- Build workflow 会通过 `tools/version` 读取仓库内 `VERSION` 文件后再产出构建物。
 - 构建产物会上传供检查，但不会发布 release。
 - `make build` 仍是本地单平台构建门禁。
 
 ## Release 流程
 
-- `.github/workflows/release.yml` 在 `v*` tag 上触发。
-- Release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和与多平台 archive。
+- `.github/workflows/release.yml` 只在代码合并到 `main` 或推送 `v*` tag 时触发。
+- Release job 通过 `tools/version` 读取 `VERSION`；tag release 必须与 `VERSION` 匹配为 `v<version>`。
+- 在 `main` 上，release workflow 只验证项目，不发布 GitHub Release。
+- 在匹配的 `v*` tag 上，release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和与多平台 archive。
 - Release 仅需要 `GITHUB_TOKEN`；release 自动化不新增外部 telemetry 或 usage 上传。
 
 ## Dependabot

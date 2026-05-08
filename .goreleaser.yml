@@ -8,6 +8,8 @@ builds:
   - id: aitok
     main: ./cmd/aitok
     binary: aitok
+    ldflags:
+      - -s -w
     env:
       - CGO_ENABLED=0
     goos:

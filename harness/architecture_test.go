@@ -98,6 +98,55 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 	}
 }
 
+func TestBuildAndReleaseAutomationUseProjectVersion(t *testing.T) {
+	for _, path := range []string{
+		"VERSION",
+		"tools/version/main.go",
+		"tools/version/main_test.go",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot(t), path)); err != nil {
+			t.Fatalf("missing release version file %s: %v", path, err)
+		}
+	}
+
+	build := read(t, ".github", "workflows", "build.yml")
+	release := read(t, ".github", "workflows", "release.yml")
+	for name, workflow := range map[string]string{"build": build, "release": release} {
+		for _, expected := range []string{
+			"branches: [main]",
+			"tags:",
+			`- "v*"`,
+		} {
+			if !strings.Contains(workflow, expected) {
+				t.Fatalf("%s workflow must contain %s", name, expected)
+			}
+		}
+		for _, forbidden := range []string{"pull_request:", "workflow_dispatch:"} {
+			if strings.Contains(workflow, forbidden) {
+				t.Fatalf("%s workflow must not contain %s", name, forbidden)
+			}
+		}
+	}
+
+	releaseExpectations := []string{
+		"go run ./tools/version",
+		"go run ./tools/version --check-ref",
+		"GORELEASER_CURRENT_TAG",
+	}
+	for _, expected := range releaseExpectations {
+		if !strings.Contains(release, expected) {
+			t.Fatalf("release workflow must contain %s", expected)
+		}
+	}
+
+	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
+	for _, expected := range []string{"VERSION", "main", "v*", "tools/version"} {
+		if !strings.Contains(docs, expected) {
+			t.Fatalf("GitHub automation docs must mention %s", expected)
+		}
+	}
+}
+
 func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	makefile := read(t, "Makefile")
 	ci := read(t, ".github", "workflows", "ci.yml")

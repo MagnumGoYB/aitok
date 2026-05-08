@@ -24,14 +24,17 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 
 ## Build Flow
 
-- `.github/workflows/build.yml` builds Linux, macOS, and Windows artifacts for pull requests and pushes.
+- `.github/workflows/build.yml` builds Linux, macOS, and Windows artifacts only when code is merged to `main` or a `v*` tag is pushed.
+- The build workflow reads the repository `VERSION` file through `tools/version` before producing artifacts.
 - Build artifacts are uploaded for inspection without publishing a release.
 - `make build` remains the local single-platform build gate.
 
 ## Release Flow
 
-- `.github/workflows/release.yml` runs on `v*` tags.
-- The release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish signed checksums and platform archives.
+- `.github/workflows/release.yml` runs only when code is merged to `main` or a `v*` tag is pushed.
+- The release job reads `VERSION` through `tools/version`; tag releases must match `VERSION` as `v<version>`.
+- On `main`, the release workflow validates the project but does not publish a GitHub Release.
+- On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums and platform archives.
 - Releases require `GITHUB_TOKEN` only; no external network telemetry or usage upload is added by release automation.
 
 ## Dependabot
