@@ -131,6 +131,42 @@ func TestRunUpdateReportsCurrentVersionWhenLatestIsNotNewer(t *testing.T) {
 	}
 }
 
+func TestRunUpdateFallsBackToInstallUpgradeWhenLatestCheckIsForbidden(t *testing.T) {
+	home := t.TempDir()
+	var calls []string
+	var out bytes.Buffer
+	if err := RunUpdate(context.Background(), Options{
+		Home:       home,
+		Current:    "0.1.9",
+		Endpoint:   "https://example.test/latest",
+		Executable: "/opt/homebrew/Caskroom/aitok/0.1.9/aitok",
+		Now:        func() time.Time { return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC) },
+		Err:        &out,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Status:     "403 Forbidden",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"message":"rate limit"}`)),
+			}, nil
+		})},
+		RunCommand: func(ctx context.Context, name string, args []string, out io.Writer) error {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(calls, "\n"), "brew update\nbrew upgrade --cask aitok"; got != want {
+		t.Fatalf("commands = %q, want %q", got, want)
+	}
+	output := out.String()
+	if !strings.Contains(output, "Could not check the latest GitHub Release: version check returned 403 Forbidden") ||
+		!strings.Contains(output, "Trying local upgrade command: brew update && brew upgrade --cask aitok") {
+		t.Fatalf("unexpected update output: %s", output)
+	}
+}
+
 func TestDetectInstallMethod(t *testing.T) {
 	cases := map[string]InstallMethod{
 		"/opt/homebrew/Caskroom/aitok/0.1.6/aitok": InstallHomebrew,

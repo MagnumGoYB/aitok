@@ -99,7 +99,7 @@ func RunUpdate(ctx context.Context, opts Options) error {
 	opts = defaults(opts)
 	latest, err := fetchLatest(ctx, opts)
 	if err != nil {
-		return err
+		return runUpdateFallback(ctx, opts, err)
 	}
 	if latest.TagName == "" {
 		return fmt.Errorf("latest release response did not include a tag name")
@@ -117,6 +117,17 @@ func RunUpdate(ctx context.Context, opts Options) error {
 		return nil
 	}
 	fmt.Fprintf(opts.Err, "Updating aitok from %s to %s with: %s\n", opts.Current, latestVersion, command)
+	return runUpgrade(ctx, opts, method)
+}
+
+func runUpdateFallback(ctx context.Context, opts Options, checkErr error) error {
+	method := DetectInstallMethod(opts.Executable)
+	command := UpgradeCommand(method)
+	if command == "" {
+		return fmt.Errorf("%w. Download the latest release from https://github.com/MagnumGoYB/aitok/releases/latest", checkErr)
+	}
+	fmt.Fprintf(opts.Err, "Could not check the latest GitHub Release: %v\n", checkErr)
+	fmt.Fprintf(opts.Err, "Trying local upgrade command: %s\n", command)
 	return runUpgrade(ctx, opts, method)
 }
 
