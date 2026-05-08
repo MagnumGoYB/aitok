@@ -8,6 +8,14 @@
 
 ## 安装
 
+Homebrew：
+
+```bash
+brew install --cask MagnumGoYB/aitok/aitok
+```
+
+Go：
+
 ```bash
 go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 ```

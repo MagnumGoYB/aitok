@@ -34,8 +34,10 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - `.github/workflows/release.yml` runs only when code is merged to `main` or a `v*` tag is pushed.
 - The release job reads `VERSION` through `tools/version`; tag releases must match `VERSION` as `v<version>`.
 - On `main`, the release workflow validates the project but does not publish a GitHub Release.
-- On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums and platform archives.
-- Releases require `GITHUB_TOKEN` only; no external network telemetry or usage upload is added by release automation.
+- On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums, platform archives, and the Homebrew cask.
+- The Homebrew cask is published to the `MagnumGoYB/homebrew-aitok` tap and installs with `brew install --cask MagnumGoYB/aitok/aitok`.
+- GitHub Releases use `GITHUB_TOKEN`; publishing the tap requires the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`, because the default workflow token cannot write to the separate `homebrew-aitok` repository.
+- Release automation does not add external network telemetry or usage upload.
 
 ## Dependabot
 

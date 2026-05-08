@@ -8,6 +8,14 @@ It does not upload data, read API keys, or estimate cost. All summaries are buil
 
 ## Install
 
+Homebrew:
+
+```bash
+brew install --cask MagnumGoYB/aitok/aitok
+```
+
+Go:
+
 ```bash
 go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 ```

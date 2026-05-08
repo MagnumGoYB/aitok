@@ -167,6 +167,48 @@ func TestBuildAndReleaseAutomationUseProjectVersion(t *testing.T) {
 	}
 }
 
+func TestReleasePublishesHomebrewCask(t *testing.T) {
+	goreleaser := read(t, ".goreleaser.yml")
+	release := read(t, ".github", "workflows", "release.yml")
+	readme := read(t, "README.md") + "\n" + read(t, "README.zh-CN.md")
+	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
+
+	for _, expected := range []string{
+		"homebrew_casks:",
+		"name: aitok",
+		"binaries:",
+		"- aitok",
+		"owner: MagnumGoYB",
+		"name: homebrew-aitok",
+		"token: \"{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}\"",
+	} {
+		if !strings.Contains(goreleaser, expected) {
+			t.Fatalf(".goreleaser.yml must contain %s", expected)
+		}
+	}
+	if strings.Contains(goreleaser, "\nbrews:") {
+		t.Fatal(".goreleaser.yml must use homebrew_casks, not deprecated brews")
+	}
+	for _, expected := range []string{
+		"HOMEBREW_TAP_GITHUB_TOKEN",
+		"${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}",
+	} {
+		if !strings.Contains(release, expected) {
+			t.Fatalf("release workflow must pass %s", expected)
+		}
+	}
+	for _, expected := range []string{
+		"brew install --cask MagnumGoYB/aitok/aitok",
+		"GoReleaser",
+		"HOMEBREW_TAP_GITHUB_TOKEN",
+		"homebrew-aitok",
+	} {
+		if !strings.Contains(readme+"\n"+docs, expected) {
+			t.Fatalf("README and GitHub automation docs must mention %s", expected)
+		}
+	}
+}
+
 func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	makefile := read(t, "Makefile")
 	ci := read(t, ".github", "workflows", "ci.yml")

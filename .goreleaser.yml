@@ -31,3 +31,15 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+homebrew_casks:
+  - name: aitok
+    repository:
+      owner: MagnumGoYB
+      name: homebrew-aitok
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/MagnumGoYB/aitok"
+    description: "Offline CLI for summarizing local AI coding token usage"
+    license: MIT
+    binaries:
+      - aitok
