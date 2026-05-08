@@ -128,6 +128,28 @@ func TestVersionCheckRunsBeforeCommand(t *testing.T) {
 	}
 }
 
+func TestVersionCheckRunsForRootHelp(t *testing.T) {
+	home := t.TempDir()
+	var called bool
+	cmd := New(App{
+		Out: io.Discard,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			called = true
+			if opts.Home != home {
+				t.Fatalf("home = %q, want %q", opts.Home, home)
+			}
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"--home", home})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("version check did not run for root command")
+	}
+}
+
 func TestNoVersionCheckFlagSkipsVersionCheck(t *testing.T) {
 	home := t.TempDir()
 	cmd := New(App{
@@ -138,6 +160,73 @@ func TestNoVersionCheckFlagSkipsVersionCheck(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{"--home", home, "--no-version-check", "doctor"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVersionCommandsPrintVersion(t *testing.T) {
+	for _, args := range [][]string{{"version"}, {"-v"}, {"--version"}} {
+		var out bytes.Buffer
+		cmd := New(App{Out: &out})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if got := strings.TrimSpace(out.String()); got != "0.1.8" {
+			t.Fatalf("%v output = %q, want 0.1.8", args, got)
+		}
+	}
+}
+
+func TestVersionCommandSkipsVersionCheck(t *testing.T) {
+	cmd := New(App{
+		Out: io.Discard,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			t.Fatal("version command should not run update check")
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateCommandRunsUpdater(t *testing.T) {
+	home := t.TempDir()
+	var called bool
+	cmd := New(App{
+		Out: io.Discard,
+		Update: func(ctx context.Context, opts UpdateOptions) error {
+			called = true
+			if opts.Home != home {
+				t.Fatalf("home = %q, want %q", opts.Home, home)
+			}
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"--home", home, "update"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("update command did not run updater")
+	}
+}
+
+func TestUpdateCommandSkipsVersionCheck(t *testing.T) {
+	cmd := New(App{
+		Out: io.Discard,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			t.Fatal("update command should not run low-frequency version check")
+			return nil
+		},
+		Update: func(ctx context.Context, opts UpdateOptions) error {
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"update"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -80,6 +80,57 @@ func TestMaybeRunExecutesGoUpgradeWhenInteractiveUserAccepts(t *testing.T) {
 	}
 }
 
+func TestRunUpdateIgnoresFreshCacheAndExecutesUpgrade(t *testing.T) {
+	home := t.TempDir()
+	writeCacheForTest(t, home, `{"checked_at":"2026-05-08T11:00:00Z","latest":"0.1.7","url":"https://example.test"}`)
+	var calls []string
+	var out bytes.Buffer
+	if err := RunUpdate(context.Background(), Options{
+		Home:       home,
+		Current:    "0.1.6",
+		Endpoint:   "https://example.test/latest",
+		Executable: "/Users/sosbs/go/bin/aitok",
+		Now:        func() time.Time { return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC) },
+		Err:        &out,
+		HTTPClient: fakeHTTPClient(`{"tag_name":"v0.1.7","html_url":"https://github.com/MagnumGoYB/aitok/releases/tag/v0.1.7"}`),
+		RunCommand: func(ctx context.Context, name string, args []string, out io.Writer) error {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(calls, "\n"), "go install github.com/MagnumGoYB/aitok/cmd/aitok@latest"; got != want {
+		t.Fatalf("commands = %q, want %q", got, want)
+	}
+	if !strings.Contains(out.String(), "Updating aitok from 0.1.6 to 0.1.7") {
+		t.Fatalf("unexpected update output: %s", out.String())
+	}
+}
+
+func TestRunUpdateReportsCurrentVersionWhenLatestIsNotNewer(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	if err := RunUpdate(context.Background(), Options{
+		Home:       home,
+		Current:    "0.1.7",
+		Endpoint:   "https://example.test/latest",
+		Executable: "/Users/sosbs/go/bin/aitok",
+		Now:        func() time.Time { return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC) },
+		Err:        &out,
+		HTTPClient: fakeHTTPClient(`{"tag_name":"v0.1.7","html_url":"https://github.com/MagnumGoYB/aitok/releases/tag/v0.1.7"}`),
+		RunCommand: func(ctx context.Context, name string, args []string, out io.Writer) error {
+			t.Fatal("update command should not run when already current")
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "aitok 0.1.7 is already up to date") {
+		t.Fatalf("unexpected update output: %s", out.String())
+	}
+}
+
 func TestDetectInstallMethod(t *testing.T) {
 	cases := map[string]InstallMethod{
 		"/opt/homebrew/Caskroom/aitok/0.1.6/aitok": InstallHomebrew,

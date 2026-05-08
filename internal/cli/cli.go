@@ -24,11 +24,20 @@ type App struct {
 	Err          io.Writer
 	Now          func() time.Time
 	VersionCheck func(context.Context, VersionCheckOptions) error
+	Update       func(context.Context, UpdateOptions) error
 }
 
 type VersionCheckOptions struct {
 	Home string
 	In   io.Reader
+	Err  io.Writer
+	Now  time.Time
+}
+
+type UpdateOptions struct {
+	Home string
+	In   io.Reader
+	Out  io.Writer
 	Err  io.Writer
 	Now  time.Time
 }
@@ -47,6 +56,7 @@ type flags struct {
 	renderTUI      bool
 	dryRun         bool
 	noVersionCheck bool
+	version        bool
 }
 
 func New(app App) *cobra.Command {
@@ -63,19 +73,28 @@ func New(app App) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "aitok",
 		Short:         "Offline token usage summaries for AI coding tools",
-		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if f.version {
+				fmt.Fprintln(app.Out, buildinfo.Version)
+				return nil
+			}
+			return cmd.Help()
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if app.VersionCheck == nil || f.noVersionCheck {
+			if app.VersionCheck == nil || f.noVersionCheck || f.version || skipsVersionCheck(cmd) {
 				return nil
 			}
 			return app.VersionCheck(cmd.Context(), VersionCheckOptions{Home: resolveHome(f.home), In: os.Stdin, Err: app.Err, Now: app.Now()})
 		},
 	}
+	root.SetOut(app.Out)
+	root.SetErr(app.Err)
 	root.PersistentFlags().StringVar(&f.home, "home", "", "home directory override")
 	root.PersistentFlags().StringVar(&f.pricing, "pricing", "", "pricing JSON override")
 	root.PersistentFlags().BoolVar(&f.noVersionCheck, "no-version-check", false, "skip the low-frequency update check")
+	root.Flags().BoolVarP(&f.version, "version", "v", false, "print version")
 
 	summary := &cobra.Command{
 		Use:   "summary",
@@ -130,6 +149,26 @@ func New(app App) *cobra.Command {
 		},
 	}
 
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print the aitok version",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintln(app.Out, buildinfo.Version)
+		},
+	}
+
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Check for and install the latest aitok version",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if app.Update == nil {
+				fmt.Fprintln(app.Out, "No update provider configured.")
+				return nil
+			}
+			return app.Update(cmd.Context(), UpdateOptions{Home: resolveHome(f.home), In: os.Stdin, Out: app.Out, Err: app.Err, Now: app.Now()})
+		},
+	}
+
 	setupCmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Configure local tool telemetry",
@@ -159,7 +198,7 @@ func New(app App) *cobra.Command {
 	gemini.Flags().StringVar(&f.format, "format", "table", "output format: table or json")
 	setupCmd.AddCommand(gemini)
 
-	root.AddCommand(summary, reportCmd, tuiCmd, doctor, setupCmd)
+	root.AddCommand(summary, reportCmd, tuiCmd, doctor, versionCmd, updateCmd, setupCmd)
 	return root
 }
 
@@ -171,6 +210,15 @@ func addQueryFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringArrayVar(&f.models, "model", nil, "filter by model")
 	cmd.Flags().StringArrayVar(&f.providers, "provider", nil, "filter by provider/auth type")
 	cmd.Flags().StringVar(&f.cwd, "cwd", "", "filter by cwd substring")
+}
+
+func skipsVersionCheck(cmd *cobra.Command) bool {
+	switch cmd.Name() {
+	case "version", "update":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload, error) {

@@ -26,6 +26,16 @@ func main() {
 				Now:        func() time.Time { return opts.Now },
 			})
 		},
+		Update: func(ctx context.Context, opts cli.UpdateOptions) error {
+			return updatecheck.RunUpdate(ctx, updatecheck.Options{
+				Home:       opts.Home,
+				Current:    buildinfo.Version,
+				Executable: executable,
+				In:         opts.In,
+				Err:        opts.Err,
+				Now:        func() time.Time { return opts.Now },
+			})
+		},
 	})
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -92,6 +92,34 @@ func MaybeRun(ctx context.Context, opts Options) error {
 	return runUpgrade(ctx, opts, method)
 }
 
+func RunUpdate(ctx context.Context, opts Options) error {
+	if !releaseVersion(opts.Current) {
+		return fmt.Errorf("current version %q is not a release version", opts.Current)
+	}
+	opts = defaults(opts)
+	latest, err := fetchLatest(ctx, opts)
+	if err != nil {
+		return err
+	}
+	if latest.TagName == "" {
+		return fmt.Errorf("latest release response did not include a tag name")
+	}
+	latestVersion := strings.TrimPrefix(latest.TagName, "v")
+	_ = writeCache(opts, cache{CheckedAt: opts.Now(), Latest: latestVersion, URL: latest.URL})
+	if compareVersion(latestVersion, opts.Current) <= 0 {
+		fmt.Fprintf(opts.Err, "aitok %s is already up to date.\n", opts.Current)
+		return nil
+	}
+	method := DetectInstallMethod(opts.Executable)
+	command := UpgradeCommand(method)
+	if command == "" {
+		fmt.Fprintf(opts.Err, "aitok %s is available, current version is %s. Download: %s\n", latestVersion, opts.Current, latest.URL)
+		return nil
+	}
+	fmt.Fprintf(opts.Err, "Updating aitok from %s to %s with: %s\n", opts.Current, latestVersion, command)
+	return runUpgrade(ctx, opts, method)
+}
+
 func DetectInstallMethod(executable string) InstallMethod {
 	if executable == "" {
 		return InstallDev

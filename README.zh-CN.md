@@ -42,10 +42,15 @@ aitok report --period last-week --format json
 aitok tui
 aitok tui --lang zh-CN
 aitok doctor
+aitok version
+aitok -v
+aitok update
 aitok setup gemini --dry-run
 ```
 
 TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也可以在 TUI 中按 `l` 切换语言。
+
+`aitok update` 会立即检查最新 GitHub Release，并在当前安装方式支持时执行对应的本地升级命令。Homebrew 安装会使用 `brew update && brew upgrade --cask aitok`；Go 安装会使用 `go install github.com/MagnumGoYB/aitok/cmd/aitok@latest`。直接下载的 release 二进制会打印下载地址。
 
 时间范围：
 
