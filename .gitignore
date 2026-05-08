@@ -1,5 +1,6 @@
-aitok
+/aitok
 dist/
 coverage.out
+.cache/
 .DS_Store
 .superpowers/

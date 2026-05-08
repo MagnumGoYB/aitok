@@ -24,7 +24,7 @@ func (u TokenUsage) NormalizedTotal() int64 {
 	if u.Total > 0 {
 		return u.Total
 	}
-	return u.Input + u.Output + u.CacheCreation + u.Tool
+	return u.Input + u.Output + u.CacheCreation + u.Reasoning + u.Tool
 }
 
 func (u TokenUsage) Add(v TokenUsage) TokenUsage {

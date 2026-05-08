@@ -27,6 +27,7 @@ func (c Codex) Name() usage.Tool {
 func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 	root := filepath.Join(c.Home, ".codex", "sessions")
 	var events []usage.UsageEvent
+	seen := map[string]int{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
@@ -36,6 +37,11 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 			state.update(obj)
 			event, ok := c.parseEvent(path, obj, state)
 			if ok {
+				if index, exists := seen[event.ID]; exists {
+					events[index] = event
+					return nil
+				}
+				seen[event.ID] = len(events)
 				events = append(events, event)
 			}
 			return nil
@@ -48,6 +54,7 @@ type codexState struct {
 	provider string
 	model    string
 	cwd      string
+	turnID   string
 }
 
 func (s *codexState) update(obj map[string]any) {
@@ -64,6 +71,7 @@ func (s *codexState) update(obj map[string]any) {
 			s.cwd = cwd
 		}
 	case "turn_context":
+		s.turnID = codexTurnID(obj, payload)
 		if model := stringValue(payload["model"]); model != "" {
 			s.model = model
 		}
@@ -100,7 +108,10 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	if tokens.NormalizedTotal() == 0 && tokens.CachedInput == 0 && tokens.Reasoning == 0 {
 		return usage.UsageEvent{}, false
 	}
-	id := codexHash(path, ts, state, tokens)
+	id := state.turnID
+	if id == "" {
+		id = codexHash(path, state, tokens)
+	}
 	return usage.UsageEvent{
 		ID:        id,
 		Timestamp: ts,
@@ -113,7 +124,26 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	}, true
 }
 
-func codexHash(path string, ts time.Time, state codexState, tokens usage.TokenUsage) string {
-	h := sha1.Sum([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%d|%d", path, ts.Format(time.RFC3339Nano), state.provider, state.model, tokens.Input, tokens.Output, tokens.CachedInput, tokens.Reasoning, tokens.Total)))
+func codexTurnID(obj map[string]any, payload map[string]any) string {
+	if id := stringValue(payload["id"]); id != "" {
+		return id
+	}
+	if id := stringValue(payload["turn_id"]); id != "" {
+		return id
+	}
+	if id := stringValue(obj["id"]); id != "" {
+		return id
+	}
+	if id := stringValue(obj["uuid"]); id != "" {
+		return id
+	}
+	if ts := stringValue(obj["timestamp"]); ts != "" {
+		return "turn:" + ts
+	}
+	return ""
+}
+
+func codexHash(path string, state codexState, tokens usage.TokenUsage) string {
+	h := sha1.Sum([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%d|%d", path, state.turnID, state.provider, state.model, tokens.Input, tokens.Output, tokens.CachedInput, tokens.Reasoning, tokens.Total)))
 	return hex.EncodeToString(h[:])
 }

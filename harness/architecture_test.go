@@ -2,6 +2,7 @@ package harness_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -151,6 +152,7 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	makefile := read(t, "Makefile")
 	ci := read(t, ".github", "workflows", "ci.yml")
 	prTemplate := read(t, ".github", "pull_request_template.md")
+	gitignore := read(t, ".gitignore")
 
 	for _, target := range []string{"check:", "test:", "test-harness:", "build:", "validate-pr-body:", "validate:"} {
 		if !strings.Contains(makefile, target) {
@@ -173,6 +175,18 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 			t.Fatalf("PR template missing %s", section)
 		}
 	}
+	if !strings.Contains(makefile, "AITOK_CACHE_DIR ?= /tmp/aitok-cache") {
+		t.Fatal("Makefile must default Go caches to a cross-platform runner-writable cache directory")
+	}
+	for _, forbidden := range []string{"/private/tmp/aitok-gocache", "/private/tmp/aitok-gomodcache", "$(CURDIR)/$(AITOK_CACHE_DIR)"} {
+		if strings.Contains(makefile, forbidden) {
+			t.Fatalf("Makefile must not default to macOS-only cache path %s", forbidden)
+		}
+	}
+	if !strings.Contains(gitignore, "/aitok") || strings.Contains(gitignore, "\naitok\n") {
+		t.Fatal(".gitignore must ignore only the root aitok binary, not cmd/aitok")
+	}
+	assertGitTracks(t, "cmd/aitok/main.go")
 }
 
 func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
@@ -251,6 +265,15 @@ func read(t *testing.T, segments ...string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func assertGitTracks(t *testing.T, path string) {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "--error-unmatch", path)
+	cmd.Dir = repoRoot(t)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git must track %s: %v\n%s", path, err, string(output))
+	}
 }
 
 func repoRoot(t *testing.T) string {

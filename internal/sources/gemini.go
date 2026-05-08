@@ -70,7 +70,7 @@ func (g Gemini) parseEvent(path string, obj map[string]any) (usage.UsageEvent, b
 	}
 	ts := parseAnyTime(firstString(flat, "timestamp", "time", "observedTimestamp", "body.time"))
 	if ts.IsZero() {
-		ts = time.Now()
+		return usage.UsageEvent{}, false
 	}
 	model := firstString(flat, "attributes.model", "model", "attributes.gen_ai.request.model", "gen_ai.request.model")
 	provider := firstString(flat, "attributes.auth_type", "auth_type", "attributes.gen_ai.provider.name", "gen_ai.provider.name")

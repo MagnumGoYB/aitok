@@ -1,6 +1,7 @@
 GO ?= go
-GOCACHE ?= /private/tmp/aitok-gocache
-GOMODCACHE ?= /private/tmp/aitok-gomodcache
+AITOK_CACHE_DIR ?= /tmp/aitok-cache
+GOCACHE ?= $(AITOK_CACHE_DIR)/go-build
+GOMODCACHE ?= $(AITOK_CACHE_DIR)/go-mod
 
 .PHONY: check test test-harness vet build validate validate-pr-body
 
