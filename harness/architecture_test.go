@@ -164,6 +164,9 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 			t.Fatalf("CI must run %s", command)
 		}
 	}
+	if strings.Contains(ci, "golangci/golangci-lint-action") {
+		t.Fatal("CI must not depend on golangci-lint-action until its binary supports the project Go version")
+	}
 	for _, section := range []string{
 		"Requirement Classification",
 		"Acceptance Criteria",

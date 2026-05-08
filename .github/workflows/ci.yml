@@ -19,9 +19,6 @@ jobs:
           cache: true
       - run: make validate
       - run: make test-harness
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
 
   build:
     runs-on: ubuntu-latest
