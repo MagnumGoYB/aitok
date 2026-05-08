@@ -12,6 +12,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
 - `Makefile`: canonical local commands: `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, and `make validate-pr-body`.
+- `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - `.github/workflows/ci.yml`: hosted validation matching the local gates.
 
@@ -22,6 +23,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `go vet ./...`: static analysis.
 - `go build ./cmd/aitok`: single-binary build check.
 - `go run ./tools/validate-pr-body`: executable PR body metadata gate.
+- `go run ./tools/commitlint --edit <commit-msg-file>`: executable commit-message gate, optionally wired through `.githooks/commit-msg`.
 
 ## Agent Workflow Contract
 
@@ -49,6 +51,8 @@ When changing harness, CI, PR workflow, or validation scripts:
 2. Update `AGENTS.md` and `AGENTS.zh-CN.md` if agent behavior changes.
 3. Update this document and `docs/zh-CN/harness-engineering.md`.
 4. Run `make check`, `make test-harness`, and `make validate-pr-body` when PR metadata rules changed.
+
+When changing commit workflow rules, update `tools/commitlint`, `.githooks/commit-msg`, `AGENTS.md`, `AGENTS.zh-CN.md`, this document, and `docs/zh-CN/harness-engineering.md`.
 
 - `CODE_OF_CONDUCT.md` / `CODE_OF_CONDUCT.zh-CN.md` and `SUPPORT.md` / `SUPPORT.zh-CN.md` keep open-source community guidance bilingual.
 

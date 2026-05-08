@@ -35,6 +35,7 @@
 - 构建：`make build`
 - 完整本地验证：`make validate`
 - PR 元数据校验：`make validate-pr-body`
+- 提交消息检查：`go run ./tools/commitlint --edit <commit-msg-file>`
 - 直接运行 CLI：`go run ./cmd/aitok summary --period today`
 
 ## 3) 迭代前自我约束流程
@@ -99,6 +100,7 @@
 
 - CI 必须运行 `make validate`、`make test-harness`。
 - PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、TDD / Test Evidence、Validation、Risk and Rollback。
+- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。可运行 `go run ./tools/commitlint --edit <commit-msg-file>`，或通过 `git config core.hooksPath .githooks` 启用 `.githooks/commit-msg`。
 - 不要绕过本地验证后声称完成。
 - Stage/commit 只包含当前迭代文件；不要纳入无关 dirty files。
 

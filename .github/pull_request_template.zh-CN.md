@@ -34,6 +34,7 @@
 - [ ] `make test`
 - [ ] `make test-harness`
 - [ ] `make build`
+- [ ] Commit message follows `go run ./tools/commitlint --edit <commit-msg-file>`
 - Skipped validation and reason:
 
 ## Risk and Rollback

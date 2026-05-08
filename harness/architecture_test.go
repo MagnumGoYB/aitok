@@ -126,6 +126,51 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	}
 }
 
+func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
+	for _, path := range []string{
+		"tools/commitlint/main.go",
+		"tools/commitlint/main_test.go",
+		".githooks/commit-msg",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot(t), path)); err != nil {
+			t.Fatalf("missing commit workflow file %s: %v", path, err)
+		}
+	}
+
+	commitlint := read(t, "tools", "commitlint", "main.go")
+	for _, expected := range []string{
+		`maxHeaderLength = 64`,
+		`emoji + " " + type + optional scope + ": " + subject`,
+		`"feat"`,
+		`"fix"`,
+		`"harness"`,
+		`"sources"`,
+	} {
+		if !strings.Contains(commitlint, expected) {
+			t.Fatalf("tools/commitlint/main.go must contain %s", expected)
+		}
+	}
+
+	hook := read(t, ".githooks", "commit-msg")
+	if !strings.Contains(hook, `go run ./tools/commitlint --edit "$1"`) {
+		t.Fatal(".githooks/commit-msg must run the Go commitlint tool")
+	}
+
+	docs := strings.Join([]string{
+		read(t, "AGENTS.md"),
+		read(t, "AGENTS.zh-CN.md"),
+		read(t, "docs", "harness-engineering.md"),
+		read(t, "docs", "zh-CN", "harness-engineering.md"),
+		read(t, ".github", "pull_request_template.md"),
+		read(t, ".github", "pull_request_template.zh-CN.md"),
+	}, "\n")
+	for _, expected := range []string{"go run ./tools/commitlint", ".githooks/commit-msg", "{emoji} {type}{scope}: {subject}"} {
+		if !strings.Contains(docs, expected) {
+			t.Fatalf("agent and PR docs must mention %s", expected)
+		}
+	}
+}
+
 func TestHarnessPackageDoesNotImportProductionInternals(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(repoRoot(t), "harness"))
 	if err != nil {
