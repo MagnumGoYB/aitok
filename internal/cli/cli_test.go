@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MagnumGoYB/aitok/internal/buildinfo"
 )
 
 func TestSummaryIntegrationJSON(t *testing.T) {
@@ -173,8 +175,8 @@ func TestVersionCommandsPrintVersion(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("%v: %v", args, err)
 		}
-		if got := strings.TrimSpace(out.String()); got != "0.1.8" {
-			t.Fatalf("%v output = %q, want 0.1.8", args, got)
+		if got := strings.TrimSpace(out.String()); got != buildinfo.Version {
+			t.Fatalf("%v output = %q, want %s", args, got, buildinfo.Version)
 		}
 	}
 }
