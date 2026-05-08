@@ -73,7 +73,7 @@
 
 - 所有 source adapter 输出统一的 `usage.UsageEvent`。
 - 不读取、不保存、不展示真实 API Key。provider 维度只能来自 CLI 日志中的 provider/auth_type 或 `unknown`。
-- 不新增网络传输能力；未来如需网络功能，必须默认关闭、显式 opt-in，并更新 Harness 传感器。
+- 不新增用量数据网络传输能力。唯一允许的命令启动网络行为是低频 GitHub release 元数据版本检查；它不得读取本地日志或上传用量数据，并且必须可通过 `--no-version-check` 或 `AITOK_NO_VERSION_CHECK=1` 跳过。
 - 成本估算必须默认保持离线。默认价格可基于公开 provider 价格更新，但自动网络同步必须明确请求且显式 opt-in。
 - Gemini CLI 历史数据以已有 local telemetry outfile 为准；未开启时必须如实报告没有可解析历史数据。
 - CLI 输出必须稳定，JSON 字段变更需有测试覆盖。

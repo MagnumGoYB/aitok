@@ -29,6 +29,8 @@ go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 go install ./cmd/aitok
 ```
 
+`aitok` 会在命令执行前最多每 24 小时检查一次 GitHub release 元数据。如果发现新版本，会根据检测到的安装方式把升级提示输出到 stderr。该检查不会上传用量数据，不会读取日志，也可以通过 `--no-version-check` 或 `AITOK_NO_VERSION_CHECK=1` 跳过。
+
 ## 使用
 
 ```bash

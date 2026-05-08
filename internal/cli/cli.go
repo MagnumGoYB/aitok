@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/MagnumGoYB/aitok/internal/buildinfo"
 	"github.com/MagnumGoYB/aitok/internal/pricing"
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
@@ -19,24 +20,33 @@ import (
 )
 
 type App struct {
-	Out io.Writer
-	Err io.Writer
-	Now func() time.Time
+	Out          io.Writer
+	Err          io.Writer
+	Now          func() time.Time
+	VersionCheck func(context.Context, VersionCheckOptions) error
+}
+
+type VersionCheckOptions struct {
+	Home string
+	In   io.Reader
+	Err  io.Writer
+	Now  time.Time
 }
 
 type flags struct {
-	period    string
-	format    string
-	groupBy   string
-	tools     []string
-	models    []string
-	providers []string
-	cwd       string
-	home      string
-	pricing   string
-	lang      string
-	renderTUI bool
-	dryRun    bool
+	period         string
+	format         string
+	groupBy        string
+	tools          []string
+	models         []string
+	providers      []string
+	cwd            string
+	home           string
+	pricing        string
+	lang           string
+	renderTUI      bool
+	dryRun         bool
+	noVersionCheck bool
 }
 
 func New(app App) *cobra.Command {
@@ -53,11 +63,19 @@ func New(app App) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "aitok",
 		Short:         "Offline token usage summaries for AI coding tools",
+		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if app.VersionCheck == nil || f.noVersionCheck {
+				return nil
+			}
+			return app.VersionCheck(cmd.Context(), VersionCheckOptions{Home: resolveHome(f.home), In: os.Stdin, Err: app.Err, Now: app.Now()})
+		},
 	}
 	root.PersistentFlags().StringVar(&f.home, "home", "", "home directory override")
 	root.PersistentFlags().StringVar(&f.pricing, "pricing", "", "pricing JSON override")
+	root.PersistentFlags().BoolVar(&f.noVersionCheck, "no-version-check", false, "skip the low-frequency update check")
 
 	summary := &cobra.Command{
 		Use:   "summary",

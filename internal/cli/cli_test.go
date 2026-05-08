@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +103,43 @@ func TestSetupGeminiDryRunCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Dry run: true") || !strings.Contains(out.String(), "logPrompts") {
 		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestVersionCheckRunsBeforeCommand(t *testing.T) {
+	home := t.TempDir()
+	var called bool
+	cmd := New(App{
+		Out: io.Discard,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			called = true
+			if opts.Home != home {
+				t.Fatalf("home = %q, want %q", opts.Home, home)
+			}
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"--home", home, "doctor"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("version check did not run")
+	}
+}
+
+func TestNoVersionCheckFlagSkipsVersionCheck(t *testing.T) {
+	home := t.TempDir()
+	cmd := New(App{
+		Out: io.Discard,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			t.Fatal("version check should be skipped")
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "doctor"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
 	}
 }
 

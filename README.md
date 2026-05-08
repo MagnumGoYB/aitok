@@ -29,6 +29,8 @@ For local development:
 go install ./cmd/aitok
 ```
 
+`aitok` checks GitHub release metadata at most once every 24 hours before a command runs. If a newer version exists, it prints an upgrade prompt to stderr based on the detected install method. The check does not upload usage data, does not read logs, and can be skipped with `--no-version-check` or `AITOK_NO_VERSION_CHECK=1`.
+
 ## Usage
 
 ```bash

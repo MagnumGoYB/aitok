@@ -73,7 +73,7 @@ Before every product or harness iteration, do a short internal review:
 
 - Every source adapter emits `usage.UsageEvent`.
 - Do not read, store, or display raw API keys. Provider grouping may only use provider/auth_type metadata already present in CLI logs, or `unknown`.
-- Do not add network transmission. Future network features must be off by default, explicitly opt-in, and guarded by harness sensors.
+- Do not add usage-data network transmission. The only command-start network behavior is the low-frequency GitHub release metadata version check, which must never read local logs or upload usage data and must remain skippable with `--no-version-check` or `AITOK_NO_VERSION_CHECK=1`.
 - Cost estimation must remain offline by default. Default prices may be updated from public provider pricing, but automatic network sync must be explicitly requested and opt-in.
 - Gemini CLI historical data depends on an existing local telemetry outfile. When it is not configured, report no parseable historical data.
 - CLI output must stay stable; JSON field changes need tests.
