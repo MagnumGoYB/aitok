@@ -2,7 +2,7 @@
 
 [English](../github-automation.md)
 
-本仓库使用 GitHub 原生自动化覆盖 PR、review 提示、bug report、跨平台构建和 release。
+本仓库使用 GitHub 原生自动化覆盖 PR、review 提示、bug report、pricing-watch 提醒、跨平台构建和 release。
 
 ## Pull Request 流程
 
@@ -29,6 +29,15 @@
 - 构建产物会上传供检查，但不会发布 release。
 - `make build` 仍是本地单平台构建门禁。
 - GitHub Actions workflows 使用 Node 24 action major，例如 `actions/checkout@v6`、`actions/setup-go@v6`、`actions/upload-artifact@v6` 和 `actions/github-script@v8`。
+
+## Pricing Watch 流程
+
+- `.github/workflows/pricing-watch.yml` 每天定时运行，也支持 `workflow_dispatch` 手动触发。
+- Workflow 运行 `go run ./tools/pricing-watch`，抓取 `docs/pricing-sources.json` 中记录的可机器读取官方价格页，检查 model 名称、缓存章节等 required pricing text，并且只对足够稳定的源比对标准化 SHA256。
+- 对阻止自动抓取的官方页面，例如 OpenAI pricing page，在 `docs/pricing-sources.json` 中标记为 `manual_review`；maintainer 在价格更新时人工核对，避免 CI 因反爬响应持续失败。
+- 当官方价格源发生变化时，workflow 会创建或更新一个带 `pricing-watch` label 的 issue，不会自动修改代码。
+- Maintainer 需要人工核对官方价格页，更新 `internal/pricing/pricing.go`，必要时同步测试/文档，然后把新的 required text 或已审核 SHA256 写回 `docs/pricing-sources.json`。
+- 该监控 workflow 是唯一会访问网络的价格相关路径。`aitok` CLI 默认仍保持离线，不会自动同步价格。
 
 ## Release 流程
 

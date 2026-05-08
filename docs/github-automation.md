@@ -2,7 +2,7 @@
 
 [中文](zh-CN/github-automation.md)
 
-This repository uses GitHub-native automation for pull requests, review prompts, bug reports, cross-platform builds, and releases.
+This repository uses GitHub-native automation for pull requests, review prompts, bug reports, pricing-watch alerts, cross-platform builds, and releases.
 
 ## Pull Request Flow
 
@@ -29,6 +29,15 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - Build artifacts are uploaded for inspection without publishing a release.
 - `make build` remains the local single-platform build gate.
 - GitHub Actions workflows use Node 24 action majors such as `actions/checkout@v6`, `actions/setup-go@v6`, `actions/upload-artifact@v6`, and `actions/github-script@v8`.
+
+## Pricing Watch Flow
+
+- `.github/workflows/pricing-watch.yml` runs daily and on `workflow_dispatch`.
+- The workflow runs `go run ./tools/pricing-watch`, which fetches machine-readable official pricing pages listed in `docs/pricing-sources.json`, verifies required pricing text such as model names and cache sections, and compares normalized SHA256 values only for sources stable enough to hash.
+- Official pages that block automated fetches, such as the OpenAI pricing page, are marked `manual_review` in `docs/pricing-sources.json`; maintainers review them during pricing updates instead of letting CI fail on anti-bot responses.
+- When an official pricing source changes, the workflow opens or updates one issue labeled `pricing-watch` instead of changing code automatically.
+- Maintainers must review the official pricing page, update `internal/pricing/pricing.go`, adjust tests/docs when needed, and then update `docs/pricing-sources.json` with any new required text or reviewed SHA256 value.
+- This monitoring workflow is the only pricing path that performs network access. The `aitok` CLI remains offline by default and never syncs prices automatically.
 
 ## Release Flow
 

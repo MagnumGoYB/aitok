@@ -11,7 +11,7 @@ import (
 )
 
 func TestRenderSmoke(t *testing.T) {
-	view := Render(report.Payload{
+	view := RenderWidth(report.Payload{
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},
 		Results: []query.Result{{
 			Key:      map[string]string{"tool": "codex", "model": "gpt-5.4"},
@@ -20,7 +20,7 @@ func TestRenderSmoke(t *testing.T) {
 			Usage:    usage.TokenUsage{Input: 1000, Output: 200, CachedInput: 50, CacheCreation: 25},
 			CostUSD:  0.1234,
 		}},
-	})
+	}, 140)
 	for _, expected := range []string{
 		"使用统计",
 		"查看 AI 模型的使用情况和成本统计",

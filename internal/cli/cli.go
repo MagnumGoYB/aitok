@@ -34,6 +34,7 @@ type flags struct {
 	cwd       string
 	home      string
 	pricing   string
+	renderTUI bool
 	dryRun    bool
 }
 
@@ -91,10 +92,15 @@ func New(app App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if f.renderTUI {
+				fmt.Fprint(app.Out, tui.RenderWidth(payload, 140))
+				return nil
+			}
 			return tui.Run(app.Out, payload)
 		},
 	}
 	addQueryFlags(tuiCmd, f)
+	tuiCmd.Flags().BoolVar(&f.renderTUI, "render", false, "render the dashboard once without starting the interactive TUI")
 
 	doctor := &cobra.Command{
 		Use:   "doctor",

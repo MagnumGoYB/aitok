@@ -1,0 +1,61 @@
+name: Pricing Watch
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  pricing-watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+      - name: Check official pricing sources
+        id: pricing
+        continue-on-error: true
+        run: |
+          set +e
+          go run ./tools/pricing-watch --out pricing-watch.md
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/github-script@v8
+        if: steps.pricing.outputs.status == '1'
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- aitok-pricing-watch -->';
+            const report = fs.readFileSync('pricing-watch.md', 'utf8');
+            const body = `${marker}
+            ${report}`;
+            const { owner, repo } = context.repo;
+            const issues = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'pricing-watch',
+              per_page: 100,
+            });
+            const existing = issues.data.find((issue) => issue.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: 'Review official model pricing changes',
+                body,
+                labels: ['pricing-watch'],
+              });
+            }
+      - name: Fail after filing pricing watch issue
+        if: steps.pricing.outputs.status == '1'
+        run: exit 1

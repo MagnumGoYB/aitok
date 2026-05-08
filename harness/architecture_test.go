@@ -78,11 +78,23 @@ func TestOfflineCostEstimationContractStaysVisible(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoRoot(t), "internal", "pricing", "pricing.go")); err != nil {
 		t.Fatalf("missing offline pricing package: %v", err)
 	}
+	for _, path := range []string{
+		"docs/pricing-sources.json",
+		"tools/pricing-watch/main.go",
+		"tools/pricing-watch/main_test.go",
+		".github/workflows/pricing-watch.yml",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot(t), path)); err != nil {
+			t.Fatalf("missing pricing source monitoring file %s: %v", path, err)
+		}
+	}
 	combinedDocs := strings.Join([]string{
 		read(t, "README.md"),
 		read(t, "README.zh-CN.md"),
 		read(t, "AGENTS.md"),
 		read(t, "AGENTS.zh-CN.md"),
+		read(t, "docs", "github-automation.md"),
+		read(t, "docs", "zh-CN", "github-automation.md"),
 	}, "\n")
 	for _, expected := range []string{
 		"~/.aitok/pricing.json",
@@ -90,6 +102,9 @@ func TestOfflineCostEstimationContractStaysVisible(t *testing.T) {
 		"USD",
 		"multiplier",
 		"离线价格表",
+		"pricing-watch",
+		"official pricing",
+		"manual_review",
 	} {
 		if !strings.Contains(combinedDocs, expected) {
 			t.Fatalf("cost estimation docs must mention %s", expected)
@@ -101,6 +116,20 @@ func TestOfflineCostEstimationContractStaysVisible(t *testing.T) {
 	} {
 		if strings.Contains(combinedDocs, forbidden) {
 			t.Fatalf("agent docs must not mark offline cost estimation out of scope: %s", forbidden)
+		}
+	}
+
+	workflow := read(t, ".github", "workflows", "pricing-watch.yml")
+	for _, expected := range []string{
+		"schedule:",
+		"workflow_dispatch:",
+		"issues: write",
+		"go run ./tools/pricing-watch",
+		"actions/github-script@v8",
+		"pricing-watch",
+	} {
+		if !strings.Contains(workflow, expected) {
+			t.Fatalf("pricing watch workflow must mention %s", expected)
 		}
 	}
 }

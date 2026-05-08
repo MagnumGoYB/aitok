@@ -28,13 +28,21 @@ func NewModel(payload report.Payload) model {
 }
 
 func Run(out io.Writer, payload report.Payload) error {
-	program := tea.NewProgram(NewModel(payload), tea.WithOutput(out))
+	program := tea.NewProgram(NewModel(payload), tea.WithOutput(out), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := program.Run()
 	return err
 }
 
 func Render(payload report.Payload) string {
 	return NewModel(payload).View()
+}
+
+func RenderWidth(payload report.Payload, width int) string {
+	m := NewModel(payload)
+	if width > 0 {
+		m.width = width
+	}
+	return m.View()
 }
 
 func (m model) Init() tea.Cmd {
@@ -86,6 +94,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.width <= 0 {
+		m.width = 120
+	}
 	results := m.filteredResults()
 	summary := summarize(results)
 	var b strings.Builder
@@ -95,12 +106,7 @@ func (m model) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.toolbar())
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-		card("总请求数", formatInt(int64(summary.requests)), "↯", blue),
-		card("总成本", report.FormatUSD(summary.cost), "$", green),
-		card("总 Token 数", formatInt(summary.total), "▱", purple),
-		card("缓存 Token", formatInt(summary.cached), "◉", orange),
-	))
+	b.WriteString(m.cards(summary))
 	b.WriteString("\n\n")
 	b.WriteString(sectionStyle.Render("模型用量"))
 	b.WriteString("\n")
@@ -134,7 +140,33 @@ func (m model) toolbar() string {
 		date = "当日"
 	}
 	right := mutedStyle.Render("↻ 30s   📅 " + date)
-	return toolbarStyle.Render(lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(tabs, "  "), "     ", search, "     ", right))
+	content := lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(tabs, "  "), "     ", search, "     ", right)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Width(clamp(m.width-4, 72, 180)).
+		Render(content)
+}
+
+func (m model) cards(summary totals) string {
+	cardWidth := 24
+	if m.width >= 132 {
+		cardWidth = (m.width - 14) / 4
+	}
+	cards := []string{
+		cardWithWidth("总请求数", formatInt(int64(summary.requests)), "↯", blue, cardWidth),
+		cardWithWidth("总成本", report.FormatUSD(summary.cost), "$", green, cardWidth),
+		cardWithWidth("总 Token 数", formatInt(summary.total), "▱", purple, cardWidth),
+		cardWithWidth("缓存 Token", formatInt(summary.cached), "◉", orange, cardWidth),
+	}
+	if m.width < 96 {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			lipgloss.JoinHorizontal(lipgloss.Top, cards[0], cards[1]),
+			lipgloss.JoinHorizontal(lipgloss.Top, cards[2], cards[3]),
+		)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, cards...)
 }
 
 func (m model) tab(value, label string) string {
@@ -245,8 +277,19 @@ func formatKey(key map[string]string) string {
 }
 
 func card(label, value, icon string, color lipgloss.Color) string {
+	return cardWithWidth(label, value, icon, color, 24)
+}
+
+func cardWithWidth(label, value, icon string, color lipgloss.Color, width int) string {
 	iconStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
-	return cardStyle.Render(labelStyle.Render(label) + "\n\n" + valueStyle.Render(value) + "  " + iconStyle.Render(icon))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Width(width).
+		Height(5).
+		MarginRight(2).
+		Render(labelStyle.Render(label) + "\n\n" + valueStyle.Render(value) + "  " + iconStyle.Render(icon))
 }
 
 func formatInt(value int64) string {
@@ -283,6 +326,16 @@ func truncate(value string, width int) string {
 	return value[:width-1] + "…"
 }
 
+func clamp(value, min, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
 var (
 	blue   = lipgloss.Color("39")
 	green  = lipgloss.Color("35")
@@ -291,10 +344,8 @@ var (
 
 	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	subtitleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	toolbarStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(1, 2)
 	activeTabStyle = lipgloss.NewStyle().Foreground(blue).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
 	tabStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
-	cardStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(1, 2).Width(24).Height(5).MarginRight(2)
 	labelStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	valueStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	sectionStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
