@@ -2,7 +2,7 @@
 
 [English](../github-automation.md)
 
-本仓库使用 GitHub 原生自动化覆盖 PR、review 提示、bug report、pricing-watch 提醒、跨平台构建和 release。
+本仓库使用 GitHub 原生自动化覆盖 PR、CodeRabbit review、review 提示、Dependabot 自动合并、bug report、pricing-watch 提醒、跨平台构建和 release。
 
 ## Pull Request 流程
 
@@ -12,6 +12,9 @@
 
 ## Review 流程
 
+- `.coderabbit.yaml` 配置针对 `main` 目标分支 PR 的 CodeRabbit 自动 review。
+- CodeRabbit review 使用 zh-CN 评论、assertive profile、request-changes workflow，并对 Go 代码、GitHub workflows、docs 和 harness 文件设置路径级审查指令。
+- 仓库 PR 仍需要安装 CodeRabbit GitHub App；YAML 文件只定义仓库级行为。
 - `.github/workflows/pr-review.yml` 会在新建或更新 PR 时发布 checklist 评论。
 - Checklist 提醒 reviewer 检查离线/隐私边界、source adapter 流式扫描、fixture 覆盖、CLI 输出稳定性和 release 影响。
 - `.github/CODEOWNERS` 为 adapter、query/report、harness 和 GitHub workflows 等核心区域请求 review。
@@ -55,4 +58,7 @@
 ## Dependabot
 
 - `.github/dependabot.yml` 每周检查 GitHub Actions 和 Go module 更新。
-- 依赖更新仍必须通过 `make validate`，并在相关时说明体积、离线行为和供应链影响。
+- `.github/workflows/dependabot-auto-merge.yml` 只为非 draft 且不是 semantic major version 的 Dependabot PR 启用 GitHub auto-merge。
+- Major 依赖更新保持人工处理，因为需要明确 review 二进制体积、离线行为和供应链影响。
+- GitHub 仓库设置已启用 auto-merge 和 delete-branch-on-merge，供该 workflow 使用。
+- `main` branch protection 要求 `metadata`、`test` 和各平台 build checks 通过后，GitHub auto-merge 才能落地 PR。

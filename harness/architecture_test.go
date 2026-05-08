@@ -163,9 +163,11 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 		".github/workflows/ci.yml",
 		".github/workflows/pr.yml",
 		".github/workflows/pr-review.yml",
+		".github/workflows/dependabot-auto-merge.yml",
 		".github/workflows/build.yml",
 		".github/workflows/release.yml",
 		".github/dependabot.yml",
+		".coderabbit.yaml",
 		".github/CODEOWNERS",
 		".github/ISSUE_TEMPLATE/bug_report.yml",
 	} {
@@ -178,12 +180,70 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 	}
 }
 
+func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *testing.T) {
+	coderabbit := read(t, ".coderabbit.yaml")
+	for _, expected := range []string{
+		"schema=https://coderabbit.ai/integrations/schema.v2.json",
+		`language: "zh-CN"`,
+		`profile: "assertive"`,
+		"request_changes_workflow: true",
+		"auto_review:",
+		"enabled: true",
+		`- "main"`,
+		"path_instructions:",
+		`path: "**/*.go"`,
+		`path: ".github/workflows/**"`,
+		`path: "docs/**"`,
+		`path: "harness/**"`,
+	} {
+		if !strings.Contains(coderabbit, expected) {
+			t.Fatalf(".coderabbit.yaml must contain %s", expected)
+		}
+	}
+
+	autoMerge := read(t, ".github", "workflows", "dependabot-auto-merge.yml")
+	for _, expected := range []string{
+		"pull_request_target:",
+		"contents: write",
+		"pull-requests: write",
+		"dependabot[bot]",
+		"dependabot/fetch-metadata@v2",
+		"version-update:semver-major",
+		"gh pr merge --auto --squash --delete-branch",
+	} {
+		if !strings.Contains(autoMerge, expected) {
+			t.Fatalf("Dependabot auto-merge workflow must contain %s", expected)
+		}
+	}
+	if strings.Contains(autoMerge, "github.event.pull_request.user.login != 'dependabot[bot]'") {
+		t.Fatal("Dependabot auto-merge workflow must not invert the Dependabot author guard")
+	}
+
+	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
+	for _, expected := range []string{
+		".coderabbit.yaml",
+		"CodeRabbit",
+		".github/workflows/dependabot-auto-merge.yml",
+		"auto-merge",
+		"delete-branch-on-merge",
+		"branch protection",
+		"semantic major",
+		"metadata",
+		"platform build checks",
+	} {
+		if !strings.Contains(docs, expected) {
+			t.Fatalf("GitHub automation docs must mention %s", expected)
+		}
+	}
+}
+
 func TestGitHubActionsUseCurrentRuntimeAndPinnedTooling(t *testing.T) {
 	workflows := strings.Join([]string{
 		read(t, ".github", "workflows", "build.yml"),
 		read(t, ".github", "workflows", "ci.yml"),
 		read(t, ".github", "workflows", "pr.yml"),
 		read(t, ".github", "workflows", "pr-review.yml"),
+		read(t, ".github", "workflows", "dependabot-auto-merge.yml"),
 		read(t, ".github", "workflows", "release.yml"),
 	}, "\n")
 	for _, forbidden := range []string{

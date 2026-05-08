@@ -2,7 +2,7 @@
 
 [中文](zh-CN/github-automation.md)
 
-This repository uses GitHub-native automation for pull requests, review prompts, bug reports, pricing-watch alerts, cross-platform builds, and releases.
+This repository uses GitHub-native automation for pull requests, CodeRabbit reviews, review prompts, Dependabot auto-merge, bug reports, pricing-watch alerts, cross-platform builds, and releases.
 
 ## Pull Request Flow
 
@@ -12,6 +12,9 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 
 ## Review Flow
 
+- `.coderabbit.yaml` configures CodeRabbit automatic reviews for PRs targeting `main`.
+- CodeRabbit reviews use zh-CN comments, an assertive profile, request-changes workflow, and path-specific instructions for Go code, GitHub workflows, docs, and harness files.
+- CodeRabbit must still be installed as the GitHub App for repository PRs; the YAML file only defines repository-specific behavior.
 - `.github/workflows/pr-review.yml` posts a checklist comment on new or updated pull requests.
 - The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, and release impact.
 - `.github/CODEOWNERS` requests review for core areas such as adapters, query/report code, harness, and GitHub workflows.
@@ -55,4 +58,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 ## Dependabot
 
 - `.github/dependabot.yml` checks GitHub Actions and Go module updates weekly.
-- Dependency updates must still pass `make validate` and explain binary-size/offline/supply-chain impact when relevant.
+- `.github/workflows/dependabot-auto-merge.yml` enables GitHub auto-merge only for non-draft Dependabot PRs that are not semantic major version updates.
+- Major dependency updates stay manual because they need explicit binary-size, offline behavior, and supply-chain impact review.
+- Repository auto-merge and delete-branch-on-merge are enabled in GitHub settings for this workflow.
+- The `main` branch protection requires the `metadata`, `test`, and platform build checks to pass before GitHub auto-merge can land a PR.

@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "zh-CN"
+early_access: false
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 10
+    labels:
+      - "!do-not-review"
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Check that local log parsing remains streaming, CLI output stays stable, and production packages do not import harness or tools packages.
+        Flag any path that reads, stores, prints, hashes, fingerprints, or uploads raw API keys or usage logs.
+    - path: ".github/workflows/**"
+      instructions: |
+        Check that GitHub workflows keep least-privilege permissions, preserve offline/privacy boundaries, and keep release automation aligned with docs/github-automation.md.
+        For auto-merge changes, verify the workflow is limited to Dependabot and does not bypass required validation.
+    - path: "docs/**"
+      instructions: |
+        Check that public documentation changes keep the zh-CN counterpart aligned and do not claim exact billing reconciliation.
+    - path: "harness/**"
+      instructions: |
+        Check that harness tests validate repository structure and automation contracts only, without importing production internal packages.
+chat:
+  auto_reply: true

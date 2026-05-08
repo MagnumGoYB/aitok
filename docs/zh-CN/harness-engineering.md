@@ -58,9 +58,11 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 
 ## GitHub 自动化覆盖
 
-- `docs/github-automation.md` 和 `docs/zh-CN/github-automation.md` 记录 PR、review、bugfix、build、release 和 Dependabot 流程。
+- `docs/github-automation.md` 和 `docs/zh-CN/github-automation.md` 记录 PR、CodeRabbit review、bugfix、build、release 和 Dependabot 自动合并流程。
 - `.github/workflows/pr.yml` 校验真实 PR 元数据。
 - `.github/workflows/pr-review.yml` 发布 review checklist。
+- `.coderabbit.yaml` 配置仓库级 CodeRabbit PR review 行为。
+- `.github/workflows/dependabot-auto-merge.yml` 只为非 major Dependabot 更新启用 GitHub auto-merge。
 - `.github/workflows/build.yml` 上传跨平台构建产物。
 - `.github/workflows/release.yml` 通过 GoReleaser 发布 tag release。
 - `.github/ISSUE_TEMPLATE/bug_report.yml`、`.github/CODEOWNERS` 和 `.github/dependabot.yml` 明确开源维护路径。
