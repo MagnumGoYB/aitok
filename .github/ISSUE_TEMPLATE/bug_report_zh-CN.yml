@@ -1,0 +1,57 @@
+name: Bug report zh-CN
+description: 报告 Token 统计或 CLI 行为错误
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请从日志中移除 API Key、prompt、私有路径和个人数据。
+  - type: dropdown
+    id: tool
+    attributes:
+      label: 受影响工具
+      options:
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - 多个工具
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: aitok 版本或 commit
+      placeholder: v0.1.0 或 commit SHA
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: 命令
+      placeholder: aitok summary --period today --format json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_logs
+    attributes:
+      label: 脱敏日志或 fixture
+      description: 请移除 API Key、prompt、私有路径和个人数据。
+      render: text
+  - type: textarea
+    id: validation
+    attributes:
+      label: 已尝试验证
+      placeholder: make test, make build, aitok doctor, etc.

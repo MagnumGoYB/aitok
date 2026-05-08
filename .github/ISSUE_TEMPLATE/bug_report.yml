@@ -1,0 +1,57 @@
+name: Bug report
+description: Report incorrect token accounting or CLI behavior
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please remove API keys, prompts, private paths, and personal data from logs.
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Affected tool
+      options:
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - Multiple tools
+        - Unknown
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: aitok version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      placeholder: aitok summary --period today --format json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_logs
+    attributes:
+      label: Sanitized logs or fixture
+      description: Remove API keys, prompts, private paths, and personal data.
+      render: text
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation attempted
+      placeholder: make test, make build, aitok doctor, etc.

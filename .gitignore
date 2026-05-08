@@ -1,0 +1,5 @@
+aitok
+dist/
+coverage.out
+.DS_Store
+.superpowers/

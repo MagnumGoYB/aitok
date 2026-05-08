@@ -1,0 +1,11 @@
+# Default owner for open-source review routing.
+* @sosbs
+
+# High-risk areas need maintainer review.
+/internal/sources/ @sosbs
+/internal/query/ @sosbs
+/internal/report/ @sosbs
+/harness/ @sosbs
+/tools/ @sosbs
+/.github/ @sosbs
+/.goreleaser.yml @sosbs
