@@ -5,7 +5,19 @@ before:
     - go mod tidy
 
 builds:
-  - id: aitok
+  - id: aitok-darwin
+    main: ./cmd/aitok
+    binary: aitok
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: aitok-linux
     main: ./cmd/aitok
     binary: aitok
     ldflags:
@@ -14,26 +26,38 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
+  - id: aitok-windows
+    main: ./cmd/aitok
+    binary: aitok
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
 
 archives:
-  - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
+  - id: darwin
+    ids: [aitok-darwin]
+    formats: [tar.gz]
+  - id: linux
+    ids: [aitok-linux]
+    formats: [tar.gz]
+  - id: windows
+    ids: [aitok-windows]
+    formats: [zip]
 
 checksum:
   name_template: checksums.txt
 
 homebrew_casks:
   - name: aitok
+    ids: [darwin]
     repository:
       owner: MagnumGoYB
       name: homebrew-aitok

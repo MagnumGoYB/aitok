@@ -46,6 +46,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - On `main`, the release workflow validates the project but does not publish a GitHub Release.
 - On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums, platform archives, and the Homebrew cask.
 - The Homebrew cask is published to the `MagnumGoYB/homebrew-aitok` tap and installs with `brew tap MagnumGoYB/aitok` followed by `brew install --cask aitok`; docs intentionally avoid the fully qualified cask name because it repeats `aitok`.
+- The cask is generated from the macOS archive set only. Linux and Windows archives are still published as GitHub Release assets, but they are not included in the Homebrew cask DSL.
 - The generated cask runs a post-install macOS `xattr` hook for the installed `aitok` binary so unsigned CLI archives do not remain quarantined after Homebrew installation.
 - GitHub Releases use `GITHUB_TOKEN`; publishing the tap requires the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`, because the default workflow token cannot write to the separate `homebrew-aitok` repository.
 - The release workflow pins GoReleaser v2 instead of using `latest`.

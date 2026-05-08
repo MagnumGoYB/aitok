@@ -284,6 +284,8 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 	for _, expected := range []string{
 		"homebrew_casks:",
 		"name: aitok",
+		"ids: [darwin]",
+		"id: aitok-darwin",
 		"binaries:",
 		"- aitok",
 		"owner: MagnumGoYB",
@@ -314,6 +316,7 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 		"GoReleaser",
 		"HOMEBREW_TAP_GITHUB_TOKEN",
 		"homebrew-aitok",
+		"macOS archive",
 		"quarantine",
 	} {
 		if !strings.Contains(readme+"\n"+docs, expected) {
