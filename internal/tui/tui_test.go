@@ -119,6 +119,13 @@ func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
 	}
 }
 
+func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
+	view := RenderWidth(samplePayload(), 140)
+	if !strings.Contains(view, "1,225\n\nModel") {
+		t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
+	}
+}
+
 func samplePayload() report.Payload {
 	return report.Payload{
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},

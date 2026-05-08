@@ -138,7 +138,7 @@ func (m model) View() string {
 		b.WriteString("\n")
 	} else {
 		b.WriteString(m.chart(results, summary.total))
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		b.WriteString(m.table(results))
 	}
 	b.WriteString("\n")
