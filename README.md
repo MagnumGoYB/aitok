@@ -9,7 +9,7 @@ It does not upload data, read API keys, or estimate cost. All summaries are buil
 ## Install
 
 ```bash
-go install github.com/sosbs/aitok/cmd/aitok@latest
+go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 ```
 
 For local development:

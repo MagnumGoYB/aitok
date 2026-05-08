@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/sosbs/aitok/internal/query"
-	"github.com/sosbs/aitok/internal/report"
-	"github.com/sosbs/aitok/internal/setup"
-	"github.com/sosbs/aitok/internal/sources"
-	"github.com/sosbs/aitok/internal/tui"
+	"github.com/MagnumGoYB/aitok/internal/query"
+	"github.com/MagnumGoYB/aitok/internal/report"
+	"github.com/MagnumGoYB/aitok/internal/setup"
+	"github.com/MagnumGoYB/aitok/internal/sources"
+	"github.com/MagnumGoYB/aitok/internal/tui"
 	"github.com/spf13/cobra"
 )
 

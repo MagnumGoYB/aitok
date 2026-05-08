@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagnumGoYB/aitok/internal/report"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sosbs/aitok/internal/report"
 )
 
 type model struct {

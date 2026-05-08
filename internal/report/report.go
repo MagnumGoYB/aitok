@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/sosbs/aitok/internal/query"
+	"github.com/MagnumGoYB/aitok/internal/query"
 )
 
 type Payload struct {

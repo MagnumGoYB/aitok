@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sosbs/aitok/internal/usage"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 type Filters struct {

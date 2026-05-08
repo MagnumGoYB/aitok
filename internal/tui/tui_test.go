@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sosbs/aitok/internal/query"
-	"github.com/sosbs/aitok/internal/report"
+	"github.com/MagnumGoYB/aitok/internal/query"
+	"github.com/MagnumGoYB/aitok/internal/report"
 )
 
 func TestRenderSmoke(t *testing.T) {

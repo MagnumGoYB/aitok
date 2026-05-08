@@ -1,4 +1,4 @@
-module github.com/sosbs/aitok
+module github.com/MagnumGoYB/aitok
 
 go 1.26.3
 

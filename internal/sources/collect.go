@@ -3,7 +3,7 @@ package sources
 import (
 	"context"
 
-	"github.com/sosbs/aitok/internal/usage"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 func Defaults(opts Options) []Source {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sosbs/aitok/internal/query"
-	"github.com/sosbs/aitok/internal/usage"
+	"github.com/MagnumGoYB/aitok/internal/query"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 func TestWriteJSONAndMarkdown(t *testing.T) {

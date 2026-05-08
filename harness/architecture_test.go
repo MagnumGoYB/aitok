@@ -34,6 +34,25 @@ func TestHarnessDocsAndCommandsStayAligned(t *testing.T) {
 	}
 }
 
+func TestModulePathMatchesGitHubRepository(t *testing.T) {
+	combined := strings.Join([]string{
+		read(t, "go.mod"),
+		read(t, "README.md"),
+		read(t, "README.zh-CN.md"),
+		read(t, "cmd", "aitok", "main.go"),
+		read(t, "internal", "cli", "cli.go"),
+	}, "\n")
+	if !strings.Contains(read(t, "go.mod"), "module github.com/MagnumGoYB/aitok") {
+		t.Fatal("go.mod module path must match the public GitHub repository")
+	}
+	if !strings.Contains(read(t, "README.md"), "go install github.com/MagnumGoYB/aitok/cmd/aitok@latest") {
+		t.Fatal("README install command must use the public GitHub repository path")
+	}
+	if strings.Contains(combined, "github.com/sosbs/aitok") {
+		t.Fatal("repository docs and imports must not use the old github.com/sosbs/aitok path")
+	}
+}
+
 func TestPrivacyAndOfflineConstraintsStayVisible(t *testing.T) {
 	combined := strings.Join([]string{
 		read(t, "AGENTS.md"),
@@ -248,10 +267,10 @@ func TestHarnessPackageDoesNotImportProductionInternals(t *testing.T) {
 		}
 		content := read(t, "harness", entry.Name())
 		for _, forbidden := range []string{
-			`github.com/sosbs/aitok/internal/sources`,
-			`github.com/sosbs/aitok/internal/query`,
-			`github.com/sosbs/aitok/internal/report`,
-			`github.com/sosbs/aitok/internal/setup`,
+			`github.com/MagnumGoYB/aitok/internal/sources`,
+			`github.com/MagnumGoYB/aitok/internal/query`,
+			`github.com/MagnumGoYB/aitok/internal/report`,
+			`github.com/MagnumGoYB/aitok/internal/setup`,
 		} {
 			quotedImport := `"` + forbidden + `"`
 			if strings.Contains(content, quotedImport) {

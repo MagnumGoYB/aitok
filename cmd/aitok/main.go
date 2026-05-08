@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sosbs/aitok/internal/cli"
+	"github.com/MagnumGoYB/aitok/internal/cli"
 )
 
 func main() {

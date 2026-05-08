@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sosbs/aitok/internal/usage"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 type Codex struct {

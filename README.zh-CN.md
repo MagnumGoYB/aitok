@@ -9,7 +9,7 @@
 ## 安装
 
 ```bash
-go install github.com/sosbs/aitok/cmd/aitok@latest
+go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 ```
 
 本地开发：

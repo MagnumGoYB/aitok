@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sosbs/aitok/internal/usage"
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 func TestAggregateFiltersAndGroups(t *testing.T) {
