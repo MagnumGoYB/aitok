@@ -15,6 +15,8 @@ brew tap MagnumGoYB/aitok
 brew install --cask aitok
 ```
 
+先执行 tap 可以保持安装命令简洁，避免使用较不规范的完整 cask 名称。
+
 Go：
 
 ```bash

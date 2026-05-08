@@ -289,6 +289,9 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 		"owner: MagnumGoYB",
 		"name: homebrew-aitok",
 		"token: \"{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}\"",
+		"hooks:",
+		"com.apple.quarantine",
+		"#{staged_path}/aitok",
 	} {
 		if !strings.Contains(goreleaser, expected) {
 			t.Fatalf(".goreleaser.yml must contain %s", expected)
@@ -311,10 +314,14 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 		"GoReleaser",
 		"HOMEBREW_TAP_GITHUB_TOKEN",
 		"homebrew-aitok",
+		"quarantine",
 	} {
 		if !strings.Contains(readme+"\n"+docs, expected) {
 			t.Fatalf("README and GitHub automation docs must mention %s", expected)
 		}
+	}
+	if strings.Contains(readme+"\n"+docs, "MagnumGoYB/aitok/aitok") {
+		t.Fatal("Homebrew docs must not use the repetitive fully qualified cask name")
 	}
 }
 
