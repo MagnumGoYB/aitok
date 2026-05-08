@@ -45,27 +45,31 @@ func TestCodexAssociatesContextWithTokenCounts(t *testing.T) {
 	}
 }
 
-func TestCodexKeepsLatestTokenSnapshotPerTurn(t *testing.T) {
+func TestCodexKeepsDistinctTokenCountsWithinTurn(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
 	mustMkdir(t, dir)
 	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}` + "\n" +
 		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
 		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}` + "\n" +
-		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:04Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
 	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
 	events, err := NewCodex(Options{Home: home}).Read(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("len(events) = %d, want 1", len(events))
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Usage.Input != 20 || events[0].Usage.Output != 4 {
-		t.Fatalf("unexpected latest snapshot: %+v", events[0])
+	if events[0].Usage.Input != 10 || events[0].Usage.Output != 2 {
+		t.Fatalf("unexpected first token count: %+v", events[0])
 	}
-	if got := events[0].Timestamp.Format("15:04:05"); got != "01:00:03" {
-		t.Fatalf("timestamp = %s, want latest token_count timestamp", got)
+	if events[1].Usage.Input != 20 || events[1].Usage.Output != 4 {
+		t.Fatalf("unexpected second token count: %+v", events[1])
+	}
+	if got := events[1].Timestamp.Format("15:04:05"); got != "01:00:04" {
+		t.Fatalf("timestamp = %s, want latest duplicate token_count timestamp", got)
 	}
 }
 

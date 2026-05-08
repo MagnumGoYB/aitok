@@ -162,7 +162,7 @@ func (m model) toolbar(copy localizedCopy) string {
 	if m.payload.Window.Start.IsZero() {
 		date = copy.today
 	}
-	right := mutedStyle.Render("↻ 30s   📅 " + date)
+	right := mutedStyle.Render("📅 " + date)
 	content := lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(tabs, "  "), "     ", search, "     ", right)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

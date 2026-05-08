@@ -94,6 +94,7 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	if rawUsage == nil {
 		return usage.UsageEvent{}, false
 	}
+	rawTotalUsage := objectValue(info["total_token_usage"])
 	ts, err := time.Parse(time.RFC3339Nano, stringValue(obj["timestamp"]))
 	if err != nil {
 		return usage.UsageEvent{}, false
@@ -108,10 +109,7 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	if tokens.NormalizedTotal() == 0 && tokens.CachedInput == 0 && tokens.Reasoning == 0 {
 		return usage.UsageEvent{}, false
 	}
-	id := state.turnID
-	if id == "" {
-		id = codexHash(path, state, tokens)
-	}
+	id := codexHash(ts, tokens, codexUsageFingerprint(rawTotalUsage))
 	return usage.UsageEvent{
 		ID:        id,
 		Timestamp: ts,
@@ -143,7 +141,28 @@ func codexTurnID(obj map[string]any, payload map[string]any) string {
 	return ""
 }
 
-func codexHash(path string, state codexState, tokens usage.TokenUsage) string {
-	h := sha1.Sum([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%d|%d", path, state.turnID, state.provider, state.model, tokens.Input, tokens.Output, tokens.CachedInput, tokens.Reasoning, tokens.Total)))
+func codexUsageFingerprint(rawUsage map[string]any) string {
+	if rawUsage == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d|%d|%d|%d|%d",
+		intValue(rawUsage["input_tokens"]),
+		intValue(rawUsage["cached_input_tokens"]),
+		intValue(rawUsage["output_tokens"]),
+		intValue(rawUsage["reasoning_output_tokens"]),
+		intValue(rawUsage["total_tokens"]),
+	)
+}
+
+func codexHash(timestamp time.Time, tokens usage.TokenUsage, totalFingerprint string) string {
+	h := sha1.Sum([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|%d|%s",
+		timestamp.Format("2006-01-02"),
+		tokens.Input,
+		tokens.Output,
+		tokens.CachedInput,
+		tokens.Reasoning,
+		tokens.Total,
+		totalFingerprint,
+	)))
 	return hex.EncodeToString(h[:])
 }

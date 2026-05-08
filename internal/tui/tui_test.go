@@ -38,6 +38,9 @@ func TestRenderSmoke(t *testing.T) {
 			t.Fatalf("default TUI render must prefer English and not include %q: %s", unexpected, view)
 		}
 	}
+	if strings.Contains(view, "↻ 30s") {
+		t.Fatalf("TUI toolbar must not render auto-refresh copy: %s", view)
+	}
 }
 
 func TestRenderChinese(t *testing.T) {
