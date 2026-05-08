@@ -35,7 +35,7 @@
 - Release job 通过 `tools/version` 读取 `VERSION`；tag release 必须与 `VERSION` 匹配为 `v<version>`。
 - 在 `main` 上，release workflow 只验证项目，不发布 GitHub Release。
 - 在匹配的 `v*` tag 上，release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和、多平台 archive 和 Homebrew cask。
-- Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew install --cask MagnumGoYB/aitok/aitok` 安装。
+- Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew tap MagnumGoYB/aitok` 后执行 `brew install --cask aitok` 安装。
 - GitHub Release 使用 `GITHUB_TOKEN`；发布 tap 需要仓库 secret `HOMEBREW_TAP_GITHUB_TOKEN`，因为默认 workflow token 不能写入独立的 `homebrew-aitok` 仓库。
 - Release 自动化不新增外部 telemetry 或 usage 上传。
 

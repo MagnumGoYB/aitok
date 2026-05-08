@@ -11,7 +11,8 @@ It does not upload data, read API keys, or estimate cost. All summaries are buil
 Homebrew:
 
 ```bash
-brew install --cask MagnumGoYB/aitok/aitok
+brew tap MagnumGoYB/aitok
+brew install --cask aitok
 ```
 
 Go:

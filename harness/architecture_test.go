@@ -198,7 +198,8 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 		}
 	}
 	for _, expected := range []string{
-		"brew install --cask MagnumGoYB/aitok/aitok",
+		"brew tap MagnumGoYB/aitok",
+		"brew install --cask aitok",
 		"GoReleaser",
 		"HOMEBREW_TAP_GITHUB_TOKEN",
 		"homebrew-aitok",
