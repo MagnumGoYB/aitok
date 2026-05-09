@@ -161,7 +161,9 @@ func New(app App) *cobra.Command {
 				return err
 			}
 			if payload.UnpricedEvents > 0 {
-				fmt.Fprintf(app.Err, "warning: %d events had no matching price; estimated cost may be low\n", payload.UnpricedEvents)
+				if _, err := fmt.Fprintf(app.Err, "warning: %d events had no matching price; estimated cost may be low\n", payload.UnpricedEvents); err != nil {
+					return err
+				}
 			}
 			if payload.Exceeded {
 				return budgetExceededError{Limit: payload.LimitUSD, Total: payload.TotalUSD}

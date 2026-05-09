@@ -101,6 +101,28 @@ func TestCodexKeepsDistinctTokenCountsWithinTurn(t *testing.T) {
 	}
 }
 
+func TestCodexKeepsMatchingTokenCountsAcrossTurns(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].ID == events[1].ID {
+		t.Fatalf("matching token counts across turns must keep unique ids: %q", events[0].ID)
+	}
+}
+
 type streamingSource struct {
 	scanStarted   bool
 	afterCallback bool

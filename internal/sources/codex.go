@@ -117,7 +117,7 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	}
 	id := codexHash(ts, tokens, codexUsageFingerprint(rawTotalUsage))
 	return usage.UsageEvent{
-		ID:        id,
+		ID:        state.turnID + ":" + id,
 		Timestamp: ts,
 		Tool:      usage.ToolCodex,
 		Model:     usage.Unknown(state.model),
