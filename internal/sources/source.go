@@ -12,6 +12,7 @@ import (
 type Source interface {
 	Name() usage.Tool
 	Read(ctx context.Context) ([]usage.UsageEvent, error)
+	Scan(ctx context.Context, handle func(usage.UsageEvent) error) error
 }
 
 type Options struct {

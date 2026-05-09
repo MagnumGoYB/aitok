@@ -24,21 +24,29 @@ func (g Gemini) Name() usage.Tool {
 }
 
 func (g Gemini) Read(ctx context.Context) ([]usage.UsageEvent, error) {
+	var events []usage.UsageEvent
+	err := g.Scan(ctx, func(event usage.UsageEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	return events, err
+}
+
+func (g Gemini) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
 	outfile := g.telemetryOutfile()
 	if outfile == "" {
-		return nil, nil
+		return nil
 	}
-	var events []usage.UsageEvent
 	err := readJSONLines(ctx, outfile, func(obj map[string]any) error {
 		if event, ok := g.parseEvent(outfile, obj); ok {
-			events = append(events, event)
+			return handle(event)
 		}
 		return nil
 	})
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil
 	}
-	return events, err
+	return err
 }
 
 func (g Gemini) telemetryOutfile() string {

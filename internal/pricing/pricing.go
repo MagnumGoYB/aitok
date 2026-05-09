@@ -57,6 +57,7 @@ func Load(home string) (Catalog, error) {
 
 func DefaultCatalog() Catalog {
 	return Catalog{Models: []ModelPrice{
+		{Match: "codex-auto-review", Provider: "bcb", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5, Multiplier: 1, Source: "default"},
 		{Match: "gpt-5.5", Provider: "openai", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5, Multiplier: 1, Source: "default"},
 		{Match: "gpt-5.4-mini", Provider: "openai", InputUSDPerMTok: 0.75, OutputUSDPerMTok: 4.5, CacheHitUSDPerMTok: 0.075, CacheMakeUSDPerMTok: 0.75, Multiplier: 1, Source: "default"},
 		{Match: "gpt-5.4", Provider: "openai", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 15, CacheHitUSDPerMTok: 0.25, CacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
@@ -90,6 +91,11 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 		perMillion(event.Usage.CachedInput, price.CacheHitUSDPerMTok) +
 		perMillion(event.Usage.CacheCreation, cacheMake)
 	return Cost{USD: usd * multiplier, Currency: "USD", Multiplier: multiplier, Source: price.Source}
+}
+
+func (c Catalog) Covers(event usage.UsageEvent) bool {
+	_, ok := c.match(event)
+	return ok
 }
 
 func billableInput(event usage.UsageEvent) int64 {

@@ -50,3 +50,28 @@ func TestAggregateIncludesRequestsAndCost(t *testing.T) {
 		t.Fatalf("cost = %.4f, want 2", got)
 	}
 }
+
+func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", CWD: "/repo", Usage: usage.TokenUsage{Input: 1_000_000}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", CWD: "/repo", Usage: usage.TokenUsage{Output: 100_000}},
+		{Timestamp: time.Date(2026, 5, 7, 2, 0, 0, 0, loc), Tool: usage.ToolClaude, Model: "claude", Provider: "unknown", Usage: usage.TokenUsage{Input: 100}},
+	}
+	costFor := func(event usage.UsageEvent) Cost {
+		return Cost{USD: float64(event.Usage.Input)/1_000_000 + float64(event.Usage.Output)/100_000}
+	}
+	acc := NewAccumulator(window, Filters{Tools: []string{"codex"}}, GroupBy{"tool", "model"}, costFor)
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	want := AggregateWithCosts(events, window, Filters{Tools: []string{"codex"}}, GroupBy{"tool", "model"}, costFor)
+	if len(got) != len(want) {
+		t.Fatalf("len(results) = %d, want %d", len(got), len(want))
+	}
+	if got[0].Requests != want[0].Requests || got[0].CostUSD != want[0].CostUSD || got[0].Usage.NormalizedTotal() != want[0].Usage.NormalizedTotal() {
+		t.Fatalf("accumulator result = %+v, want %+v", got[0], want[0])
+	}
+}

@@ -127,3 +127,18 @@ func TestLoadIgnoresMissingUserConfig(t *testing.T) {
 		t.Fatalf("default catalog did not price known model: %+v", cost)
 	}
 }
+
+func TestDefaultCatalogCoversCodexAutoReview(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:     usage.ToolCodex,
+		Model:    "codex-auto-review",
+		Provider: "bcb",
+		Usage:    usage.TokenUsage{Input: 1_000_000, Output: 100_000, CachedInput: 800_000},
+	})
+	if cost.USD <= 0 {
+		t.Fatalf("codex-auto-review should be priced by default: %+v", cost)
+	}
+	if cost.Source != "default" {
+		t.Fatalf("source = %q, want default", cost.Source)
+	}
+}

@@ -32,6 +32,37 @@ func TestSummaryIntegrationJSON(t *testing.T) {
 	}
 }
 
+func TestAgentJSONSummaryKeepsStdoutMachineReadableAndStderrEmpty(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}`+"\n")
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := New(App{
+		Out: &out,
+		Err: &stderr,
+		VersionCheck: func(ctx context.Context, opts VersionCheckOptions) error {
+			t.Fatal("agent commands should use --no-version-check")
+			return nil
+		},
+		Now: func() time.Time {
+			return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+		},
+	})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("agent JSON command should keep stderr empty on success: %s", stderr.String())
+	}
+	if !strings.HasPrefix(strings.TrimSpace(out.String()), "{") || !strings.Contains(out.String(), `"results"`) {
+		t.Fatalf("stdout should be a JSON object: %s", out.String())
+	}
+}
+
 func TestSummaryUsesCustomPricingFile(t *testing.T) {
 	home := t.TempDir()
 	pricingPath := filepath.Join(home, "pricing.json")
@@ -105,6 +136,113 @@ func TestSetupGeminiDryRunCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Dry run: true") || !strings.Contains(out.String(), "logPrompts") {
 		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestPricingAuditReportsUnpricedModels(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"mystery-model","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "pricing", "audit", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"model": "mystery-model"`) || !strings.Contains(out.String(), `"skeleton"`) {
+		t.Fatalf("pricing audit missing unpriced model and skeleton: %s", out.String())
+	}
+}
+
+func TestPricingAuditOmitsKnownModels(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "pricing", "audit", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"unpriced": []`) {
+		t.Fatalf("known model should not appear in pricing audit: %s", out.String())
+	}
+}
+
+func TestBudgetCheckFailsWhenLimitExceeded(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"output_tokens":1000000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "budget", "check", "--period", "today", "--limit-usd", "1", "--format", "json"})
+	err := cmd.Execute()
+	if !IsBudgetExceeded(err) {
+		t.Fatalf("err = %v, want budget exceeded", err)
+	}
+	if !strings.Contains(out.String(), `"exceeded": true`) || !strings.Contains(out.String(), `"limit_usd": 1`) {
+		t.Fatalf("budget output missing exceeded payload: %s", out.String())
+	}
+}
+
+func TestAgentBudgetExceededKeepsPayloadOnStdoutAndSummaryOnStderr(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"output_tokens":1000000}}}}`+"\n")
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := New(App{Out: &out, Err: &stderr, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "budget", "check", "--period", "today", "--limit-usd", "1", "--format", "json"})
+	err := cmd.Execute()
+	if !IsBudgetExceeded(err) {
+		t.Fatalf("err = %v, want budget exceeded", err)
+	}
+	stdout := out.String()
+	if !strings.HasPrefix(strings.TrimSpace(stdout), "{") || !strings.Contains(stdout, `"exceeded": true`) || !strings.Contains(stdout, `"unpriced_events"`) {
+		t.Fatalf("stdout should keep complete budget JSON payload: %s", stdout)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("library command should not write stderr directly; main handles returned error: %s", stderr.String())
+	}
+}
+
+func TestBudgetCheckRequiresPositiveLimit(t *testing.T) {
+	cmd := New(App{Out: io.Discard})
+	cmd.SetArgs([]string{"budget", "check", "--limit-usd", "0"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--limit-usd must be greater than 0") {
+		t.Fatalf("err = %v, want positive limit error", err)
+	}
+}
+
+func TestDoctorReportsGeminiSafetyAndPricing(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".gemini", "settings.json"), `{"telemetry":{"enabled":true,"target":"local","outfile":"~/.gemini/telemetry.log","logPrompts":false}}`)
+	writeFixture(t, filepath.Join(home, ".gemini", "telemetry.log"),
+		`{"timestamp":"2026-05-08T01:00:00Z","name":"gemini_cli.api_response","attributes":{"model":"unknown-gemini","auth_type":"oauth","input_token_count":11,"output_token_count":5,"prompt_id":"p1"}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "doctor", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"log_prompts_safe": true`) || !strings.Contains(out.String(), `"unpriced_events": 1`) {
+		t.Fatalf("doctor output missing gemini safety or pricing diagnostics: %s", out.String())
 	}
 }
 

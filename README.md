@@ -46,7 +46,22 @@ aitok version
 aitok -v
 aitok update
 aitok setup gemini --dry-run
+aitok pricing audit --period this-month --format markdown
+aitok budget check --period this-month --limit-usd 20 --group-by tool,model,cwd
 ```
+
+## AI Agent Invocation
+
+AI agents and scripts should prefer JSON output and skip the low-frequency version check:
+
+```bash
+aitok --no-version-check summary --period today --format json
+aitok --no-version-check pricing audit --period this-month --format json
+aitok --no-version-check doctor --format json
+aitok --no-version-check budget check --period this-month --limit-usd 20 --format json
+```
+
+For JSON commands, stdout is reserved for the structured payload. Warnings, version prompts, and budget failure summaries are written to stderr or returned through the process exit status. `budget check` exits with status `1` when the limit is exceeded but still writes the full JSON payload to stdout for parsing.
 
 The TUI uses English by default. Pass `--lang zh-CN` to start in Chinese, or press `l` inside the TUI to switch languages.
 
@@ -97,6 +112,24 @@ aitok summary --pricing ./pricing.json --format json
 ```
 
 Prices are USD per 1M tokens. Reasoning tokens are charged as output tokens. `multiplier` defaults to `1`.
+
+To check whether local usage contains models that are not covered by the offline catalog or your override file:
+
+```bash
+aitok pricing audit --period this-month --format json
+```
+
+The audit stays offline and prints unmatched `tool/model/provider` groups plus a `pricing.json` skeleton that can be copied into `~/.aitok/pricing.json`.
+
+To enforce a local budget in scripts or CI:
+
+```bash
+aitok budget check --period this-month --limit-usd 20
+```
+
+The command exits with status `0` when the estimated cost is within the limit and status `1` when the estimate exceeds the limit. If some events do not match a price, the report includes a warning because the estimate may be low.
+
+`aitok doctor` also reports source event counts, latest event timestamps, Gemini local telemetry safety, and pricing coverage.
 
 ## Data Sources
 

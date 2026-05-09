@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
 func TestClaudeReadsJSONLAndDeduplicates(t *testing.T) {
@@ -22,6 +24,30 @@ func TestClaudeReadsJSONLAndDeduplicates(t *testing.T) {
 	}
 	if events[0].Model != "anthropic/claude-sonnet-4.5" || events[0].Usage.Input != 10 || events[0].Usage.CachedInput != 3 {
 		t.Fatalf("unexpected event: %+v", events[0])
+	}
+}
+
+func TestForEachStreamsEvents(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	body := `{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+
+	var seen int
+	err := ForEach(context.Background(), []Source{NewCodex(Options{Home: home})}, func(event usage.UsageEvent) error {
+		seen++
+		if event.Model != "gpt-5.4" || event.CWD != "/repo" {
+			t.Fatalf("unexpected streamed event: %+v", event)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen != 1 {
+		t.Fatalf("seen = %d, want 1", seen)
 	}
 }
 

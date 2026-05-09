@@ -46,7 +46,22 @@ aitok version
 aitok -v
 aitok update
 aitok setup gemini --dry-run
+aitok pricing audit --period this-month --format markdown
+aitok budget check --period this-month --limit-usd 20 --group-by tool,model,cwd
 ```
+
+## AI Agent 调用
+
+AI Agent 和脚本应优先使用 JSON 输出，并跳过低频版本检查：
+
+```bash
+aitok --no-version-check summary --period today --format json
+aitok --no-version-check pricing audit --period this-month --format json
+aitok --no-version-check doctor --format json
+aitok --no-version-check budget check --period this-month --limit-usd 20 --format json
+```
+
+对于 JSON 命令，stdout 只承载结构化 payload。warning、版本提示和预算失败摘要写入 stderr，或通过进程退出状态表达。`budget check` 超过限制时返回状态码 `1`，但仍会把完整 JSON payload 写入 stdout，便于 Agent 解析。
 
 TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也可以在 TUI 中按 `l` 切换语言。
 
@@ -97,6 +112,24 @@ aitok summary --pricing ./pricing.json --format json
 ```
 
 价格单位是 USD / 1M tokens。Reasoning tokens 按 output tokens 计费。`multiplier` 默认是 `1`。
+
+如需检查本地用量中是否存在离线价格表或本地覆盖文件无法匹配的模型：
+
+```bash
+aitok pricing audit --period this-month --format json
+```
+
+该审计保持离线运行，会输出未匹配的 `tool/model/provider` 分组，并生成可复制到 `~/.aitok/pricing.json` 的价格 skeleton。
+
+如需在脚本或 CI 中检查本地预算：
+
+```bash
+aitok budget check --period this-month --limit-usd 20
+```
+
+当预估成本未超过限制时命令返回状态码 `0`，超过限制时返回状态码 `1`。如果部分事件没有匹配价格，报告会提示预估成本可能偏低。
+
+`aitok doctor` 也会报告数据源事件数、最近事件时间、Gemini 本地 telemetry 安全状态和价格覆盖率。
 
 ## 数据源
 

@@ -16,14 +16,19 @@ func Defaults(opts Options) []Source {
 
 func Collect(ctx context.Context, sources []Source) ([]usage.UsageEvent, error) {
 	var all []usage.UsageEvent
+	err := ForEach(ctx, sources, func(event usage.UsageEvent) error {
+		all = append(all, event)
+		return nil
+	})
+	return all, err
+}
+
+func ForEach(ctx context.Context, sources []Source, handle func(usage.UsageEvent) error) error {
 	var errs []error
 	for _, source := range sources {
-		events, err := source.Read(ctx)
-		if err != nil {
+		if err := source.Scan(ctx, handle); err != nil {
 			errs = append(errs, err)
-			continue
 		}
-		all = append(all, events...)
 	}
-	return all, JoinErrors(errs)
+	return JoinErrors(errs)
 }
