@@ -4,7 +4,10 @@ GOCACHE ?= $(AITOK_CACHE_DIR)/go-build
 GOMODCACHE ?= $(AITOK_CACHE_DIR)/go-mod
 COMMIT_MSG_FILE ?= .git/COMMIT_EDITMSG
 
-.PHONY: check test test-harness vet build validate validate-pr-body commitlint
+.PHONY: setup check test test-harness vet build validate validate-pr-body commitlint
+
+setup:
+	git config core.hooksPath .githooks
 
 check:
 	@test -z "$$(gofmt -l $$(git ls-files '*.go'))"

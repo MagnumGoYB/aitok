@@ -148,6 +148,7 @@ This configures local telemetry output and sets `logPrompts=false` so prompts ar
 ## Development
 
 ```bash
+make setup
 make check
 make test
 make test-harness
@@ -157,7 +158,7 @@ make validate
 make validate-pr-body
 ```
 
-Harness and AI agent constraints live in `AGENTS.md`, `AGENTS.zh-CN.md`, and `docs/harness-engineering.md`.
+`make setup` enables the repository commit-msg hook for local commitlint. Harness and AI agent constraints live in `AGENTS.md`, `AGENTS.zh-CN.md`, and `docs/harness-engineering.md`.
 
 ## Open Source Flow
 

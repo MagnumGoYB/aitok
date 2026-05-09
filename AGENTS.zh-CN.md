@@ -37,6 +37,7 @@
 ## 2) 开发命令
 
 - 格式和静态检查：`make check`
+- 启用本地 git hooks：`make setup`
 - 全量测试：`make test`
 - Harness-only 测试：`make test-harness`
 - Vet：`make vet`
@@ -112,7 +113,7 @@
 
 - CI 必须运行 `make validate`、`make test-harness`。
 - PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、TDD / Test Evidence、Validation、Risk and Rollback。
-- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。可运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`，或通过 `git config core.hooksPath .githooks` 启用 `.githooks/commit-msg`。
+- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。先运行一次 `make setup` 启用 `.githooks/commit-msg`，或直接运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`。PR CI 也会校验 PR 最新提交消息。
 - 不要绕过本地验证后声称完成。
 - Stage/commit 只包含当前迭代文件；不要纳入无关 dirty files。
 

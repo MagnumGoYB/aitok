@@ -148,6 +148,7 @@ aitok setup gemini
 ## 开发
 
 ```bash
+make setup
 make check
 make test
 make test-harness
@@ -157,7 +158,7 @@ make validate
 make validate-pr-body
 ```
 
-Harness 和 AI agent 约束见 `AGENTS.md`、`AGENTS.zh-CN.md`、`docs/harness-engineering.md` 和 `docs/zh-CN/harness-engineering.md`。
+`make setup` 会启用仓库的 commit-msg hook，用于本地 commitlint。Harness 和 AI agent 约束见 `AGENTS.md`、`AGENTS.zh-CN.md`、`docs/harness-engineering.md` 和 `docs/zh-CN/harness-engineering.md`。
 
 ## 开源流程
 

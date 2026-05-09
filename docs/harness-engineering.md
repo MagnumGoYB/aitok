@@ -11,8 +11,8 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `AGENTS.md` and `AGENTS.zh-CN.md`: repository mission, coding constraints, validation matrix, privacy boundaries, and handoff rules.
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
-- `Makefile`: canonical local commands: `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
-- `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling.
+- `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
+- `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. `make setup` enables the hook for local commits.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - `.github/workflows/ci.yml`: hosted validation matching the local gates.
 
@@ -23,7 +23,8 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `go vet ./...`: static analysis.
 - `go build ./cmd/aitok`: single-binary build check.
 - `go run ./tools/validate-pr-body`: executable PR body metadata gate.
-- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable commit-message gate, optionally wired through `.githooks/commit-msg`.
+- `make setup`: one-time local setup that runs `git config core.hooksPath .githooks`.
+- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable commit-message gate, wired through `.githooks/commit-msg` after setup and mirrored by PR CI for the latest PR commit.
 - `.cache/aitok/`: repository-local, git-ignored Go build/module cache used by Makefile targets so agent verification stays bound to this checkout instead of ad hoc `/tmp` paths.
 
 ## Agent Workflow Contract
@@ -53,7 +54,7 @@ When changing harness, CI, PR workflow, or validation scripts:
 3. Update this document and `docs/zh-CN/harness-engineering.md`.
 4. Run `make check`, `make test-harness`, and `make validate-pr-body` when PR metadata rules changed.
 
-When changing commit workflow rules, update `tools/commitlint`, `.githooks/commit-msg`, `AGENTS.md`, `AGENTS.zh-CN.md`, this document, and `docs/zh-CN/harness-engineering.md`.
+When changing commit workflow rules, update `tools/commitlint`, `.githooks/commit-msg`, `Makefile`, `.github/workflows/pr.yml`, `AGENTS.md`, `AGENTS.zh-CN.md`, this document, and `docs/zh-CN/harness-engineering.md`.
 
 - `CODE_OF_CONDUCT.md` / `CODE_OF_CONDUCT.zh-CN.md` and `SUPPORT.md` / `SUPPORT.zh-CN.md` keep open-source community guidance bilingual.
 

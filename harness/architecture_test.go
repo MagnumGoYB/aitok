@@ -19,6 +19,7 @@ func TestHarnessDocsAndCommandsStayAligned(t *testing.T) {
 		"readme":    read(t, "README.md"),
 	}
 	for _, command := range []string{
+		"make setup",
 		"make check",
 		"make test",
 		"make test-harness",
@@ -31,6 +32,43 @@ func TestHarnessDocsAndCommandsStayAligned(t *testing.T) {
 			if !strings.Contains(content, command) {
 				t.Fatalf("%s must mention %s", name, command)
 			}
+		}
+	}
+}
+
+func TestCommitWorkflowSupportsHumanAndHostedValidation(t *testing.T) {
+	makefile := read(t, "Makefile")
+	for _, expected := range []string{
+		".PHONY: setup",
+		"setup:",
+		"git config core.hooksPath .githooks",
+		"commitlint:",
+		"COMMIT_MSG_FILE",
+	} {
+		if !strings.Contains(makefile, expected) {
+			t.Fatalf("Makefile commit workflow must contain %s", expected)
+		}
+	}
+
+	hook := read(t, ".githooks", "commit-msg")
+	for _, expected := range []string{
+		"make commitlint",
+		`COMMIT_MSG_FILE="$1"`,
+	} {
+		if !strings.Contains(hook, expected) {
+			t.Fatalf("commit-msg hook must contain %s", expected)
+		}
+	}
+
+	prWorkflow := read(t, ".github", "workflows", "pr.yml")
+	for _, expected := range []string{
+		"Fetch pull request commits",
+		"github.event.pull_request.head.sha",
+		"git log -1 --format=%B",
+		"make commitlint COMMIT_MSG_FILE=",
+	} {
+		if !strings.Contains(prWorkflow, expected) {
+			t.Fatalf("PR workflow must validate the latest commit message with %s", expected)
 		}
 	}
 }

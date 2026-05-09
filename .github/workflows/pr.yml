@@ -19,3 +19,9 @@ jobs:
           go-version: "1.26.3"
           cache: true
       - run: make validate-pr-body
+      - name: Fetch pull request commits
+        run: git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.head.sha }}"
+      - name: Validate latest commit message
+        run: |
+          git log -1 --format=%B "${{ github.event.pull_request.head.sha }}" > /tmp/aitok-pr-commit-msg
+          make commitlint COMMIT_MSG_FILE=/tmp/aitok-pr-commit-msg

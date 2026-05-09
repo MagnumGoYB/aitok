@@ -37,6 +37,7 @@ Out of scope unless explicitly requested:
 ## 2) Dev Commands
 
 - Format and static checks: `make check`
+- Enable local git hooks: `make setup`
 - Full tests: `make test`
 - Harness-only tests: `make test-harness`
 - Vet: `make vet`
@@ -112,7 +113,7 @@ Before every product or harness iteration, do a short internal review:
 
 - CI must run `make validate` and `make test-harness`.
 - PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, TDD / Test Evidence, Validation, and Risk and Rollback.
-- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` or install `.githooks/commit-msg` with `git config core.hooksPath .githooks`.
+- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make setup` once to enable `.githooks/commit-msg`, or run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` directly. PR CI also validates the latest PR commit message.
 - Do not claim completion after skipping local validation.
 - Stage/commit only files that belong to the current iteration; do not include unrelated dirty files.
 
