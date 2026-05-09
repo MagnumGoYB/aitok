@@ -33,6 +33,9 @@
 6. 合并 PR #11。
 7. 发布 `v0.1.15`，GoReleaser 产出 darwin、linux、windows 包。
 8. 增加这份仓库级交接记录，避免后续会话依赖 Codex 全局 memory 索引。
+9. 移除常驻 CodeRabbit review，因为持续付费的 PR review 门禁对本仓库不划算。
+10. 增加 `make setup` 和 PR 侧最新提交 commitlint，让人工提交和 Agent 提交共用同一套提交消息契约。
+11. 增加显式 PR 发版判定门禁：工程/流程优化不触发软件发版，feature 和 bugfix 必须标记后续发版或明确延后。
 
 ## 产品决策
 
@@ -83,9 +86,32 @@
 
 - 验证缓存放在 `.cache/aitok`
 - 优先使用 Makefile 目标，不使用临时拼接命令作为项目工具
+- 每个 checkout 运行一次 `make setup`，启用 `.githooks/commit-msg`
 - 提交信息校验使用 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
+- PR CI 校验 PR 最新提交消息，所以没有运行本地 setup 的贡献者也会被覆盖
 
 类似 `/tmp/aitok-commit-msg` 的文件不是项目工具，只是一次性命令输入。
+
+## 流程自动化更新
+
+CodeRabbit：
+
+- CodeRabbit 已在仓库外卸载/禁用，仓库内 `.coderabbit.yaml` 已删除。
+- 必需 review 门禁保留在 GitHub 原生 checklist comment、CODEOWNERS、branch protection、required checks 和受限 Dependabot 自动合并上。
+- 默认不要重新引入常驻付费 AI review 自动化。只有高风险变更明确值得成本时，才按一次性决策使用付费或外部 AI review。
+
+Commitlint：
+
+- `make setup` 会执行 `git config core.hooksPath .githooks`。
+- `.githooks/commit-msg` 执行 `make commitlint COMMIT_MSG_FILE="$1"`。
+- `.github/workflows/pr.yml` 会 fetch PR head SHA，并用 `make commitlint` 校验 PR 最新提交消息；本地 setup 有帮助，但不是唯一门禁。
+
+发版判定：
+
+- `.github/pull_request_template*.md` 现在包含必填的 `Release Decision` 区块。
+- `tools/validate-pr-body` 要求该区块存在，并拒绝 feature/bugfix PR 写“无需发版”但没有明确延后的情况。
+- Harness、docs、CI、workflow guardrails 或仓库自动化等工程/流程优化应标记 `Release not required`。
+- Feature 和 bugfix 应标记 `Release required after merge`，并在合并后继续进入既有发版流程，除非用户明确延后。
 
 ## 验证证据
 
@@ -115,7 +141,9 @@ gh api repos/MagnumGoYB/aitok/pulls/<number> -X PATCH --input <body.json>
 
 PR metadata 校验需要明确覆盖需求分类、验收标准证据、单元测试、失败/边界覆盖、跳过验证说明和残余风险。
 
-CodeRabbit 不再作为必需 PR 门禁，因为常驻付费 review 对本仓库的持续成本不划算。Review 约束保留在 GitHub 原生 checklist comment、CODEOWNERS、branch protection、required checks 和受限的 Dependabot 自动合并上。只有高风险变更明确值得成本时，才按一次性决策使用付费或外部 AI review。
+PR metadata 现在还必须包含明确的发版判定。对 feature 和 bugfix PR 来说，除非正文写明用户批准延后，否则 `Release not required` 是无效的。
+
+本地可以通过设置 `PR_BODY` 为真实 PR body 来测试 `make validate-pr-body`。如果不提供 `PR_BODY` 或 `GITHUB_EVENT_PATH`，该命令按设计会因空 PR body 失败。
 
 ## 后续工作
 

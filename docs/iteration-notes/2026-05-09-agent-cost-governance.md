@@ -33,6 +33,9 @@ The implementation therefore prioritized performance, offline behavior, and stab
 6. Merged PR #11.
 7. Released `v0.1.15` with GoReleaser artifacts for darwin, linux, and windows.
 8. Added this repository-level handoff note so future sessions do not depend on Codex global memory indexing.
+9. Removed always-on CodeRabbit review because the recurring paid PR review gate was not worth the cost for this repository.
+10. Added `make setup` and PR-side latest-commit commitlint so human commits and agent commits share the same commit-message contract.
+11. Added an explicit PR release-decision gate so engineering/process-only changes do not trigger software releases, while feature and bugfix work must mark a follow-up release or an explicit deferral.
 
 ## Product Decisions
 
@@ -83,9 +86,32 @@ The durable project-local direction is:
 
 - keep validation caches under `.cache/aitok`
 - use Makefile targets instead of ad-hoc temp commands
+- run `make setup` once per checkout to enable `.githooks/commit-msg`
 - run commit message validation through `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
+- let PR CI validate the latest PR commit message so contributors who did not run local setup are still covered
 
 Temporary files like `/tmp/aitok-commit-msg` are not project tooling. They were only ephemeral command inputs.
+
+## Process Automation Updates
+
+CodeRabbit:
+
+- CodeRabbit was uninstalled/disabled externally and `.coderabbit.yaml` was removed from the repository.
+- Keep required review gates on GitHub-native checklist comments, CODEOWNERS, branch protection, required checks, and scoped Dependabot auto-merge.
+- Do not re-add always-on paid AI review automation by default. Use paid or external AI review only as a deliberate one-off decision for high-risk changes.
+
+Commitlint:
+
+- `make setup` now runs `git config core.hooksPath .githooks`.
+- `.githooks/commit-msg` runs `make commitlint COMMIT_MSG_FILE="$1"`.
+- `.github/workflows/pr.yml` fetches the PR head SHA and validates the latest commit message with `make commitlint`, so local setup is helpful but not the only gate.
+
+Release decision:
+
+- `.github/pull_request_template*.md` now contains a required `Release Decision` section.
+- `tools/validate-pr-body` requires that section and rejects feature/bugfix PRs that mark release as not required without an explicit deferral.
+- Engineering/process-only changes such as harness, docs, CI, workflow guardrails, or repository automation should mark `Release not required`.
+- Feature and bugfix changes should mark `Release required after merge` and continue into the existing release flow after merge unless the user explicitly defers release work.
 
 ## Validation Evidence
 
@@ -115,7 +141,9 @@ gh api repos/MagnumGoYB/aitok/pulls/<number> -X PATCH --input <body.json>
 
 PR metadata validation expects explicit coverage for requirement classification, acceptance criteria evidence, unit tests, failure/edge coverage, skipped validation, and residual risk.
 
-CodeRabbit is intentionally not part of the required PR gate because always-on paid review is not worth the recurring cost for this repository. Keep review enforcement on GitHub-native checklist comments, CODEOWNERS, branch protection, required checks, and scoped Dependabot auto-merge. Use paid or external AI review only as an explicit one-off decision for high-risk changes.
+PR metadata now also expects an explicit release decision. For feature and bugfix PRs, `Release not required` is invalid unless the body states an explicit user-approved deferral.
+
+`make validate-pr-body` can be tested locally by setting `PR_BODY` to a realistic PR body. Running it without `PR_BODY` or `GITHUB_EVENT_PATH` intentionally fails with empty-body errors.
 
 ## Next Work
 
