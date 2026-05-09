@@ -38,6 +38,8 @@ type Accumulator struct {
 	buckets map[string]*Result
 }
 
+// DefaultGroupBy returns the default grouping dimensions used for aggregation.
+// The default order is "tool", "model", then "provider".
 func DefaultGroupBy() GroupBy {
 	return GroupBy{"tool", "model", "provider"}
 }
@@ -59,10 +61,17 @@ func ParseGroupBy(raw string) GroupBy {
 	return groups
 }
 
+// Aggregate aggregates usage events into grouped Results according to the provided window, filters, and groupBy.
+// Per-event cost computation is not applied (no cost callback).
 func Aggregate(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy) []Result {
 	return AggregateWithCosts(events, window, filters, groupBy, nil)
 }
 
+// AggregateWithCosts aggregates usage events into bucketed Results according to the
+// provided window, filters, and groupBy, applying the optional costFor callback to
+// accumulate per-event cost when non-nil.
+// It returns a slice of Result values sorted by descending Usage.NormalizedTotal(),
+// with ties broken by the serialized group key.
 func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) []Result {
 	acc := NewAccumulator(window, filters, groupBy, costFor)
 	for _, event := range events {
@@ -71,6 +80,8 @@ func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filter
 	return acc.Results()
 }
 
+// NewAccumulator constructs an Accumulator configured with the provided window, filters, groupBy, and costFor, and initializes an empty buckets map.
+// If costFor is nil, cost accumulation is disabled.
 func NewAccumulator(window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) *Accumulator {
 	return &Accumulator{window: window, filters: filters, groupBy: groupBy, costFor: costFor, buckets: map[string]*Result{}}
 }

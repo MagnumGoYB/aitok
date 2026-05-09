@@ -55,6 +55,8 @@ func Load(home string) (Catalog, error) {
 	return catalog, nil
 }
 
+// DefaultCatalog returns a Catalog populated with default ModelPrice entries for known models and providers.
+// Each entry includes USD-per-million-token rates for input, output, cache hits, and cache creation; Multiplier is set to 1 and Source is set to "default".
 func DefaultCatalog() Catalog {
 	return Catalog{Models: []ModelPrice{
 		{Match: "codex-auto-review", Provider: "bcb", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5, Multiplier: 1, Source: "default"},
@@ -98,6 +100,10 @@ func (c Catalog) Covers(event usage.UsageEvent) bool {
 	return ok
 }
 
+// billableInput returns the number of input tokens from the usage event that should be billed.
+// For non-Codex tools the entire input is billable. For Codex, cached input and cache creation
+// tokens are applied against the input; if those cover the input the result is 0, otherwise the
+// remaining tokens (input minus cached) are returned.
 func billableInput(event usage.UsageEvent) int64 {
 	input := event.Usage.Input
 	if event.Tool != usage.ToolCodex {

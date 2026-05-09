@@ -11,6 +11,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/updatecheck"
 )
 
+// main is the program entry point. It constructs the CLI app (wiring VersionCheck and Update callbacks that run the update checker using the current executable and build version), executes the CLI, and exits with status 1 if execution returns an error.
 func main() {
 	executable, _ := os.Executable()
 	cmd := cli.New(cli.App{

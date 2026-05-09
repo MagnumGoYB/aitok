@@ -64,6 +64,14 @@ type flags struct {
 	limitUSD       float64
 }
 
+// New constructs the root Cobra command for the CLI using the provided App
+// dependencies and default flag state.
+//
+// The returned command has sensible defaults for App I/O and time when those
+// fields are nil, registers global flags (--home, --pricing, --no-version-check,
+// -v/--version), wires the primary subcommands (summary, report, pricing audit,
+// budget check, tui, doctor, version, update, setup gemini), and performs a
+// low-frequency version check via App.VersionCheck unless explicitly disabled.
 func New(app App) *cobra.Command {
 	if app.Out == nil {
 		app.Out = io.Discard
@@ -280,6 +288,9 @@ func skipsVersionCheck(cmd *cobra.Command) bool {
 	}
 }
 
+// buildPayload builds a report.Payload for the selected period and flags by loading pricing and streaming local usage events into an accumulator.
+// It parses f.period, computes the time window, loads the pricing catalog, applies filters from f, groups results according to f.groupBy, and aggregates costed usage.
+// Returns an error if period parsing, pricing loading, or iteration over local sources fails.
 func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload, error) {
 	period, err := query.ParsePeriod(f.period)
 	if err != nil {
@@ -310,6 +321,10 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	return report.Payload{GeneratedAt: now, Window: window, GroupBy: groupBy, Results: acc.Results()}, nil
 }
 
+// loadPricing loads a pricing catalog for the CLI.
+// If f.pricing is empty it delegates to pricing.Load(home).
+// Otherwise it reads the file at f.pricing and unmarshals its JSON into a pricing.Catalog.
+// Returns the catalog on success or an error from reading, unmarshalling, or pricing.Load.
 func loadPricing(f *flags, home string) (pricing.Catalog, error) {
 	if f.pricing == "" {
 		return pricing.Load(home)
@@ -334,6 +349,9 @@ func (e budgetExceededError) Error() string {
 	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatUSD(e.Total), report.FormatUSD(e.Limit))
 }
 
+// buildBudgetCheck builds a budget payload that aggregates usage and cost over the configured period and indicates whether the USD limit is exceeded.
+// It validates that f.limitUSD is greater than 0 and returns an error otherwise. The function parses the period, loads pricing, applies filters from f, streams matching events from local sources to an accumulator using the pricing catalog to compute USD costs, and counts events/tokens that lack pricing coverage.
+// The returned report.BudgetPayload contains GeneratedAt, Window, LimitUSD, TotalUSD, Exceeded (`true` when TotalUSD > LimitUSD), UnpricedEvents, UnpricedTokens, and per-group Results. Errors from period parsing, pricing loading, or source iteration are propagated.
 func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.BudgetPayload, error) {
 	if f.limitUSD <= 0 {
 		return report.BudgetPayload{}, fmt.Errorf("--limit-usd must be greater than 0")
@@ -390,6 +408,9 @@ type unpricedPricingCount struct {
 	Tokens int64
 }
 
+// buildPricingAudit builds a pricing audit payload listing usage events in the selected window and filters that do not have a matching pricing entry, grouped by tool, model, and provider.
+// The returned payload contains the generation time, the queried time window, a slice of unpriced results sorted by descending normalized token usage (ties ordered lexicographically by tool|model|provider), and a JSON-like pricing skeleton string.
+// Errors may be returned from period parsing, pricing loading, or iterating local usage sources.
 func buildPricingAudit(ctx context.Context, f *flags, now time.Time) (report.PricingAuditPayload, error) {
 	period, err := query.ParsePeriod(f.period)
 	if err != nil {
@@ -441,6 +462,10 @@ func buildPricingAudit(ctx context.Context, f *flags, now time.Time) (report.Pri
 	return report.PricingAuditPayload{GeneratedAt: now, Window: window, Unpriced: unpriced, Skeleton: pricingSkeleton(unpriced)}, nil
 }
 
+// pricingSkeleton generates a JSON-like skeleton string representing model pricing entries
+// for the pricing audit results.
+//
+// If items is empty, it returns an empty string.
 func pricingSkeleton(items []report.PricingAuditResult) string {
 	if len(items) == 0 {
 		return ""
@@ -457,6 +482,9 @@ func pricingSkeleton(items []report.PricingAuditResult) string {
 	return b.String()
 }
 
+// buildDoctor builds a diagnostic payload that inspects available local data sources and pricing coverage.
+// The returned payload includes Gemini CLI telemetry state, per-source scan results (name, status, event counts, latest event), aggregated pricing statistics (priced and unpriced events/tokens) and the count of distinct unpriced model/tool/provider combinations.
+// If pricing cannot be loaded this function returns an error; errors encountered while scanning individual sources are captured in each DoctorSource.Status and are not returned.
 func buildDoctor(ctx context.Context, f *flags, now time.Time) (report.DoctorPayload, error) {
 	opts := sources.Options{Home: resolveHome(f.home)}
 	catalog, err := loadPricing(f, opts.Home)
@@ -493,6 +521,7 @@ func buildDoctor(ctx context.Context, f *flags, now time.Time) (report.DoctorPay
 	return payload, nil
 }
 
+// "not configured", "settings parse error", "telemetry outfile missing", "logPrompts is not false", or "ok".
 func inspectGemini(home string) report.DoctorGeminiState {
 	settingsPath := filepath.Join(home, ".gemini", "settings.json")
 	state := report.DoctorGeminiState{SettingsPath: settingsPath, Status: "not configured"}
@@ -525,6 +554,12 @@ func inspectGemini(home string) report.DoctorGeminiState {
 	return state
 }
 
+// expandHomeForCLI expands CLI-typed "~" path patterns relative to the provided home.
+//
+// If path is empty, it returns an empty string. If path is exactly "~", it returns
+// home. If path begins with "~" followed by a path separator (e.g., "~/..."), it
+// returns the result of joining home with the remainder of path. Otherwise it
+// returns path unchanged.
 func expandHomeForCLI(home, path string) string {
 	if path == "" {
 		return ""
@@ -538,6 +573,7 @@ func expandHomeForCLI(home, path string) string {
 	return path
 }
 
+// stringFromAny returns the string value if the provided any is a string, otherwise the empty string.
 func stringFromAny(value any) string {
 	if out, ok := value.(string); ok {
 		return out
@@ -545,6 +581,11 @@ func stringFromAny(value any) string {
 	return ""
 }
 
+// eventMatches reports whether the provided UsageEvent satisfies all criteria in filters.
+// For each non-empty filter field the corresponding event value must match:
+// - Tools, Models, Providers: must equal one of the filter entries (case-insensitive, trimmed comparison).
+// - CWD: the event's CWD must contain the filter substring.
+// Returns true only if all applicable filters match.
 func eventMatches(event usage.UsageEvent, filters query.Filters) bool {
 	if len(filters.Tools) > 0 && !containsString(filters.Tools, string(event.Tool)) {
 		return false
@@ -561,6 +602,9 @@ func eventMatches(event usage.UsageEvent, filters query.Filters) bool {
 	return true
 }
 
+// containsString reports whether target matches any entry in values after
+// trimming leading and trailing whitespace and performing a case-insensitive
+// comparison. It returns true on the first match, false otherwise.
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if strings.EqualFold(strings.TrimSpace(value), target) {
@@ -570,11 +614,14 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+// IsBudgetExceeded reports whether the given error represents a budget threshold violation.
+// It returns true if err is or wraps a budgetExceededError, false otherwise.
 func IsBudgetExceeded(err error) bool {
 	var budgetErr budgetExceededError
 	return errors.As(err, &budgetErr)
 }
 
+// resolveHome returns the given home directory when non-empty; otherwise it returns the default home directory from sources.DefaultOptions().Home.
 func resolveHome(home string) string {
 	if home != "" {
 		return home

@@ -67,6 +67,14 @@ type DoctorGeminiState struct {
 	Status         string `json:"status"`
 }
 
+// WritePricingAudit writes a pricing audit payload to w in the specified format.
+// 
+// WritePricingAudit supports three formats:
+// - table (default/empty): renders a bordered table with columns TOOL, MODEL, PROVIDER, EVENTS, TOTAL and EXAMPLE; if Payload.Skeleton is non-empty it is printed after the table prefixed by "Suggested pricing skeleton:".
+// - json: writes the payload as indented JSON.
+// - markdown: writes a Markdown table with the same columns and, if Payload.Skeleton is non-empty, appends it in a fenced ```json``` code block.
+// 
+// For any other format the function returns an error indicating the unknown format.
 func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) error {
 	switch format {
 	case "", "table":
@@ -109,6 +117,12 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 	}
 }
 
+// WriteBudget writes a budget summary and detailed results to w in the requested format.
+// It supports three formats: table (default/""), "json", and "markdown".
+// In table mode it prints formatted USD totals, exceeded/unpriced flags, and a tabular listing of results.
+// In JSON mode it encodes the full payload with two-space indentation.
+// In markdown mode it emits a markdown table of the summary fields followed by markdown-formatted results.
+// It returns any write/encoding error or an error if the format is unrecognized.
 func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 	switch format {
 	case "", "table":
@@ -128,6 +142,10 @@ func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 	}
 }
 
+// WriteDoctor writes the doctor report payload to w in the requested format.
+// Supported formats are "" or "table" (tabular output), "json" (pretty-printed JSON), and "markdown" (markdown table).
+// Table and markdown outputs include a sources table followed by pricing and Gemini summaries; each source's LatestEvent is formatted as RFC3339 when present.
+// It returns an error for an unrecognized format or if JSON encoding fails.
 func WriteDoctor(w io.Writer, format string, payload DoctorPayload) error {
 	switch format {
 	case "", "table":
