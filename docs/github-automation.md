@@ -59,7 +59,8 @@ This repository uses GitHub-native automation for pull requests, CodeRabbit revi
 ## Dependabot
 
 - `.github/dependabot.yml` checks GitHub Actions and Go module updates weekly.
-- `.github/workflows/dependabot-auto-merge.yml` enables GitHub auto-merge only for non-draft Dependabot PRs that are not semantic major version updates.
+- `.github/workflows/dependabot-auto-merge.yml` uses `dependabot/fetch-metadata@v3` and enables GitHub auto-merge only for non-draft Dependabot PRs that are not semantic major version updates.
+- Dependabot PRs skip the human PR body validator because their generated bodies cannot fill the repository review template.
 - Major dependency updates stay manual because they need explicit binary-size, offline behavior, and supply-chain impact review.
 - Repository auto-merge and delete-branch-on-merge are enabled in GitHub settings for this workflow.
 - The `main` branch protection requires the `metadata`, `test`, and platform build checks to pass before GitHub auto-merge can land a PR.

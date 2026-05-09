@@ -59,7 +59,8 @@
 ## Dependabot
 
 - `.github/dependabot.yml` 每周检查 GitHub Actions 和 Go module 更新。
-- `.github/workflows/dependabot-auto-merge.yml` 只为非 draft 且不是 semantic major version 的 Dependabot PR 启用 GitHub auto-merge。
+- `.github/workflows/dependabot-auto-merge.yml` 使用 `dependabot/fetch-metadata@v3`，并且只为非 draft 且不是 semantic major version 的 Dependabot PR 启用 GitHub auto-merge。
+- Dependabot PR 跳过面向人工 PR 的 body validator，因为它生成的 PR body 不能填写仓库 review 模板。
 - Major 依赖更新保持人工处理，因为需要明确 review 二进制体积、离线行为和供应链影响。
 - GitHub 仓库设置已启用 auto-merge 和 delete-branch-on-merge，供该 workflow 使用。
 - `main` branch protection 要求 `metadata`、`test` 和各平台 build checks 通过后，GitHub auto-merge 才能落地 PR。

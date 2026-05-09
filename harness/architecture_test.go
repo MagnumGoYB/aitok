@@ -220,7 +220,7 @@ func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *test
 		"contents: write",
 		"pull-requests: write",
 		"dependabot[bot]",
-		"dependabot/fetch-metadata@v2",
+		"dependabot/fetch-metadata@v3",
 		"version-update:semver-major",
 		"gh pr merge --auto --squash --delete-branch",
 	} {
@@ -230,6 +230,10 @@ func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *test
 	}
 	if strings.Contains(autoMerge, "github.event.pull_request.user.login != 'dependabot[bot]'") {
 		t.Fatal("Dependabot auto-merge workflow must not invert the Dependabot author guard")
+	}
+	prWorkflow := read(t, ".github", "workflows", "pr.yml")
+	if !strings.Contains(prWorkflow, "github.event.pull_request.user.login != 'dependabot[bot]'") {
+		t.Fatal("PR metadata workflow must skip Dependabot PRs because their generated bodies cannot satisfy the human PR template")
 	}
 
 	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
@@ -242,6 +246,8 @@ func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *test
 		"branch protection",
 		"semantic major",
 		"metadata",
+		"dependabot/fetch-metadata@v3",
+		"Dependabot PRs skip the human PR body validator",
 		"platform build checks",
 	} {
 		if !strings.Contains(docs, expected) {
