@@ -14,6 +14,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
 - `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. `make setup` enables the hook for local commits.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
+- Release decision policy: engineering/process-only changes do not require a software release; feature and bugfix changes require a follow-up release or explicit deferral.
 - `.github/workflows/ci.yml`: hosted validation matching the local gates.
 
 ## Feedback Sensors
@@ -31,6 +32,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 
 - Classify each request before editing: feature, bugfix, refactor, harness/tooling, or analysis-only.
 - Lock observable acceptance criteria before implementation.
+- Record the release decision before handoff.
 - Add a failing test, harness sensor, or explicit manual verification checklist before changing behavior when practical.
 - Keep edits scoped to the named files/directories.
 - Map every acceptance criterion to evidence before handoff.
@@ -55,6 +57,8 @@ When changing harness, CI, PR workflow, or validation scripts:
 4. Run `make check`, `make test-harness`, and `make validate-pr-body` when PR metadata rules changed.
 
 When changing commit workflow rules, update `tools/commitlint`, `.githooks/commit-msg`, `Makefile`, `.github/workflows/pr.yml`, `AGENTS.md`, `AGENTS.zh-CN.md`, this document, and `docs/zh-CN/harness-engineering.md`.
+
+When changing release decision rules, update `tools/validate-pr-body`, `.github/pull_request_template.md`, `.github/pull_request_template.zh-CN.md`, `.github/workflows/pr-review.yml`, `AGENTS.md`, `AGENTS.zh-CN.md`, this document, `docs/zh-CN/harness-engineering.md`, and `docs/github-automation.md` / `docs/zh-CN/github-automation.md`.
 
 - `CODE_OF_CONDUCT.md` / `CODE_OF_CONDUCT.zh-CN.md` and `SUPPORT.md` / `SUPPORT.zh-CN.md` keep open-source community guidance bilingual.
 

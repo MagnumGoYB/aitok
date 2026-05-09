@@ -8,13 +8,14 @@
 
 - `.github/pull_request_template.md` 要求填写需求分类、验收标准、测试证据、验证、回滚和残余风险。
 - `.github/workflows/pr.yml` 使用 `make validate-pr-body` 校验真实 PR body。
+- PR 元数据必须包含发版判定：feature 和 bugfix 变更需要跟进发版或写明用户已明确批准延后；仅工程流程优化的变更标记无需发版。
 - `.github/workflows/ci.yml` 在 push 和 pull request 上运行本地验证和 Harness 门禁。
 
 ## Review 流程
 
 - `.github/workflows/pr-review.yml` 会在新建或更新 PR 时发布 checklist 评论。
 - Checklist workflow 使用 `issues: write` 和 `pull-requests: write`，确保 `actions/github-script` 能在 branch protection 下创建或更新 PR issue comment。
-- Checklist 提醒 reviewer 检查离线/隐私边界、source adapter 流式扫描、fixture 覆盖、CLI 输出稳定性和 release 影响。
+- Checklist 提醒 reviewer 检查离线/隐私边界、source adapter 流式扫描、fixture 覆盖、CLI 输出稳定性、发版判定和 release 影响。
 - `.github/CODEOWNERS` 为 adapter、query/report、harness 和 GitHub workflows 等核心区域请求 review。
 - 仓库不强制付费 AI review 自动化；维护者可在风险值得成本时再按需运行一次性本地或外部 AI review。
 
@@ -47,6 +48,7 @@
 - Release job 通过 `tools/version` 读取 `VERSION`；tag release 必须与 `VERSION` 匹配为 `v<version>`。
 - 在 `main` 上，release workflow 只验证项目，不发布 GitHub Release。
 - 在匹配的 `v*` tag 上，release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和、多平台 archive 和 Homebrew cask。
+- Harness、docs、CI 或流程护栏等工程/流程优化不需要软件发版。feature 和 bugfix 合并后应提示或继续进入发版流程，除非明确延后。
 - Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew tap MagnumGoYB/aitok` 后执行 `brew install --cask aitok` 安装；文档刻意不使用完整 cask 名称，避免重复出现 `aitok`。
 - Cask 只从 macOS archive 集合生成。Linux 和 Windows archive 仍会作为 GitHub Release 产物发布，但不会进入 Homebrew cask DSL。
 - 生成的 cask 会在 macOS post-install 阶段对已安装的 `aitok` 二进制运行 `xattr` hook，避免未签名 CLI archive 在 Homebrew 安装后仍保留 quarantine 状态。

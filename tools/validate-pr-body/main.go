@@ -13,6 +13,7 @@ var requiredSections = []string{
 	"Requirement Classification",
 	"Acceptance Criteria",
 	"Changed Areas",
+	"Release Decision",
 	"TDD / Test Evidence",
 	"Validation",
 	"Risk and Rollback",
@@ -32,9 +33,16 @@ var checks = []struct {
 	{"edge", regexp.MustCompile(`(?i)non-happy|failure|edge|边界|失败`), "PR body must include failure/edge coverage or explain why absent."},
 	{"test-first", regexp.MustCompile(`(?i)test/sensor added before implementation|failing test|sensor-first|test-first|测试先行|传感器先行`), "PR body must include test-first or sensor-first evidence."},
 	{"evidence-map", regexp.MustCompile(`(?i)acceptance criteria evidence map|evidence map|验收.*证据`), "PR body must map acceptance criteria to evidence."},
+	{"release-decision", regexp.MustCompile(`(?i)release decision|release required|release not required|no release|发版|无需发版`), "PR body must state the release decision."},
 	{"skipped", regexp.MustCompile(`(?i)skipped validation|not skipped|none skipped|跳过`), "PR body must state skipped validation, even when none was skipped."},
 	{"residual", regexp.MustCompile(`(?i)residual risk|none|残余风险`), "PR body must state residual risk."},
 }
+
+var (
+	productChangePattern   = regexp.MustCompile(`(?i)\bfeature\b|\bbugfix\b`)
+	releaseRequiredPattern = regexp.MustCompile(`(?i)release required|follow-up release|tag v\*|tag v[0-9]|进入发版流程|跟进发版|发版流程|发布流程`)
+	releaseDeferredPattern = regexp.MustCompile(`(?i)defer|deferred|explicit.*deferral|延后|暂缓`)
+)
 
 func main() {
 	body, err := extractBody()
@@ -43,6 +51,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	errors := validateBody(body)
+	if len(errors) > 0 {
+		fmt.Fprintln(os.Stderr, strings.Join(errors, "\n"))
+		os.Exit(1)
+	}
+	fmt.Println("Pull request body contains required harness evidence.")
+}
+
+func validateBody(body string) []string {
 	var errors []string
 	if strings.TrimSpace(body) == "" {
 		errors = append(errors, "Pull request body is empty.")
@@ -62,11 +79,12 @@ func main() {
 			errors = append(errors, check.message)
 		}
 	}
-	if len(errors) > 0 {
-		fmt.Fprintln(os.Stderr, strings.Join(errors, "\n"))
-		os.Exit(1)
+	classification := getSection(body, "Requirement Classification")
+	releaseDecision := getSection(body, "Release Decision")
+	if productChangePattern.MatchString(classification) && !releaseRequiredPattern.MatchString(releaseDecision) && !releaseDeferredPattern.MatchString(releaseDecision) {
+		errors = append(errors, "Feature and bugfix PRs must require a follow-up release or explicit deferral")
 	}
-	fmt.Println("Pull request body contains required harness evidence.")
+	return errors
 }
 
 func extractBody() (string, error) {

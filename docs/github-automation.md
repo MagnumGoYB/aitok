@@ -8,13 +8,14 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 
 - `.github/pull_request_template.md` requires requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - `.github/workflows/pr.yml` validates the real pull request body with `make validate-pr-body`.
+- PR metadata must include a release decision: feature and bugfix changes require a follow-up release or an explicit user-approved deferral, while engineering-process-only changes mark release not required.
 - `.github/workflows/ci.yml` runs local validation and harness gates on pushes and pull requests.
 
 ## Review Flow
 
 - `.github/workflows/pr-review.yml` posts a checklist comment on new or updated pull requests.
 - The checklist workflow runs with `issues: write` and `pull-requests: write` so `actions/github-script` can create or update the PR issue comment under branch protection.
-- The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, and release impact.
+- The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, release decision, and release impact.
 - `.github/CODEOWNERS` requests review for core areas such as adapters, query/report code, harness, and GitHub workflows.
 - Paid AI review automation is intentionally not required; maintainers can run one-off local or external AI review only when the risk justifies the cost.
 
@@ -47,6 +48,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - The release job reads `VERSION` through `tools/version`; tag releases must match `VERSION` as `v<version>`.
 - On `main`, the release workflow validates the project but does not publish a GitHub Release.
 - On matching `v*` tags, the release job runs `make validate`, then uses GoReleaser with `.goreleaser.yml` to publish checksums, platform archives, and the Homebrew cask.
+- Engineering/process-only changes such as harness, docs, CI, or workflow guardrails do not require a software release. Feature and bugfix changes should prompt for or continue into the release flow after merge unless explicitly deferred.
 - The Homebrew cask is published to the `MagnumGoYB/homebrew-aitok` tap and installs with `brew tap MagnumGoYB/aitok` followed by `brew install --cask aitok`; docs intentionally avoid the fully qualified cask name because it repeats `aitok`.
 - The cask is generated from the macOS archive set only. Linux and Windows archives are still published as GitHub Release assets, but they are not included in the Homebrew cask DSL.
 - The generated cask runs a post-install macOS `xattr` hook for the installed `aitok` binary so unsigned CLI archives do not remain quarantined after Homebrew installation.

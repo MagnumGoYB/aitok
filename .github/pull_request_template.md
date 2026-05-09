@@ -20,6 +20,11 @@
 
 -
 
+## Release Decision
+
+- Release required after merge: feature and bugfix changes should prompt or continue into release flow.
+- Release not required: engineering/process-only changes such as harness, docs, CI, or workflow guardrails.
+
 ## TDD / Test Evidence
 
 - Test/sensor added before implementation:

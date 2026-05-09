@@ -14,6 +14,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `Makefile`：标准本地命令：`make setup`、`make check`、`make test`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body` 和 `make commitlint`。
 - `tools/commitlint` 和 `.githooks/commit-msg`：仓库内 Go 提交消息校验，约束 `{emoji} {type}{scope}: {subject}`，不引入 Node/npm 工具链。`make setup` 会为本地提交启用该 hook。
 - `.github/pull_request_template.md`：可重复的 PR 检查清单，覆盖需求分类、验收标准、测试证据、验证、回滚和残余风险。
+- 发版判定策略：工程/流程优化不需要软件发版；feature 和 bugfix 需要跟进发版或明确延后。
 - `.github/workflows/ci.yml`：与本地门禁一致的托管验证。
 
 ## 反馈传感器
@@ -31,6 +32,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 
 - 编辑前先分类请求：feature、bugfix、refactor、harness/tooling 或 analysis-only。
 - 实现前锁定可观察的验收标准。
+- 交付前记录发版判定。
 - 可行时，先添加失败测试、Harness 传感器或明确的手动验证清单，再改变行为。
 - 编辑范围限制在声明的文件/目录内。
 - 交付前把每条验收标准映射到证据。
@@ -55,6 +57,8 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 4. PR 元数据规则变化时运行 `make check`、`make test-harness` 和 `make validate-pr-body`。
 
 当修改提交规范时，同步更新 `tools/commitlint`、`.githooks/commit-msg`、`Makefile`、`.github/workflows/pr.yml`、`AGENTS.md`、`AGENTS.zh-CN.md`、本文档和 `docs/harness-engineering.md`。
+
+当修改发版判定规则时，同步更新 `tools/validate-pr-body`、`.github/pull_request_template.md`、`.github/pull_request_template.zh-CN.md`、`.github/workflows/pr-review.yml`、`AGENTS.md`、`AGENTS.zh-CN.md`、本文档、`docs/harness-engineering.md` 以及 `docs/github-automation.md` / `docs/zh-CN/github-automation.md`。
 
 - `CODE_OF_CONDUCT.md` / `CODE_OF_CONDUCT.zh-CN.md` 和 `SUPPORT.md` / `SUPPORT.zh-CN.md` 保持开源社区指南双语。
 

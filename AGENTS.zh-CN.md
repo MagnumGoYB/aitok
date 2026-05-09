@@ -54,6 +54,7 @@
 1. 需求分类
 - 将请求分类为 feature、bugfix、refactor、harness/tooling 或 analysis-only。
 - 写明用户可见结果、目标平台和影响区域。
+- 写明发版判定：工程/流程优化不需要软件发版；功能迭代和 BUG 修复必须提示或继续进入发版流程，除非用户明确延后。
 - 如果需求有歧义，先写出最安全的具体假设；只有错误假设会造成明显数据或产品风险时才提问。
 
 2. 技术栈匹配
@@ -112,7 +113,8 @@
 ## 7) CI 和提交流程
 
 - CI 必须运行 `make validate`、`make test-harness`。
-- PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、TDD / Test Evidence、Validation、Risk and Rollback。
+- PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、Release Decision、TDD / Test Evidence、Validation、Risk and Rollback。
+- feature 和 bugfix PR 必须标记合并后需要发版，或写明用户已明确批准延后。Harness/tooling、docs、CI 和其他工程流程优化 PR 应标记无需发版。
 - 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。先运行一次 `make setup` 启用 `.githooks/commit-msg`，或直接运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`。PR CI 也会校验 PR 最新提交消息。
 - 不要绕过本地验证后声称完成。
 - Stage/commit 只包含当前迭代文件；不要纳入无关 dirty files。

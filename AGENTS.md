@@ -54,6 +54,7 @@ Before every product or harness iteration, do a short internal review:
 1. Requirement classification
 - Classify the request as feature, bugfix, refactor, harness/tooling, or analysis-only.
 - State the user-visible outcome, target platform, and affected area.
+- State the release decision: engineering/process-only optimization does not require a software release; feature and bugfix work must prompt for or continue into the release flow unless the user explicitly defers it.
 - If the request is ambiguous, write the safest concrete assumption before editing. Ask only when a wrong assumption would create meaningful data or product risk.
 
 2. Stack fit
@@ -112,7 +113,8 @@ Before every product or harness iteration, do a short internal review:
 ## 7) CI and Submission Protocol
 
 - CI must run `make validate` and `make test-harness`.
-- PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, TDD / Test Evidence, Validation, and Risk and Rollback.
+- PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, Release Decision, TDD / Test Evidence, Validation, and Risk and Rollback.
+- Feature and bugfix PRs must mark release required after merge or identify the explicit user-approved deferral. Harness/tooling, docs, CI, and other engineering-process-only PRs should mark release not required.
 - Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make setup` once to enable `.githooks/commit-msg`, or run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` directly. PR CI also validates the latest PR commit message.
 - Do not claim completion after skipping local validation.
 - Stage/commit only files that belong to the current iteration; do not include unrelated dirty files.

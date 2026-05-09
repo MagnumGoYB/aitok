@@ -491,12 +491,22 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	for _, section := range []string{
 		"Requirement Classification",
 		"Acceptance Criteria",
+		"Release Decision",
 		"TDD / Test Evidence",
 		"Validation",
 		"Risk and Rollback",
 	} {
 		if !strings.Contains(prTemplate, section) {
 			t.Fatalf("PR template missing %s", section)
+		}
+	}
+	for _, expected := range []string{
+		"feature and bugfix",
+		"Release not required",
+		"Release required after merge",
+	} {
+		if !strings.Contains(prTemplate, expected) {
+			t.Fatalf("PR template release decision must mention %s", expected)
 		}
 	}
 	if !strings.Contains(makefile, "AITOK_CACHE_DIR ?= $(CURDIR)/.cache/aitok") {

@@ -25,6 +25,7 @@ jobs:
             - [ ] No raw API key is read, printed, hashed, fingerprinted, or persisted.
             - [ ] Source adapters still stream local logs and include fixture coverage for malformed or missing fields.
             - [ ] CLI JSON/Markdown/table output remains stable or the change is documented and tested.
+            - [ ] Release decision is explicit: feature/bugfix changes require follow-up release; repository-only engineering changes do not.
             - [ ] Bugfix PRs include a failing test, fixture, harness sensor, or clear manual reproduction.
             - [ ] Release/build impact is stated when dependencies, CI, or packaging changed.
             `;
