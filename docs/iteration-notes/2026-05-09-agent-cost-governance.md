@@ -115,6 +115,8 @@ gh api repos/MagnumGoYB/aitok/pulls/<number> -X PATCH --input <body.json>
 
 PR metadata validation expects explicit coverage for requirement classification, acceptance criteria evidence, unit tests, failure/edge coverage, skipped validation, and residual risk.
 
+CodeRabbit is intentionally not part of the required PR gate because always-on paid review is not worth the recurring cost for this repository. Keep review enforcement on GitHub-native checklist comments, CODEOWNERS, branch protection, required checks, and scoped Dependabot auto-merge. Use paid or external AI review only as an explicit one-off decision for high-risk changes.
+
 ## Next Work
 
 Highest value:

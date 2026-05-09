@@ -2,7 +2,7 @@
 
 [中文](zh-CN/github-automation.md)
 
-This repository uses GitHub-native automation for pull requests, CodeRabbit reviews, review prompts, Dependabot auto-merge, bug reports, pricing-watch alerts, cross-platform builds, and releases.
+This repository uses GitHub-native automation for pull requests, review prompts, Dependabot auto-merge, bug reports, pricing-watch alerts, cross-platform builds, and releases.
 
 ## Pull Request Flow
 
@@ -12,13 +12,11 @@ This repository uses GitHub-native automation for pull requests, CodeRabbit revi
 
 ## Review Flow
 
-- `.coderabbit.yaml` configures CodeRabbit automatic reviews for PRs targeting `main`.
-- CodeRabbit reviews use zh-CN comments, an assertive profile, request-changes workflow, and path-specific instructions for Go code, GitHub workflows, docs, and harness files.
-- CodeRabbit must still be installed as the GitHub App for repository PRs; the YAML file only defines repository-specific behavior.
 - `.github/workflows/pr-review.yml` posts a checklist comment on new or updated pull requests.
 - The checklist workflow runs with `issues: write` and `pull-requests: write` so `actions/github-script` can create or update the PR issue comment under branch protection.
 - The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, and release impact.
 - `.github/CODEOWNERS` requests review for core areas such as adapters, query/report code, harness, and GitHub workflows.
+- Paid AI review automation is intentionally not required; maintainers can run one-off local or external AI review only when the risk justifies the cost.
 
 ## Bugfix Flow
 

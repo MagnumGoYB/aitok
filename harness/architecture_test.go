@@ -1,6 +1,7 @@
 package harness_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,7 +168,6 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 		".github/workflows/build.yml",
 		".github/workflows/release.yml",
 		".github/dependabot.yml",
-		".coderabbit.yaml",
 		".github/CODEOWNERS",
 		".github/ISSUE_TEMPLATE/bug_report.yml",
 	} {
@@ -193,24 +193,38 @@ func TestGitHubAutomationWorkflowsAreDocumentedAndPresent(t *testing.T) {
 	}
 }
 
-func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *testing.T) {
-	coderabbit := read(t, ".coderabbit.yaml")
+func TestPullRequestAutomationUsesNativeReviewGatesAndScopedDependabotAutoMerge(t *testing.T) {
+	if _, err := os.Stat(filepath.Join(repoRoot(t), ".coderabbit.yaml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(".coderabbit.yaml should not be required for PR review automation; stat error = %v", err)
+	}
+
+	prReview := read(t, ".github", "workflows", "pr-review.yml")
 	for _, expected := range []string{
-		"schema=https://coderabbit.ai/integrations/schema.v2.json",
-		`language: "zh-CN"`,
-		`profile: "assertive"`,
-		"request_changes_workflow: true",
-		"auto_review:",
-		"enabled: true",
-		`- "main"`,
-		"path_instructions:",
-		`path: "**/*.go"`,
-		`path: ".github/workflows/**"`,
-		`path: "docs/**"`,
-		`path: "harness/**"`,
+		"pull_request_target:",
+		"pull-requests: write",
+		"issues: write",
+		"actions/github-script@v8",
+		"issues.createComment",
+		"issues.updateComment",
+		"Offline-first",
+		"Source adapters",
+		"CLI JSON",
 	} {
-		if !strings.Contains(coderabbit, expected) {
-			t.Fatalf(".coderabbit.yaml must contain %s", expected)
+		if !strings.Contains(prReview, expected) {
+			t.Fatalf("PR review checklist workflow must contain %s", expected)
+		}
+	}
+
+	codeowners := read(t, ".github", "CODEOWNERS")
+	for _, expected := range []string{
+		"/internal/sources/",
+		"/internal/query/",
+		"/internal/report/",
+		"/harness/",
+		"/.github/",
+	} {
+		if !strings.Contains(codeowners, expected) {
+			t.Fatalf("CODEOWNERS must contain %s", expected)
 		}
 	}
 
@@ -238,8 +252,9 @@ func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *test
 
 	docs := read(t, "docs", "github-automation.md") + "\n" + read(t, "docs", "zh-CN", "github-automation.md")
 	for _, expected := range []string{
-		".coderabbit.yaml",
-		"CodeRabbit",
+		"GitHub-native",
+		"checklist",
+		"CODEOWNERS",
 		".github/workflows/dependabot-auto-merge.yml",
 		"auto-merge",
 		"delete-branch-on-merge",
@@ -252,6 +267,15 @@ func TestPullRequestAutomationUsesCodeRabbitAndScopedDependabotAutoMerge(t *test
 	} {
 		if !strings.Contains(docs, expected) {
 			t.Fatalf("GitHub automation docs must mention %s", expected)
+		}
+	}
+	for _, forbidden := range []string{
+		".coderabbit.yaml",
+		"CodeRabbit reviews",
+		"CodeRabbit review",
+	} {
+		if strings.Contains(docs, forbidden) {
+			t.Fatalf("GitHub automation docs must not require paid CodeRabbit review automation: found %s", forbidden)
 		}
 	}
 }

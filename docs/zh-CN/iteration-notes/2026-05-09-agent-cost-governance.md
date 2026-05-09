@@ -115,6 +115,8 @@ gh api repos/MagnumGoYB/aitok/pulls/<number> -X PATCH --input <body.json>
 
 PR metadata 校验需要明确覆盖需求分类、验收标准证据、单元测试、失败/边界覆盖、跳过验证说明和残余风险。
 
+CodeRabbit 不再作为必需 PR 门禁，因为常驻付费 review 对本仓库的持续成本不划算。Review 约束保留在 GitHub 原生 checklist comment、CODEOWNERS、branch protection、required checks 和受限的 Dependabot 自动合并上。只有高风险变更明确值得成本时，才按一次性决策使用付费或外部 AI review。
+
 ## 后续工作
 
 最高价值：

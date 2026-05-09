@@ -59,10 +59,10 @@ When changing commit workflow rules, update `tools/commitlint`, `.githooks/commi
 
 ## GitHub Automation Coverage
 
-- `docs/github-automation.md` and `docs/zh-CN/github-automation.md` document PR, CodeRabbit review, bugfix, build, release, and Dependabot auto-merge flows.
+- `docs/github-automation.md` and `docs/zh-CN/github-automation.md` document PR review prompts, bugfix, build, release, and Dependabot auto-merge flows.
 - `.github/workflows/pr.yml` validates real PR metadata.
 - `.github/workflows/pr-review.yml` posts the review checklist with `issues: write` and `pull-requests: write` permissions so it can create or update the PR issue comment.
-- `.coderabbit.yaml` configures repository-specific CodeRabbit PR review behavior.
+- `.github/CODEOWNERS` routes high-risk areas to maintainers without requiring paid AI review automation.
 - `.github/workflows/dependabot-auto-merge.yml` enables GitHub auto-merge only for non-major Dependabot updates.
 - `.github/workflows/build.yml` uploads cross-platform build artifacts.
 - `.github/workflows/release.yml` publishes tag releases through GoReleaser.
