@@ -25,8 +25,16 @@ func (c Claude) Name() usage.Tool {
 }
 
 func (c Claude) Read(ctx context.Context) ([]usage.UsageEvent, error) {
-	root := filepath.Join(c.Home, ".claude", "projects")
 	var events []usage.UsageEvent
+	err := c.Scan(ctx, func(event usage.UsageEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	return events, err
+}
+
+func (c Claude) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
+	root := filepath.Join(c.Home, ".claude", "projects")
 	seen := map[string]struct{}{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
@@ -41,11 +49,10 @@ func (c Claude) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 				return nil
 			}
 			seen[event.ID] = struct{}{}
-			events = append(events, event)
-			return nil
+			return handle(event)
 		})
 	})
-	return events, err
+	return err
 }
 
 func (c Claude) parseEvent(path string, obj map[string]any) (usage.UsageEvent, bool) {

@@ -30,6 +30,14 @@ type Result struct {
 	Examples map[string]string `json:"examples,omitempty"`
 }
 
+type Accumulator struct {
+	window  Window
+	filters Filters
+	groupBy GroupBy
+	costFor func(usage.UsageEvent) Cost
+	buckets map[string]*Result
+}
+
 func DefaultGroupBy() GroupBy {
 	return GroupBy{"tool", "model", "provider"}
 }
@@ -56,28 +64,40 @@ func Aggregate(events []usage.UsageEvent, window Window, filters Filters, groupB
 }
 
 func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) []Result {
-	buckets := map[string]*Result{}
+	acc := NewAccumulator(window, filters, groupBy, costFor)
 	for _, event := range events {
-		if !window.Contains(event.Timestamp) || !matches(event, filters) {
-			continue
-		}
-		key := keyFor(event, groupBy, window.Start.Location())
-		bucketKey := serializeKey(groupBy, key)
-		if buckets[bucketKey] == nil {
-			buckets[bucketKey] = &Result{Key: key, Examples: map[string]string{}}
-		}
-		buckets[bucketKey].Events++
-		buckets[bucketKey].Requests++
-		buckets[bucketKey].Usage = buckets[bucketKey].Usage.Add(event.Usage)
-		if costFor != nil {
-			buckets[bucketKey].CostUSD += costFor(event).USD
-		}
-		if event.CWD != "" && buckets[bucketKey].Examples["cwd"] == "" {
-			buckets[bucketKey].Examples["cwd"] = event.CWD
-		}
+		acc.Add(event)
 	}
-	results := make([]Result, 0, len(buckets))
-	for _, result := range buckets {
+	return acc.Results()
+}
+
+func NewAccumulator(window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) *Accumulator {
+	return &Accumulator{window: window, filters: filters, groupBy: groupBy, costFor: costFor, buckets: map[string]*Result{}}
+}
+
+func (a *Accumulator) Add(event usage.UsageEvent) {
+	if !a.window.Contains(event.Timestamp) || !matches(event, a.filters) {
+		return
+	}
+	key := keyFor(event, a.groupBy, a.window.Start.Location())
+	bucketKey := serializeKey(a.groupBy, key)
+	if a.buckets[bucketKey] == nil {
+		a.buckets[bucketKey] = &Result{Key: key, Examples: map[string]string{}}
+	}
+	a.buckets[bucketKey].Events++
+	a.buckets[bucketKey].Requests++
+	a.buckets[bucketKey].Usage = a.buckets[bucketKey].Usage.Add(event.Usage)
+	if a.costFor != nil {
+		a.buckets[bucketKey].CostUSD += a.costFor(event).USD
+	}
+	if event.CWD != "" && a.buckets[bucketKey].Examples["cwd"] == "" {
+		a.buckets[bucketKey].Examples["cwd"] = event.CWD
+	}
+}
+
+func (a *Accumulator) Results() []Result {
+	results := make([]Result, 0, len(a.buckets))
+	for _, result := range a.buckets {
 		if len(result.Examples) == 0 {
 			result.Examples = nil
 		}
@@ -87,7 +107,7 @@ func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filter
 		left := results[i].Usage.NormalizedTotal()
 		right := results[j].Usage.NormalizedTotal()
 		if left == right {
-			return serializeKey(groupBy, results[i].Key) < serializeKey(groupBy, results[j].Key)
+			return serializeKey(a.groupBy, results[i].Key) < serializeKey(a.groupBy, results[j].Key)
 		}
 		return left > right
 	})

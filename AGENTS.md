@@ -8,6 +8,7 @@ This file is the execution guide for AI coding agents working in this repository
 
 `aitok` is an offline-first Go CLI for summarizing local token usage from Claude Code, Codex, and Gemini CLI.
 It may estimate USD costs from local token counts using an offline price catalog and local user overrides.
+Although it is a command-line tool for humans, product and engineering decisions should prioritize reliable invocation by AI agents and automation.
 
 Current codebase shape:
 
@@ -37,7 +38,7 @@ Out of scope unless explicitly requested:
 - Build: `make build`
 - Full local validation: `make validate`
 - PR metadata check: `make validate-pr-body`
-- Commit message check: `go run ./tools/commitlint --edit <commit-msg-file>`
+- Commit message check: `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
 - Run CLI directly: `go run ./cmd/aitok summary --period today`
 
 ## 3) Iteration Self-Constraint Protocol
@@ -77,6 +78,9 @@ Before every product or harness iteration, do a short internal review:
 - Cost estimation must remain offline by default. Default prices may be updated from public provider pricing, but automatic network sync must be explicitly requested and opt-in.
 - Gemini CLI historical data depends on an existing local telemetry outfile. When it is not configured, report no parseable historical data.
 - CLI output must stay stable; JSON field changes need tests.
+- AI agents should treat `--format json` plus `--no-version-check` as the primary automation contract.
+- For JSON commands, stdout must remain a complete machine-readable JSON payload. Human-readable warnings, budget failures, and version prompts belong on stderr or in the returned error path.
+- Exit codes are part of the contract: `budget check` returns non-zero when the budget is exceeded while still writing the structured payload to stdout.
 - Markdown/table reports should remain readable and scriptable.
 - TUI must not replace CLI/JSON output; automation must be able to bypass TUI.
 - Production packages must not import `harness/` or `tools/`.
@@ -103,7 +107,7 @@ Before every product or harness iteration, do a short internal review:
 
 - CI must run `make validate` and `make test-harness`.
 - PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, TDD / Test Evidence, Validation, and Risk and Rollback.
-- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `go run ./tools/commitlint --edit <commit-msg-file>` or install `.githooks/commit-msg` with `git config core.hooksPath .githooks`.
+- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` or install `.githooks/commit-msg` with `git config core.hooksPath .githooks`.
 - Do not claim completion after skipping local validation.
 - Stage/commit only files that belong to the current iteration; do not include unrelated dirty files.
 

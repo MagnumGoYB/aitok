@@ -413,7 +413,7 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	prTemplate := read(t, ".github", "pull_request_template.md")
 	gitignore := read(t, ".gitignore")
 
-	for _, target := range []string{"check:", "test:", "test-harness:", "build:", "validate-pr-body:", "validate:"} {
+	for _, target := range []string{"check:", "test:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "validate:"} {
 		if !strings.Contains(makefile, target) {
 			t.Fatalf("Makefile missing %s", target)
 		}
@@ -437,13 +437,19 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 			t.Fatalf("PR template missing %s", section)
 		}
 	}
-	if !strings.Contains(makefile, "AITOK_CACHE_DIR ?= /tmp/aitok-cache") {
-		t.Fatal("Makefile must default Go caches to a cross-platform runner-writable cache directory")
+	if !strings.Contains(makefile, "AITOK_CACHE_DIR ?= $(CURDIR)/.cache/aitok") {
+		t.Fatal("Makefile must default Go caches to the repository-local ignored cache directory")
 	}
-	for _, forbidden := range []string{"/private/tmp/aitok-gocache", "/private/tmp/aitok-gomodcache", "$(CURDIR)/$(AITOK_CACHE_DIR)"} {
+	if !strings.Contains(makefile, "gofmt -l $$(git ls-files '*.go')") {
+		t.Fatal("Makefile check must format only tracked Go source files")
+	}
+	for _, forbidden := range []string{"/tmp/aitok-cache", "/private/tmp/aitok-gocache", "/private/tmp/aitok-gomodcache", "$(CURDIR)/$(AITOK_CACHE_DIR)"} {
 		if strings.Contains(makefile, forbidden) {
-			t.Fatalf("Makefile must not default to macOS-only cache path %s", forbidden)
+			t.Fatalf("Makefile must not default to ad hoc temp cache path %s", forbidden)
 		}
+	}
+	if !strings.Contains(gitignore, ".cache/") {
+		t.Fatal(".gitignore must ignore the repository-local cache directory")
 	}
 	if !strings.Contains(gitignore, "/aitok") || strings.Contains(gitignore, "\naitok\n") {
 		t.Fatal(".gitignore must ignore only the root aitok binary, not cmd/aitok")
@@ -477,8 +483,8 @@ func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
 	}
 
 	hook := read(t, ".githooks", "commit-msg")
-	if !strings.Contains(hook, `go run ./tools/commitlint --edit "$1"`) {
-		t.Fatal(".githooks/commit-msg must run the Go commitlint tool")
+	if !strings.Contains(hook, `make commitlint COMMIT_MSG_FILE="$1"`) {
+		t.Fatal(".githooks/commit-msg must run the repository commitlint target")
 	}
 
 	docs := strings.Join([]string{
@@ -489,7 +495,7 @@ func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
 		read(t, ".github", "pull_request_template.md"),
 		read(t, ".github", "pull_request_template.zh-CN.md"),
 	}, "\n")
-	for _, expected := range []string{"go run ./tools/commitlint", ".githooks/commit-msg", "{emoji} {type}{scope}: {subject}"} {
+	for _, expected := range []string{"make commitlint COMMIT_MSG_FILE=", ".githooks/commit-msg", "{emoji} {type}{scope}: {subject}"} {
 		if !strings.Contains(docs, expected) {
 			t.Fatalf("agent and PR docs must mention %s", expected)
 		}

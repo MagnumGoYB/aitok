@@ -25,10 +25,18 @@ func (c Codex) Name() usage.Tool {
 }
 
 func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
-	root := filepath.Join(c.Home, ".codex", "sessions")
 	var events []usage.UsageEvent
-	seen := map[string]int{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := c.Scan(ctx, func(event usage.UsageEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	return events, err
+}
+
+func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
+	root := filepath.Join(c.Home, ".codex", "sessions")
+	seen := map[string]struct{}{}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
@@ -37,17 +45,15 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 			state.update(obj)
 			event, ok := c.parseEvent(path, obj, state)
 			if ok {
-				if index, exists := seen[event.ID]; exists {
-					events[index] = event
+				if _, exists := seen[event.ID]; exists {
 					return nil
 				}
-				seen[event.ID] = len(events)
-				events = append(events, event)
+				seen[event.ID] = struct{}{}
+				return handle(event)
 			}
 			return nil
 		})
 	})
-	return events, err
 }
 
 type codexState struct {
@@ -111,7 +117,7 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	}
 	id := codexHash(ts, tokens, codexUsageFingerprint(rawTotalUsage))
 	return usage.UsageEvent{
-		ID:        id,
+		ID:        state.turnID + ":" + id,
 		Timestamp: ts,
 		Tool:      usage.ToolCodex,
 		Model:     usage.Unknown(state.model),

@@ -1,2 +1,2 @@
 #!/bin/sh
-go run ./tools/commitlint --edit "$1"
+make commitlint COMMIT_MSG_FILE="$1"

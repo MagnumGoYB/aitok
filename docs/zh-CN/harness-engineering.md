@@ -11,7 +11,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `AGENTS.md` 和 `AGENTS.zh-CN.md`：仓库使命、编码约束、验证矩阵、隐私边界和交付规则。
 - `README.md`：面向用户的 CLI 使用和安装路径。
 - `CONTRIBUTING.md`：贡献者验证和离线优先规则。
-- `Makefile`：标准本地命令：`make check`、`make test`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body`。
+- `Makefile`：标准本地命令：`make check`、`make test`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body` 和 `make commitlint`。
 - `tools/commitlint` 和 `.githooks/commit-msg`：仓库内 Go 提交消息校验，约束 `{emoji} {type}{scope}: {subject}`，不引入 Node/npm 工具链。
 - `.github/pull_request_template.md`：可重复的 PR 检查清单，覆盖需求分类、验收标准、测试证据、验证、回滚和残余风险。
 - `.github/workflows/ci.yml`：与本地门禁一致的托管验证。
@@ -23,7 +23,8 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `go vet ./...`：静态分析。
 - `go build ./cmd/aitok`：单二进制构建检查。
 - `go run ./tools/validate-pr-body`：可执行 PR body 元数据门禁。
-- `go run ./tools/commitlint --edit <commit-msg-file>`：可执行提交消息门禁，可通过 `.githooks/commit-msg` 接入。
+- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`：可执行提交消息门禁，可通过 `.githooks/commit-msg` 接入。
+- `.cache/aitok/`：仓库内、git 忽略的 Go build/module cache，供 Makefile 目标使用，让 agent 校验绑定当前 checkout，而不是临时拼接 `/tmp` 路径。
 
 ## 代理工作流契约
 

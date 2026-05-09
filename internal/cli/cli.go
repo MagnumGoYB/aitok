@@ -3,9 +3,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/buildinfo"
@@ -57,6 +61,7 @@ type flags struct {
 	dryRun         bool
 	noVersionCheck bool
 	version        bool
+	limitUSD       float64
 }
 
 func New(app App) *cobra.Command {
@@ -122,6 +127,54 @@ func New(app App) *cobra.Command {
 	}
 	addQueryFlags(reportCmd, f)
 
+	pricingCmd := &cobra.Command{
+		Use:   "pricing",
+		Short: "Inspect offline pricing coverage",
+	}
+	pricingAudit := &cobra.Command{
+		Use:   "audit",
+		Short: "Report local usage events without matching prices",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload, err := buildPricingAudit(cmd.Context(), f, app.Now())
+			if err != nil {
+				return err
+			}
+			return report.WritePricingAudit(app.Out, f.format, payload)
+		},
+	}
+	addQueryFlags(pricingAudit, f)
+	pricingCmd.AddCommand(pricingAudit)
+
+	budgetCmd := &cobra.Command{
+		Use:   "budget",
+		Short: "Check local estimated usage cost against a budget",
+	}
+	budgetCheck := &cobra.Command{
+		Use:   "check",
+		Short: "Fail when estimated local usage cost exceeds a limit",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload, err := buildBudgetCheck(cmd.Context(), f, app.Now())
+			if err != nil {
+				return err
+			}
+			if err := report.WriteBudget(app.Out, f.format, payload); err != nil {
+				return err
+			}
+			if payload.UnpricedEvents > 0 {
+				if _, err := fmt.Fprintf(app.Err, "warning: %d events had no matching price; estimated cost may be low\n", payload.UnpricedEvents); err != nil {
+					return err
+				}
+			}
+			if payload.Exceeded {
+				return budgetExceededError{Limit: payload.LimitUSD, Total: payload.TotalUSD}
+			}
+			return nil
+		},
+	}
+	addQueryFlags(budgetCheck, f)
+	budgetCheck.Flags().Float64Var(&f.limitUSD, "limit-usd", 0, "budget limit in USD; required and must be greater than 0")
+	budgetCmd.AddCommand(budgetCheck)
+
 	tuiCmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Open the terminal dashboard",
@@ -148,9 +201,14 @@ func New(app App) *cobra.Command {
 		Use:   "doctor",
 		Short: "Inspect local data source availability",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDoctor(cmd.Context(), app.Out, f.home)
+			payload, err := buildDoctor(cmd.Context(), f, app.Now())
+			if err != nil {
+				return err
+			}
+			return report.WriteDoctor(app.Out, f.format, payload)
 		},
 	}
+	doctor.Flags().StringVar(&f.format, "format", "table", "format: table, json, markdown")
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -201,7 +259,7 @@ func New(app App) *cobra.Command {
 	gemini.Flags().StringVar(&f.format, "format", "table", "output format: table or json")
 	setupCmd.AddCommand(gemini)
 
-	root.AddCommand(summary, reportCmd, tuiCmd, doctor, versionCmd, updateCmd, setupCmd)
+	root.AddCommand(summary, reportCmd, pricingCmd, budgetCmd, tuiCmd, doctor, versionCmd, updateCmd, setupCmd)
 	return root
 }
 
@@ -231,23 +289,27 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	}
 	window := query.WindowFor(period, now, time.Local)
 	opts := sources.Options{Home: resolveHome(f.home)}
-	events, err := sources.Collect(ctx, sources.Defaults(opts))
-	if err != nil {
-		return report.Payload{}, err
-	}
 	catalog, err := loadPricing(f, opts.Home)
 	if err != nil {
 		return report.Payload{}, err
 	}
-	results := query.AggregateWithCosts(events, window, query.Filters{
+	groupBy := query.ParseGroupBy(f.groupBy)
+	acc := query.NewAccumulator(window, query.Filters{
 		Tools:     query.SplitCSV(f.tools),
 		Models:    query.SplitCSV(f.models),
 		Providers: query.SplitCSV(f.providers),
 		CWD:       f.cwd,
-	}, query.ParseGroupBy(f.groupBy), func(event usage.UsageEvent) query.Cost {
+	}, groupBy, func(event usage.UsageEvent) query.Cost {
 		return query.Cost{USD: catalog.CostFor(event).USD}
 	})
-	return report.Payload{GeneratedAt: now, Window: window, GroupBy: query.ParseGroupBy(f.groupBy), Results: results}, nil
+	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+		acc.Add(event)
+		return nil
+	})
+	if err != nil {
+		return report.Payload{}, err
+	}
+	return report.Payload{GeneratedAt: now, Window: window, GroupBy: groupBy, Results: acc.Results()}, nil
 }
 
 func loadPricing(f *flags, home string) (pricing.Catalog, error) {
@@ -265,17 +327,263 @@ func loadPricing(f *flags, home string) (pricing.Catalog, error) {
 	return catalog, nil
 }
 
-func runDoctor(ctx context.Context, out io.Writer, home string) error {
-	opts := sources.Options{Home: resolveHome(home)}
-	for _, source := range sources.Defaults(opts) {
-		events, err := source.Read(ctx)
-		status := "ok"
-		if err != nil {
-			status = err.Error()
-		}
-		fmt.Fprintf(out, "%s\t%d events\t%s\n", source.Name(), len(events), status)
+type budgetExceededError struct {
+	Limit float64
+	Total float64
+}
+
+func (e budgetExceededError) Error() string {
+	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatUSD(e.Total), report.FormatUSD(e.Limit))
+}
+
+func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.BudgetPayload, error) {
+	if f.limitUSD <= 0 {
+		return report.BudgetPayload{}, fmt.Errorf("--limit-usd must be greater than 0")
 	}
-	return nil
+	period, err := query.ParsePeriod(f.period)
+	if err != nil {
+		return report.BudgetPayload{}, err
+	}
+	window := query.WindowFor(period, now, time.Local)
+	opts := sources.Options{Home: resolveHome(f.home)}
+	catalog, err := loadPricing(f, opts.Home)
+	if err != nil {
+		return report.BudgetPayload{}, err
+	}
+	groupBy := query.ParseGroupBy(f.groupBy)
+	filters := query.Filters{Tools: query.SplitCSV(f.tools), Models: query.SplitCSV(f.models), Providers: query.SplitCSV(f.providers), CWD: f.cwd}
+	acc := query.NewAccumulator(window, filters, groupBy, func(event usage.UsageEvent) query.Cost {
+		return query.Cost{USD: catalog.CostFor(event).USD}
+	})
+	var unpriced unpricedPricingCount
+	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+		if !window.Contains(event.Timestamp) || !eventMatches(event, filters) {
+			return nil
+		}
+		if !catalog.Covers(event) {
+			unpriced.Events++
+			unpriced.Tokens += event.Usage.NormalizedTotal()
+		}
+		acc.Add(event)
+		return nil
+	})
+	if err != nil {
+		return report.BudgetPayload{}, err
+	}
+	results := acc.Results()
+	var total float64
+	for _, result := range results {
+		total += result.CostUSD
+	}
+	return report.BudgetPayload{
+		GeneratedAt:    now,
+		Window:         window,
+		LimitUSD:       f.limitUSD,
+		TotalUSD:       total,
+		Exceeded:       total > f.limitUSD,
+		UnpricedEvents: unpriced.Events,
+		UnpricedTokens: unpriced.Tokens,
+		Results:        results,
+	}, nil
+}
+
+type unpricedPricingCount struct {
+	Events int
+	Tokens int64
+}
+
+func buildPricingAudit(ctx context.Context, f *flags, now time.Time) (report.PricingAuditPayload, error) {
+	period, err := query.ParsePeriod(f.period)
+	if err != nil {
+		return report.PricingAuditPayload{}, err
+	}
+	window := query.WindowFor(period, now, time.Local)
+	opts := sources.Options{Home: resolveHome(f.home)}
+	catalog, err := loadPricing(f, opts.Home)
+	if err != nil {
+		return report.PricingAuditPayload{}, err
+	}
+	filters := query.Filters{Tools: query.SplitCSV(f.tools), Models: query.SplitCSV(f.models), Providers: query.SplitCSV(f.providers), CWD: f.cwd}
+	type bucket struct {
+		item report.PricingAuditResult
+	}
+	buckets := map[string]*bucket{}
+	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+		if !window.Contains(event.Timestamp) || !eventMatches(event, filters) || catalog.Covers(event) {
+			return nil
+		}
+		model := usage.Unknown(event.Model)
+		provider := usage.Unknown(event.Provider)
+		key := string(event.Tool) + "|" + model + "|" + provider
+		if buckets[key] == nil {
+			buckets[key] = &bucket{item: report.PricingAuditResult{Tool: string(event.Tool), Model: model, Provider: provider, Example: event.CWD}}
+		}
+		buckets[key].item.Events++
+		buckets[key].item.Usage = buckets[key].item.Usage.Add(event.Usage)
+		if buckets[key].item.Example == "" {
+			buckets[key].item.Example = event.CWD
+		}
+		return nil
+	})
+	if err != nil {
+		return report.PricingAuditPayload{}, err
+	}
+	unpriced := make([]report.PricingAuditResult, 0, len(buckets))
+	for _, bucket := range buckets {
+		unpriced = append(unpriced, bucket.item)
+	}
+	sort.Slice(unpriced, func(i, j int) bool {
+		left := unpriced[i].Usage.NormalizedTotal()
+		right := unpriced[j].Usage.NormalizedTotal()
+		if left == right {
+			return unpriced[i].Tool+"|"+unpriced[i].Model+"|"+unpriced[i].Provider < unpriced[j].Tool+"|"+unpriced[j].Model+"|"+unpriced[j].Provider
+		}
+		return left > right
+	})
+	return report.PricingAuditPayload{GeneratedAt: now, Window: window, Unpriced: unpriced, Skeleton: pricingSkeleton(unpriced)}, nil
+}
+
+func pricingSkeleton(items []report.PricingAuditResult) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("{\n  \"models\": [\n")
+	for i, item := range items {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		fmt.Fprintf(&b, "    {\n      \"match\": %q,\n      \"provider\": %q,\n      \"input_usd_per_mtok\": 0,\n      \"output_usd_per_mtok\": 0,\n      \"cache_hit_usd_per_mtok\": 0,\n      \"cache_make_usd_per_mtok\": 0,\n      \"multiplier\": 1\n    }", item.Model, item.Provider)
+	}
+	b.WriteString("\n  ]\n}\n")
+	return b.String()
+}
+
+func buildDoctor(ctx context.Context, f *flags, now time.Time) (report.DoctorPayload, error) {
+	opts := sources.Options{Home: resolveHome(f.home)}
+	catalog, err := loadPricing(f, opts.Home)
+	if err != nil {
+		return report.DoctorPayload{}, err
+	}
+	var payload report.DoctorPayload
+	payload.GeneratedAt = now
+	payload.Gemini = inspectGemini(opts.Home)
+	unpricedModels := map[string]struct{}{}
+	for _, source := range sources.Defaults(opts) {
+		result := report.DoctorSource{Name: string(source.Name()), Status: "ok"}
+		err := source.Scan(ctx, func(event usage.UsageEvent) error {
+			result.Events++
+			if result.LatestEvent == nil || event.Timestamp.After(*result.LatestEvent) {
+				ts := event.Timestamp
+				result.LatestEvent = &ts
+			}
+			if catalog.Covers(event) {
+				payload.Pricing.PricedEvents++
+			} else {
+				payload.Pricing.UnpricedEvents++
+				payload.Pricing.UnpricedTokens += event.Usage.NormalizedTotal()
+				unpricedModels[string(event.Tool)+"|"+usage.Unknown(event.Model)+"|"+usage.Unknown(event.Provider)] = struct{}{}
+			}
+			return nil
+		})
+		if err != nil {
+			result.Status = err.Error()
+		}
+		payload.Sources = append(payload.Sources, result)
+	}
+	payload.Pricing.UnpricedModels = len(unpricedModels)
+	return payload, nil
+}
+
+func inspectGemini(home string) report.DoctorGeminiState {
+	settingsPath := filepath.Join(home, ".gemini", "settings.json")
+	state := report.DoctorGeminiState{SettingsPath: settingsPath, Status: "not configured"}
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return state
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		state.Status = "settings parse error"
+		return state
+	}
+	telemetry, _ := settings["telemetry"].(map[string]any)
+	if telemetry == nil {
+		return state
+	}
+	enabled, hasEnabled := telemetry["enabled"].(bool)
+	if !hasEnabled || !enabled {
+		state.Status = "telemetry disabled"
+		return state
+	}
+	if target := stringFromAny(telemetry["target"]); target != "local" {
+		state.Status = "telemetry target not local"
+		return state
+	}
+	state.Configured = true
+	state.Outfile = expandHomeForCLI(home, stringFromAny(telemetry["outfile"]))
+	logPrompts, hasLogPrompts := telemetry["logPrompts"].(bool)
+	state.LogPromptsSafe = hasLogPrompts && !logPrompts
+	if state.Outfile == "" {
+		state.Status = "telemetry outfile missing"
+		return state
+	}
+	if !state.LogPromptsSafe {
+		state.Status = "logPrompts is not false"
+		return state
+	}
+	state.Status = "ok"
+	return state
+}
+
+func expandHomeForCLI(home, path string) string {
+	if path == "" {
+		return ""
+	}
+	if path == "~" {
+		return home
+	}
+	if len(path) > 2 && path[0] == '~' && os.IsPathSeparator(path[1]) {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+func stringFromAny(value any) string {
+	if out, ok := value.(string); ok {
+		return out
+	}
+	return ""
+}
+
+func eventMatches(event usage.UsageEvent, filters query.Filters) bool {
+	if len(filters.Tools) > 0 && !containsString(filters.Tools, string(event.Tool)) {
+		return false
+	}
+	if len(filters.Models) > 0 && !containsString(filters.Models, event.Model) {
+		return false
+	}
+	if len(filters.Providers) > 0 && !containsString(filters.Providers, event.Provider) {
+		return false
+	}
+	if filters.CWD != "" && !strings.Contains(event.CWD, filters.CWD) {
+		return false
+	}
+	return true
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsBudgetExceeded(err error) bool {
+	var budgetErr budgetExceededError
+	return errors.As(err, &budgetErr)
 }
 
 func resolveHome(home string) string {

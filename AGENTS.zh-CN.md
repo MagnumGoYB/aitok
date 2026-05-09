@@ -8,6 +8,7 @@
 
 `aitok` 是一个离线优先的 Go CLI，用于统计本机 Claude Code、Codex、Gemini CLI 的 Token 用量。
 它可以基于本地 Token 统计、离线价格表和用户本地覆盖配置预估 USD 成本。
+虽然它是面向人类用户的命令行工具，但产品和工程决策要优先保证 AI Agent 与自动化流程可以可靠调用。
 
 当前代码库形态：
 
@@ -37,7 +38,7 @@
 - 构建：`make build`
 - 完整本地验证：`make validate`
 - PR 元数据校验：`make validate-pr-body`
-- 提交消息检查：`go run ./tools/commitlint --edit <commit-msg-file>`
+- 提交消息检查：`make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
 - 直接运行 CLI：`go run ./cmd/aitok summary --period today`
 
 ## 3) 迭代前自我约束流程
@@ -77,6 +78,9 @@
 - 成本估算必须默认保持离线。默认价格可基于公开 provider 价格更新，但自动网络同步必须明确请求且显式 opt-in。
 - Gemini CLI 历史数据以已有 local telemetry outfile 为准；未开启时必须如实报告没有可解析历史数据。
 - CLI 输出必须稳定，JSON 字段变更需有测试覆盖。
+- AI Agent 应将 `--format json` 加 `--no-version-check` 作为主要自动化调用契约。
+- JSON 命令的 stdout 必须保持完整、可机器解析的 JSON payload。面向人类的 warning、预算失败摘要和版本提示应进入 stderr 或返回错误路径。
+- 退出码属于调用契约：`budget check` 预算超限时返回非零状态，但仍需把结构化 payload 写入 stdout。
 - Markdown/table 报告要保持可读且可脚本化。
 - TUI 不得替代 CLI/JSON 输出；自动化场景必须能绕过 TUI。
 - 生产代码不要依赖 `harness/` 或 `tools/`。
@@ -103,7 +107,7 @@
 
 - CI 必须运行 `make validate`、`make test-harness`。
 - PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、TDD / Test Evidence、Validation、Risk and Rollback。
-- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。可运行 `go run ./tools/commitlint --edit <commit-msg-file>`，或通过 `git config core.hooksPath .githooks` 启用 `.githooks/commit-msg`。
+- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。可运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`，或通过 `git config core.hooksPath .githooks` 启用 `.githooks/commit-msg`。
 - 不要绕过本地验证后声称完成。
 - Stage/commit 只包含当前迭代文件；不要纳入无关 dirty files。
 
