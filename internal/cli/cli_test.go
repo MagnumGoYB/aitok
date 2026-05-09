@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -58,7 +59,15 @@ func TestAgentJSONSummaryKeepsStdoutMachineReadableAndStderrEmpty(t *testing.T) 
 	if stderr.Len() != 0 {
 		t.Fatalf("agent JSON command should keep stderr empty on success: %s", stderr.String())
 	}
-	if !strings.HasPrefix(strings.TrimSpace(out.String()), "{") || !strings.Contains(out.String(), `"results"`) {
+	var payload struct {
+		Results []struct {
+			Key map[string]string `json:"key"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("stdout should be a complete JSON object: %v\n%s", err, out.String())
+	}
+	if len(payload.Results) != 1 || payload.Results[0].Key["tool"] != "codex" {
 		t.Fatalf("stdout should be a JSON object: %s", out.String())
 	}
 }
@@ -243,6 +252,38 @@ func TestDoctorReportsGeminiSafetyAndPricing(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"log_prompts_safe": true`) || !strings.Contains(out.String(), `"unpriced_events": 1`) {
 		t.Fatalf("doctor output missing gemini safety or pricing diagnostics: %s", out.String())
+	}
+}
+
+func TestDoctorRequiresGeminiLocalTelemetryEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings string
+		status   string
+	}{
+		{
+			name:     "disabled",
+			settings: `{"telemetry":{"enabled":false,"target":"local","outfile":"~/.gemini/telemetry.log","logPrompts":false}}`,
+			status:   "telemetry disabled",
+		},
+		{
+			name:     "not local",
+			settings: `{"telemetry":{"enabled":true,"target":"gcp","outfile":"~/.gemini/telemetry.log","logPrompts":false}}`,
+			status:   "telemetry target not local",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			writeFixture(t, filepath.Join(home, ".gemini", "settings.json"), tt.settings)
+			state := inspectGemini(home)
+			if state.Configured {
+				t.Fatalf("configured = true, want false")
+			}
+			if state.Status != tt.status {
+				t.Fatalf("status = %q, want %q", state.Status, tt.status)
+			}
+		})
 	}
 }
 

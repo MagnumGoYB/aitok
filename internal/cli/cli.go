@@ -509,6 +509,15 @@ func inspectGemini(home string) report.DoctorGeminiState {
 	if telemetry == nil {
 		return state
 	}
+	enabled, hasEnabled := telemetry["enabled"].(bool)
+	if !hasEnabled || !enabled {
+		state.Status = "telemetry disabled"
+		return state
+	}
+	if target := stringFromAny(telemetry["target"]); target != "local" {
+		state.Status = "telemetry target not local"
+		return state
+	}
 	state.Configured = true
 	state.Outfile = expandHomeForCLI(home, stringFromAny(telemetry["outfile"]))
 	logPrompts, hasLogPrompts := telemetry["logPrompts"].(bool)

@@ -35,9 +35,8 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 
 func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
 	root := filepath.Join(c.Home, ".codex", "sessions")
-	seen := map[string]usage.UsageEvent{}
-	var order []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	seen := map[string]struct{}{}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
@@ -46,23 +45,15 @@ func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) er
 			state.update(obj)
 			event, ok := c.parseEvent(path, obj, state)
 			if ok {
-				if _, exists := seen[event.ID]; !exists {
-					order = append(order, event.ID)
+				if _, exists := seen[event.ID]; exists {
+					return nil
 				}
-				seen[event.ID] = event
+				seen[event.ID] = struct{}{}
+				return handle(event)
 			}
 			return nil
 		})
 	})
-	if err != nil {
-		return err
-	}
-	for _, id := range order {
-		if err := handle(seen[id]); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type codexState struct {

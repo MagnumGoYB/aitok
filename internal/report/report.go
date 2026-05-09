@@ -51,11 +51,10 @@ func WriteTable(w io.Writer, results []query.Result) error {
 			fmt.Sprint(result.Usage.NormalizedTotal()),
 		})
 	}
-	writeBorderedTable(w, headers, rows)
-	return nil
+	return writeBorderedTable(w, headers, rows)
 }
 
-func writeBorderedTable(w io.Writer, headers []string, rows [][]string) {
+func writeBorderedTable(w io.Writer, headers []string, rows [][]string) error {
 	widths := make([]int, len(headers))
 	for i, header := range headers {
 		widths[i] = len(header)
@@ -68,13 +67,22 @@ func writeBorderedTable(w io.Writer, headers []string, rows [][]string) {
 		}
 	}
 	border := tableBorder(widths)
-	fmt.Fprintln(w, border)
-	writeTableRow(w, headers, widths)
-	fmt.Fprintln(w, border)
-	for _, row := range rows {
-		writeTableRow(w, row, widths)
+	if _, err := fmt.Fprintln(w, border); err != nil {
+		return err
 	}
-	fmt.Fprintln(w, border)
+	if err := writeTableRow(w, headers, widths); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, border); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := writeTableRow(w, row, widths); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(w, border)
+	return err
 }
 
 func tableBorder(widths []int) string {
@@ -87,7 +95,7 @@ func tableBorder(widths []int) string {
 	return b.String()
 }
 
-func writeTableRow(w io.Writer, row []string, widths []int) {
+func writeTableRow(w io.Writer, row []string, widths []int) error {
 	var b strings.Builder
 	b.WriteString("|")
 	for i, value := range row {
@@ -101,14 +109,19 @@ func writeTableRow(w io.Writer, row []string, widths []int) {
 		}
 		b.WriteString(" |")
 	}
-	fmt.Fprintln(w, b.String())
+	_, err := fmt.Fprintln(w, b.String())
+	return err
 }
 
 func WriteMarkdown(w io.Writer, results []query.Result) error {
-	fmt.Fprintln(w, "| Group | Requests | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |")
-	fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	if _, err := fmt.Fprintln(w, "| Group | Requests | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
+		return err
+	}
 	for _, result := range results {
-		fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
 			result.Requests,
 			result.Events,
@@ -120,7 +133,9 @@ func WriteMarkdown(w io.Writer, results []query.Result) error {
 			result.Usage.Reasoning,
 			result.Usage.Tool,
 			result.Usage.NormalizedTotal(),
-		)
+		); err != nil {
+			return err
+		}
 	}
 	return nil
 }

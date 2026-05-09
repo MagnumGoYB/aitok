@@ -75,10 +75,16 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 		for _, item := range payload.Unpriced {
 			rows = append(rows, []string{item.Tool, item.Model, item.Provider, fmt.Sprint(item.Events), fmt.Sprint(item.Usage.NormalizedTotal()), item.Example})
 		}
-		writeBorderedTable(w, headers, rows)
+		if err := writeBorderedTable(w, headers, rows); err != nil {
+			return err
+		}
 		if payload.Skeleton != "" {
-			fmt.Fprintln(w, "\nSuggested pricing skeleton:")
-			fmt.Fprint(w, payload.Skeleton)
+			if _, err := fmt.Fprintln(w, "\nSuggested pricing skeleton:"); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprint(w, payload.Skeleton); err != nil {
+				return err
+			}
 		}
 		return nil
 	case "json":
@@ -86,22 +92,34 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		fmt.Fprintln(w, "| Tool | Model | Provider | Events | Total | Example |")
-		fmt.Fprintln(w, "| --- | --- | --- | ---: | ---: | --- |")
+		if _, err := fmt.Fprintln(w, "| Tool | Model | Provider | Events | Total | Example |"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "| --- | --- | --- | ---: | ---: | --- |"); err != nil {
+			return err
+		}
 		for _, item := range payload.Unpriced {
-			fmt.Fprintf(w, "| %s | %s | %s | %d | %d | %s |\n",
+			if _, err := fmt.Fprintf(w, "| %s | %s | %s | %d | %d | %s |\n",
 				escapeMarkdown(item.Tool),
 				escapeMarkdown(item.Model),
 				escapeMarkdown(item.Provider),
 				item.Events,
 				item.Usage.NormalizedTotal(),
 				escapeMarkdown(item.Example),
-			)
+			); err != nil {
+				return err
+			}
 		}
 		if payload.Skeleton != "" {
-			fmt.Fprintln(w, "\n```json")
-			fmt.Fprint(w, strings.TrimSpace(payload.Skeleton))
-			fmt.Fprintln(w, "\n```")
+			if _, err := fmt.Fprintln(w, "\n```json"); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprint(w, strings.TrimSpace(payload.Skeleton)); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(w, "\n```"); err != nil {
+				return err
+			}
 		}
 		return nil
 	default:
@@ -112,16 +130,24 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 	switch format {
 	case "", "table":
-		fmt.Fprintf(w, "Limit USD: %s\nTotal USD: %s\nExceeded: %t\nUnpriced events: %d\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents)
+		if _, err := fmt.Fprintf(w, "Limit USD: %s\nTotal USD: %s\nExceeded: %t\nUnpriced events: %d\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+			return err
+		}
 		return WriteTable(w, payload.Results)
 	case "json":
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		fmt.Fprintf(w, "| Limit USD | Total USD | Exceeded | Unpriced Events |\n")
-		fmt.Fprintf(w, "| ---: | ---: | --- | ---: |\n")
-		fmt.Fprintf(w, "| %s | %s | %t | %d |\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents)
+		if _, err := fmt.Fprintf(w, "| Limit USD | Total USD | Exceeded | Unpriced Events |\n"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "| ---: | ---: | --- | ---: |\n"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "| %s | %s | %t | %d |\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+			return err
+		}
 		return WriteMarkdown(w, payload.Results)
 	default:
 		return fmt.Errorf("unknown format %q", format)
@@ -140,26 +166,42 @@ func WriteDoctor(w io.Writer, format string, payload DoctorPayload) error {
 			}
 			rows = append(rows, []string{source.Name, fmt.Sprint(source.Events), latest, source.Status})
 		}
-		writeBorderedTable(w, headers, rows)
-		fmt.Fprintf(w, "Pricing: priced=%d unpriced=%d unpriced_models=%d unpriced_tokens=%d\n", payload.Pricing.PricedEvents, payload.Pricing.UnpricedEvents, payload.Pricing.UnpricedModels, payload.Pricing.UnpricedTokens)
-		fmt.Fprintf(w, "Gemini: %s settings=%s outfile=%s log_prompts_safe=%t\n", payload.Gemini.Status, payload.Gemini.SettingsPath, payload.Gemini.Outfile, payload.Gemini.LogPromptsSafe)
+		if err := writeBorderedTable(w, headers, rows); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "Pricing: priced=%d unpriced=%d unpriced_models=%d unpriced_tokens=%d\n", payload.Pricing.PricedEvents, payload.Pricing.UnpricedEvents, payload.Pricing.UnpricedModels, payload.Pricing.UnpricedTokens); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "Gemini: %s settings=%s outfile=%s log_prompts_safe=%t\n", payload.Gemini.Status, payload.Gemini.SettingsPath, payload.Gemini.Outfile, payload.Gemini.LogPromptsSafe); err != nil {
+			return err
+		}
 		return nil
 	case "json":
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		fmt.Fprintln(w, "| Source | Events | Latest Event | Status |")
-		fmt.Fprintln(w, "| --- | ---: | --- | --- |")
+		if _, err := fmt.Fprintln(w, "| Source | Events | Latest Event | Status |"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "| --- | ---: | --- | --- |"); err != nil {
+			return err
+		}
 		for _, source := range payload.Sources {
 			latest := ""
 			if source.LatestEvent != nil {
 				latest = source.LatestEvent.Format(time.RFC3339)
 			}
-			fmt.Fprintf(w, "| %s | %d | %s | %s |\n", escapeMarkdown(source.Name), source.Events, latest, escapeMarkdown(source.Status))
+			if _, err := fmt.Fprintf(w, "| %s | %d | %s | %s |\n", escapeMarkdown(source.Name), source.Events, latest, escapeMarkdown(source.Status)); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintf(w, "\nPricing: priced=%d unpriced=%d unpriced_models=%d unpriced_tokens=%d\n", payload.Pricing.PricedEvents, payload.Pricing.UnpricedEvents, payload.Pricing.UnpricedModels, payload.Pricing.UnpricedTokens)
-		fmt.Fprintf(w, "\nGemini: %s; settings=%s; outfile=%s; log_prompts_safe=%t\n", payload.Gemini.Status, payload.Gemini.SettingsPath, payload.Gemini.Outfile, payload.Gemini.LogPromptsSafe)
+		if _, err := fmt.Fprintf(w, "\nPricing: priced=%d unpriced=%d unpriced_models=%d unpriced_tokens=%d\n", payload.Pricing.PricedEvents, payload.Pricing.UnpricedEvents, payload.Pricing.UnpricedModels, payload.Pricing.UnpricedTokens); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "\nGemini: %s; settings=%s; outfile=%s; log_prompts_safe=%t\n", payload.Gemini.Status, payload.Gemini.SettingsPath, payload.Gemini.Outfile, payload.Gemini.LogPromptsSafe); err != nil {
+			return err
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown format %q", format)

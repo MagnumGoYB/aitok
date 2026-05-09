@@ -67,11 +67,20 @@ func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 		acc.Add(event)
 	}
 	got := acc.Results()
-	want := AggregateWithCosts(events, window, Filters{Tools: []string{"codex"}}, GroupBy{"tool", "model"}, costFor)
-	if len(got) != len(want) {
-		t.Fatalf("len(results) = %d, want %d", len(got), len(want))
+	if len(got) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(got))
 	}
-	if got[0].Requests != want[0].Requests || got[0].CostUSD != want[0].CostUSD || got[0].Usage.NormalizedTotal() != want[0].Usage.NormalizedTotal() {
-		t.Fatalf("accumulator result = %+v, want %+v", got[0], want[0])
+	wantUsage := usage.TokenUsage{Input: 1_000_000, Output: 100_000, Total: 1_100_000}
+	if got[0].Key["tool"] != "codex" || got[0].Key["model"] != "gpt-5.4" {
+		t.Fatalf("key = %+v, want codex/gpt-5.4", got[0].Key)
+	}
+	if got[0].Requests != 2 || got[0].Events != 2 {
+		t.Fatalf("requests/events = %d/%d, want 2/2", got[0].Requests, got[0].Events)
+	}
+	if got[0].CostUSD != 2 {
+		t.Fatalf("cost = %.4f, want 2", got[0].CostUSD)
+	}
+	if got[0].Usage != wantUsage {
+		t.Fatalf("usage = %+v, want %+v", got[0].Usage, wantUsage)
 	}
 }
