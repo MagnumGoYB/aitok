@@ -22,6 +22,11 @@ Current codebase shape:
 - TUI: `internal/tui`
 - Harness sensors: `harness`
 
+Iteration notes:
+
+- Versioned iteration handoff notes live in `docs/iteration-notes/` with zh-CN mirrors in `docs/zh-CN/iteration-notes/`.
+- Before continuing agent-cost-governance, pricing coverage, budget, doctor, release, or GitHub automation work, read `docs/iteration-notes/2026-05-09-agent-cost-governance.md`.
+
 Out of scope unless explicitly requested:
 
 - network upload, remote sync, or cloud reporting

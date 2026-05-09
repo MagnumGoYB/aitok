@@ -22,6 +22,11 @@
 - TUI：`internal/tui`
 - Harness 传感器：`harness`
 
+迭代记录：
+
+- 随仓库版本化的迭代交接记录放在 `docs/iteration-notes/`，中文镜像在 `docs/zh-CN/iteration-notes/`。
+- 继续处理 agent-cost-governance、价格覆盖、预算、doctor、发布或 GitHub 自动化相关工作前，先阅读 `docs/zh-CN/iteration-notes/2026-05-09-agent-cost-governance.md`。
+
 除非明确要求，否则不在当前范围内：
 
 - 网络上传、远程同步或云端统计
