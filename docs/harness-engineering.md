@@ -11,7 +11,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `AGENTS.md` and `AGENTS.zh-CN.md`: repository mission, coding constraints, validation matrix, privacy boundaries, and handoff rules.
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
-- `Makefile`: canonical local commands: `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, and `make validate-pr-body`.
+- `Makefile`: canonical local commands: `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
 - `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - `.github/workflows/ci.yml`: hosted validation matching the local gates.
@@ -23,7 +23,8 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `go vet ./...`: static analysis.
 - `go build ./cmd/aitok`: single-binary build check.
 - `go run ./tools/validate-pr-body`: executable PR body metadata gate.
-- `go run ./tools/commitlint --edit <commit-msg-file>`: executable commit-message gate, optionally wired through `.githooks/commit-msg`.
+- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable commit-message gate, optionally wired through `.githooks/commit-msg`.
+- `.cache/aitok/`: repository-local, git-ignored Go build/module cache used by Makefile targets so agent verification stays bound to this checkout instead of ad hoc `/tmp` paths.
 
 ## Agent Workflow Contract
 

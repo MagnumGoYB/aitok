@@ -38,7 +38,7 @@ Out of scope unless explicitly requested:
 - Build: `make build`
 - Full local validation: `make validate`
 - PR metadata check: `make validate-pr-body`
-- Commit message check: `go run ./tools/commitlint --edit <commit-msg-file>`
+- Commit message check: `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
 - Run CLI directly: `go run ./cmd/aitok summary --period today`
 
 ## 3) Iteration Self-Constraint Protocol
@@ -107,7 +107,7 @@ Before every product or harness iteration, do a short internal review:
 
 - CI must run `make validate` and `make test-harness`.
 - PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, TDD / Test Evidence, Validation, and Risk and Rollback.
-- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `go run ./tools/commitlint --edit <commit-msg-file>` or install `.githooks/commit-msg` with `git config core.hooksPath .githooks`.
+- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` or install `.githooks/commit-msg` with `git config core.hooksPath .githooks`.
 - Do not claim completion after skipping local validation.
 - Stage/commit only files that belong to the current iteration; do not include unrelated dirty files.
 
