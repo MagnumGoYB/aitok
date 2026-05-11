@@ -13,6 +13,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 const allTools = "all"
@@ -148,25 +149,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusedPane = "threads"
 			}
 		case "up", "k":
-			if m.focusedPane == "threads" {
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
 				m.moveThreadCursor(-1)
 			}
 		case "down", "j":
-			if m.focusedPane == "threads" {
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
 				m.moveThreadCursor(1)
 			}
 		case "home":
-			if m.focusedPane == "threads" {
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
 				m.threadCursor = 0
 				m.ensureThreadVisible()
 			}
 		case "end":
-			if m.focusedPane == "threads" && len(m.payload.Threads) > 0 {
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
 				m.threadCursor = len(m.payload.Threads) - 1
 				m.ensureThreadVisible()
 			}
 		case "c":
-			if m.focusedPane == "threads" && len(m.payload.Threads) > 0 {
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
 				id := m.payload.Threads[m.threadCursor].ID
 				m.copyStatus = "copied " + id
 				return m, copyOSC52(id)
@@ -174,6 +180,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) canMoveThreads() bool {
+	return len(m.payload.Threads) > 0 && !m.searching
 }
 
 func (m model) scheduleRefresh() tea.Cmd {
@@ -202,20 +212,11 @@ func (m model) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.cards(summary, copy))
 	b.WriteString("\n\n")
-	b.WriteString(sectionStyle.Render(copy.modelUsage))
-	b.WriteString("\n")
-	if len(results) == 0 {
-		b.WriteString(mutedStyle.Render(copy.empty))
-		b.WriteString("\n")
-	} else {
-		b.WriteString(m.chart(results, summary.total))
-		b.WriteString("\n\n")
-		b.WriteString(m.table(results))
-	}
 	if len(m.payload.Threads) > 0 {
-		b.WriteString("\n\n")
 		b.WriteString(m.threadsBox(copy))
+		b.WriteString("\n\n")
 	}
+	b.WriteString(m.modelUsageBox(results, summary.total, copy))
 	b.WriteString("\n")
 	help := copy.help
 	if m.copyStatus != "" {
@@ -284,9 +285,28 @@ func (m model) cards(summary totals, copy localizedCopy) string {
 
 func (m model) tab(value, label string) string {
 	if m.activeTool == value {
-		return activeTabStyle.Render("[" + label + "]")
+		return activeTabStyle.Render(label)
 	}
 	return tabStyle.Render(label)
+}
+
+func (m model) modelUsageBox(results []query.Result, total int64, copy localizedCopy) string {
+	var b strings.Builder
+	b.WriteString(sectionStyle.Render(copy.modelUsage))
+	b.WriteString("\n")
+	if len(results) == 0 {
+		b.WriteString(mutedStyle.Render(copy.empty))
+	} else {
+		b.WriteString(m.chart(results, total))
+		b.WriteString("\n\n")
+		b.WriteString(strings.TrimRight(m.table(results), "\n"))
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Width(clamp(m.width-4, 72, 180)).
+		Render(b.String())
 }
 
 func (m model) chart(results []query.Result, max int64) string {
@@ -389,24 +409,22 @@ func (m model) threadsBox(copy localizedCopy) string {
 	if end > len(threads) {
 		end = len(threads)
 	}
-	header := mutedStyle.Render(fmt.Sprintf("%-12s %-28s %-8s %-18s %-10s %6s %6s %9s %9s %s", "ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens", "│"))
+	header := mutedStyle.Render(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"))
 	var lines []string
 	lines = append(lines, sectionStyle.Render(copy.threads))
 	lines = append(lines, header)
 	for i := m.threadOffset; i < end; i++ {
 		thread := threads[i]
-		scroll := m.scrollBar(i, len(threads), height)
-		line := fmt.Sprintf("%-12s %-28s %-8s %-18s %-10s %6d %6d %9s %9s %s",
-			truncate(thread.ID, 12),
-			truncate(thread.Name, 28),
-			thread.Tool,
-			truncate(thread.Model, 18),
-			truncate(thread.Provider, 10),
-			thread.Requests,
-			thread.Events,
+		line := threadRow(
+			displayText(thread.ID, 12),
+			displayText(thread.Name, 28),
+			displayText(thread.Tool, 8),
+			displayText(thread.Model, 18),
+			displayText(thread.Provider, 10),
+			fmt.Sprint(thread.Requests),
+			fmt.Sprint(thread.Events),
 			report.FormatUSD(thread.CostUSD),
 			compact(thread.Usage.NormalizedTotal()),
-			scroll,
 		)
 		if i == m.threadCursor {
 			line = selectedRowStyle.Render(line)
@@ -419,18 +437,6 @@ func (m model) threadsBox(copy localizedCopy) string {
 		Padding(1, 2).
 		Width(clamp(m.width-4, 72, 180)).
 		Render(strings.Join(lines, "\n"))
-}
-
-func (m model) scrollBar(index, total, height int) string {
-	if total <= height {
-		return "│"
-	}
-	visibleIndex := index - m.threadOffset
-	thumb := int(float64(m.threadCursor) / float64(total-1) * float64(height-1))
-	if visibleIndex == thumb {
-		return "█"
-	}
-	return "│"
 }
 
 func (m model) filteredResults() []query.Result {
@@ -609,13 +615,40 @@ func compact(value int64) string {
 }
 
 func truncate(value string, width int) string {
-	if len(value) <= width {
-		return value
+	return displayText(value, width)
+}
+
+func displayText(value string, width int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	return runewidth.Truncate(value, width, "…")
+}
+
+func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens string) string {
+	return strings.Join([]string{
+		padRight(id, 14),
+		padRight(name, 28),
+		padRight(tool, 8),
+		padRight(modelName, 18),
+		padRight(provider, 10),
+		padLeft(req, 6),
+		padLeft(events, 6),
+		padLeft(cost, 9),
+		padLeft(tokens, 9),
+	}, " ")
+}
+
+func padRight(value string, width int) string {
+	if padding := width - runewidth.StringWidth(value); padding > 0 {
+		return value + strings.Repeat(" ", padding)
 	}
-	if width <= 1 {
-		return value[:width]
+	return value
+}
+
+func padLeft(value string, width int) string {
+	if padding := width - runewidth.StringWidth(value); padding > 0 {
+		return strings.Repeat(" ", padding) + value
 	}
-	return value[:width-1] + "…"
+	return value
 }
 
 func clamp(value, min, max int) int {
@@ -638,7 +671,7 @@ var (
 
 	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	subtitleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	activeTabStyle   = lipgloss.NewStyle().Foreground(blue).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
+	activeTabStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#00B2FF")).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
 	tabStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
 	labelStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	valueStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
@@ -646,5 +679,5 @@ var (
 	mutedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	barStyle         = lipgloss.NewStyle().Foreground(blue)
-	selectedRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("88")).Bold(true)
+	selectedRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("#00B2FF")).Bold(true)
 )

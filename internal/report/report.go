@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
+	"github.com/mattn/go-runewidth"
 )
+
+const threadNameTableWidth = 28
 
 type Payload struct {
 	GeneratedAt time.Time            `json:"generated_at"`
@@ -59,7 +62,7 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult) error {
 	for _, thread := range threads {
 		rows = append(rows, []string{
 			thread.ID,
-			thread.Name,
+			displayCell(thread.Name, threadNameTableWidth),
 			thread.Tool,
 			thread.Model,
 			thread.Provider,
@@ -96,12 +99,12 @@ func WriteTable(w io.Writer, results []query.Result) error {
 func writeBorderedTable(w io.Writer, headers []string, rows [][]string) error {
 	widths := make([]int, len(headers))
 	for i, header := range headers {
-		widths[i] = len(header)
+		widths[i] = runewidth.StringWidth(header)
 	}
 	for _, row := range rows {
 		for i, value := range row {
-			if len(value) > widths[i] {
-				widths[i] = len(value)
+			if width := runewidth.StringWidth(value); width > widths[i] {
+				widths[i] = width
 			}
 		}
 	}
@@ -141,9 +144,9 @@ func writeTableRow(w io.Writer, row []string, widths []int) error {
 		b.WriteString(" ")
 		if i == 0 {
 			b.WriteString(value)
-			b.WriteString(strings.Repeat(" ", widths[i]-len(value)))
+			b.WriteString(strings.Repeat(" ", widths[i]-runewidth.StringWidth(value)))
 		} else {
-			b.WriteString(strings.Repeat(" ", widths[i]-len(value)))
+			b.WriteString(strings.Repeat(" ", widths[i]-runewidth.StringWidth(value)))
 			b.WriteString(value)
 		}
 		b.WriteString(" |")
@@ -219,6 +222,11 @@ func formatKey(key map[string]string) string {
 		parts = append(parts, k+"="+key[k])
 	}
 	return strings.Join(parts, ", ")
+}
+
+func displayCell(value string, width int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	return runewidth.Truncate(value, width, "…")
 }
 
 func escapeMarkdown(s string) string {

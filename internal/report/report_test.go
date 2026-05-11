@@ -8,6 +8,7 @@ import (
 
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/usage"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestWriteJSONAndMarkdown(t *testing.T) {
@@ -59,6 +60,47 @@ func TestWriteTableIncludesRequestsAndCost(t *testing.T) {
 	}
 }
 
+func TestWriteThreadsTableAlignsWideCharacters(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteThreadsTable(&out, []query.ThreadResult{
+		{
+			ID:       "019e167b-b7e8-7743-8bb3-fd9951e5ef2f",
+			Name:     "修正日期范围与threads列表",
+			Tool:     "codex",
+			Model:    "gpt-5.5",
+			Provider: "bcb",
+			Requests: 199,
+			Events:   199,
+			Usage:    usage.TokenUsage{Input: 28_345_680},
+			CostUSD:  22.0954,
+		},
+		{
+			ID:       "019e1522-e729-70c2-b013-bf66207c6b51",
+			Name:     "mini_program_wechat",
+			Tool:     "codex",
+			Model:    "gpt-5.5",
+			Provider: "bcb",
+			Requests: 61,
+			Events:   61,
+			Usage:    usage.TokenUsage{Input: 6_125_217},
+			CostUSD:  6.7136,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := nonEmptyLines(out.String())
+	if len(lines) < 5 {
+		t.Fatalf("expected bordered table, got: %s", out.String())
+	}
+	width := runewidth.StringWidth(lines[0])
+	for _, line := range lines[1:] {
+		if got := runewidth.StringWidth(line); got != width {
+			t.Fatalf("table row display width = %d, want %d\nrow: %q\nfull table:\n%s", got, width, line, out.String())
+		}
+	}
+}
+
 func TestWriteThreadsWhenPayloadIncludesThreads(t *testing.T) {
 	payload := Payload{
 		Results: []query.Result{{
@@ -94,4 +136,14 @@ func TestWriteThreadsWhenPayloadIncludesThreads(t *testing.T) {
 	if !strings.Contains(out.String(), `"threads"`) || !strings.Contains(out.String(), `"id": "thread-a"`) {
 		t.Fatalf("json output missing threads: %s", out.String())
 	}
+}
+
+func nonEmptyLines(value string) []string {
+	var lines []string
+	for _, line := range strings.Split(value, "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }

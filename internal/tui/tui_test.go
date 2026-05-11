@@ -10,6 +10,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestRenderSmoke(t *testing.T) {
@@ -17,7 +18,7 @@ func TestRenderSmoke(t *testing.T) {
 	for _, expected := range []string{
 		"Usage Dashboard",
 		"Monitor AI model usage and estimated cost",
-		"[All]",
+		"All",
 		"Claude Code",
 		"Codex",
 		"Gemini",
@@ -52,7 +53,7 @@ func TestRenderChinese(t *testing.T) {
 	for _, expected := range []string{
 		"使用统计",
 		"查看 AI 模型的使用情况和成本统计",
-		"[全部]",
+		"全部",
 		"总请求数",
 		"总成本",
 		"总 Token 数",
@@ -159,8 +160,27 @@ func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
 
 func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	view := RenderWidth(samplePayload(), 140)
-	if !strings.Contains(view, "1,225\n\nModel") {
+	if !strings.Contains(stripANSI(view), "1,225") || !strings.Contains(stripANSI(view), "\n│  Model") {
 		t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
+	}
+}
+
+func TestThreadsRenderBeforeBorderedModelUsage(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	view := RenderWidth(payload, 160)
+	threadsIndex := strings.Index(view, "Threads")
+	modelIndex := strings.Index(view, "Model Usage")
+	if threadsIndex < 0 || modelIndex < 0 {
+		t.Fatalf("view must render both threads and model usage: %s", view)
+	}
+	if threadsIndex > modelIndex {
+		t.Fatalf("threads must render before model usage: %s", view)
+	}
+	if !strings.Contains(view, "╭") || !strings.Contains(view, "Model Usage") {
+		t.Fatalf("model usage should render inside a bordered section: %s", view)
 	}
 }
 
@@ -214,6 +234,52 @@ func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
 	}
 }
 
+func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "修正日期范围与threads列表", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := stripANSI(m.threadsBox(copyFor(LanguageEnglish)))
+	if strings.Contains(box, "Tokens │") || strings.Contains(box, "28.3m │") {
+		t.Fatalf("threads rows should not render a trailing vertical column: %s", box)
+	}
+	if !strings.Contains(box, "ID             Name") {
+		t.Fatalf("ID and Name columns should have a larger left-aligned gap: %s", box)
+	}
+	if !strings.Contains(box, "Req Events") {
+		t.Fatalf("numeric headers should be right-aligned to their columns, not centered: %s", box)
+	}
+}
+
+func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "修正日期范围与threads列表很长很长", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
+		{ID: "019e1522-e729-70c2-b013-bf66207c6b51", Name: "mini_program_wechat", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 61, Events: 61, Usage: usage.TokenUsage{Input: 6_125_217}, CostUSD: 6.7136},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := m.threadsBox(copyFor(LanguageEnglish))
+	lines := strings.Split(box, "\n")
+	var rowWidths []int
+	for _, line := range lines {
+		if strings.Contains(line, "019e") {
+			rowWidths = append(rowWidths, runewidth.StringWidth(stripANSI(line)))
+		}
+	}
+	if len(rowWidths) != 2 {
+		t.Fatalf("expected two thread rows, got %d\n%s", len(rowWidths), box)
+	}
+	if rowWidths[0] != rowWidths[1] {
+		t.Fatalf("thread row widths must align, got %v\n%s", rowWidths, box)
+	}
+	if strings.Contains(box, "很长很长") || !strings.Contains(box, "…") {
+		t.Fatalf("thread name should be truncated in TUI display: %s", box)
+	}
+}
+
 func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
@@ -221,12 +287,10 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 		{ID: "thread-b", Name: "Deploy", Tool: "claude", Model: "claude-sonnet", Provider: "unknown", Usage: usage.TokenUsage{Input: 8}},
 	}
 	m := NewModel(payload)
-	updated, _ := m.Update(keyMsg("t"))
-	m = updated.(model)
-	updated, _ = m.Update(keyMsg("j"))
+	updated, _ := m.Update(keyMsg("j"))
 	m = updated.(model)
 	if m.threadCursor != 1 {
-		t.Fatalf("thread cursor = %d, want 1", m.threadCursor)
+		t.Fatalf("j should move thread cursor without requiring t focus first, got %d", m.threadCursor)
 	}
 	updated, cmd := m.Update(keyMsg("c"))
 	m = updated.(model)
@@ -243,6 +307,26 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	if m.threadCursor != 1 {
 		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
 	}
+}
+
+func stripANSI(value string) string {
+	var b strings.Builder
+	inEscape := false
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if inEscape {
+			if ch >= '@' && ch <= '~' {
+				inEscape = false
+			}
+			continue
+		}
+		if ch == 0x1b {
+			inEscape = true
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
 }
 
 func samplePayload() report.Payload {
