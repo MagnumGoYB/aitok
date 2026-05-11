@@ -12,25 +12,64 @@ import (
 )
 
 type Payload struct {
-	GeneratedAt time.Time      `json:"generated_at"`
-	Window      query.Window   `json:"window"`
-	GroupBy     query.GroupBy  `json:"group_by"`
-	Results     []query.Result `json:"results"`
+	GeneratedAt time.Time            `json:"generated_at"`
+	Period      query.Period         `json:"period,omitempty"`
+	Window      query.Window         `json:"window"`
+	GroupBy     query.GroupBy        `json:"group_by"`
+	Results     []query.Result       `json:"results"`
+	Threads     []query.ThreadResult `json:"threads,omitempty"`
 }
 
 func Write(w io.Writer, format string, payload Payload) error {
 	switch format {
 	case "", "table":
-		return WriteTable(w, payload.Results)
+		if err := WriteTable(w, payload.Results); err != nil {
+			return err
+		}
+		if len(payload.Threads) > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+			return WriteThreadsTable(w, payload.Threads)
+		}
+		return nil
 	case "json":
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		return WriteMarkdown(w, payload.Results)
+		if err := WriteMarkdown(w, payload.Results); err != nil {
+			return err
+		}
+		if len(payload.Threads) > 0 {
+			if _, err := fmt.Fprintln(w, "\n## Threads"); err != nil {
+				return err
+			}
+			return WriteThreadsMarkdown(w, payload.Threads)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown format %q", format)
 	}
+}
+
+func WriteThreadsTable(w io.Writer, threads []query.ThreadResult) error {
+	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQUESTS", "EVENTS", "COST_USD", "TOTAL"}
+	rows := make([][]string, 0, len(threads))
+	for _, thread := range threads {
+		rows = append(rows, []string{
+			thread.ID,
+			thread.Name,
+			thread.Tool,
+			thread.Model,
+			thread.Provider,
+			fmt.Sprint(thread.Requests),
+			fmt.Sprint(thread.Events),
+			FormatUSD(thread.CostUSD),
+			fmt.Sprint(thread.Usage.NormalizedTotal()),
+		})
+	}
+	return writeBorderedTable(w, headers, rows)
 }
 
 func WriteTable(w io.Writer, results []query.Result) error {
@@ -133,6 +172,31 @@ func WriteMarkdown(w io.Writer, results []query.Result) error {
 			result.Usage.Reasoning,
 			result.Usage.Tool,
 			result.Usage.NormalizedTotal(),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult) error {
+	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Requests | Events | Cost USD | Total |"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |"); err != nil {
+		return err
+	}
+	for _, thread := range threads {
+		if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %d | %s | %d |\n",
+			escapeMarkdown(thread.ID),
+			escapeMarkdown(thread.Name),
+			escapeMarkdown(thread.Tool),
+			escapeMarkdown(thread.Model),
+			escapeMarkdown(thread.Provider),
+			thread.Requests,
+			thread.Events,
+			FormatUSD(thread.CostUSD),
+			thread.Usage.NormalizedTotal(),
 		); err != nil {
 			return err
 		}

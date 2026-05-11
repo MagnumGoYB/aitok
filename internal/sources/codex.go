@@ -35,12 +35,20 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 
 func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
 	root := filepath.Join(c.Home, ".codex", "sessions")
+	index := readCodexSessionIndex(filepath.Join(c.Home, ".codex", "session_index.jsonl"))
 	seen := map[string]struct{}{}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
-		state := codexState{provider: "unknown", model: "unknown"}
+		meta := parseCodexThreadMeta(path)
+		if meta.Skip {
+			return nil
+		}
+		if title := index[meta.ID]; title != "" {
+			meta.Name = chooseThreadTitle(title, meta.Name)
+		}
+		state := codexState{provider: "unknown", model: "unknown", thread: meta}
 		return readJSONLines(ctx, path, func(obj map[string]any) error {
 			state.update(obj)
 			event, ok := c.parseEvent(path, obj, state)
@@ -61,6 +69,7 @@ type codexState struct {
 	model    string
 	cwd      string
 	turnID   string
+	thread   threadMeta
 }
 
 func (s *codexState) update(obj map[string]any) {
@@ -117,14 +126,19 @@ func (c Codex) parseEvent(path string, obj map[string]any, state codexState) (us
 	}
 	id := codexHash(ts, tokens, codexUsageFingerprint(rawTotalUsage))
 	return usage.UsageEvent{
-		ID:        state.turnID + ":" + id,
-		Timestamp: ts,
-		Tool:      usage.ToolCodex,
-		Model:     usage.Unknown(state.model),
-		Provider:  usage.Unknown(state.provider),
-		CWD:       state.cwd,
-		Source:    path,
-		Usage:     tokens,
+		ID:                 state.turnID + ":" + id,
+		Timestamp:          ts,
+		Tool:               usage.ToolCodex,
+		Model:              usage.Unknown(state.model),
+		Provider:           usage.Unknown(state.provider),
+		CWD:                state.cwd,
+		Source:             path,
+		ThreadID:           state.thread.ID,
+		ThreadName:         state.thread.Name,
+		ThreadSource:       state.thread.Source,
+		ThreadCreatedAt:    state.thread.CreatedAt,
+		ThreadLastActiveAt: state.thread.LastActiveAt,
+		Usage:              tokens,
 	}, true
 }
 

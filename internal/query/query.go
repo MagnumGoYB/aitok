@@ -30,12 +30,34 @@ type Result struct {
 	Examples map[string]string `json:"examples,omitempty"`
 }
 
+type ThreadResult struct {
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Tool         string           `json:"tool"`
+	Model        string           `json:"model"`
+	Provider     string           `json:"provider"`
+	Source       string           `json:"source,omitempty"`
+	CreatedAt    time.Time        `json:"created_at,omitempty"`
+	LastActiveAt time.Time        `json:"last_active_at,omitempty"`
+	Events       int              `json:"events"`
+	Requests     int              `json:"requests"`
+	CostUSD      float64          `json:"cost_usd"`
+	Usage        usage.TokenUsage `json:"usage"`
+}
+
 type Accumulator struct {
 	window  Window
 	filters Filters
 	groupBy GroupBy
 	costFor func(usage.UsageEvent) Cost
 	buckets map[string]*Result
+}
+
+type ThreadAccumulator struct {
+	window  Window
+	filters Filters
+	costFor func(usage.UsageEvent) Cost
+	buckets map[string]*ThreadResult
 }
 
 func DefaultGroupBy() GroupBy {
@@ -75,6 +97,10 @@ func NewAccumulator(window Window, filters Filters, groupBy GroupBy, costFor fun
 	return &Accumulator{window: window, filters: filters, groupBy: groupBy, costFor: costFor, buckets: map[string]*Result{}}
 }
 
+func NewThreadAccumulator(window Window, filters Filters, costFor func(usage.UsageEvent) Cost) *ThreadAccumulator {
+	return &ThreadAccumulator{window: window, filters: filters, costFor: costFor, buckets: map[string]*ThreadResult{}}
+}
+
 func (a *Accumulator) Add(event usage.UsageEvent) {
 	if !a.window.Contains(event.Timestamp) || !matches(event, a.filters) {
 		return
@@ -108,6 +134,73 @@ func (a *Accumulator) Results() []Result {
 		right := results[j].Usage.NormalizedTotal()
 		if left == right {
 			return serializeKey(a.groupBy, results[i].Key) < serializeKey(a.groupBy, results[j].Key)
+		}
+		return left > right
+	})
+	return results
+}
+
+func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
+	if !a.window.Contains(event.Timestamp) || !matches(event, a.filters) {
+		return
+	}
+	id := usage.Unknown(event.ThreadID)
+	if id == "unknown" {
+		id = event.ID
+	}
+	if id == "" {
+		return
+	}
+	bucket := a.buckets[string(event.Tool)+"|"+id]
+	if bucket == nil {
+		bucket = &ThreadResult{
+			ID:           id,
+			Name:         usage.Unknown(event.ThreadName),
+			Tool:         string(event.Tool),
+			Model:        usage.Unknown(event.Model),
+			Provider:     usage.Unknown(event.Provider),
+			Source:       event.ThreadSource,
+			CreatedAt:    event.ThreadCreatedAt,
+			LastActiveAt: event.ThreadLastActiveAt,
+		}
+		a.buckets[string(event.Tool)+"|"+id] = bucket
+	}
+	bucket.Events++
+	bucket.Requests++
+	bucket.Usage = bucket.Usage.Add(event.Usage)
+	if a.costFor != nil {
+		bucket.CostUSD += a.costFor(event).USD
+	}
+	if bucket.Name == "unknown" && event.ThreadName != "" {
+		bucket.Name = event.ThreadName
+	}
+	if bucket.Model == "unknown" && event.Model != "" {
+		bucket.Model = event.Model
+	}
+	if bucket.Provider == "unknown" && event.Provider != "" {
+		bucket.Provider = event.Provider
+	}
+	if bucket.Source == "" {
+		bucket.Source = event.ThreadSource
+	}
+	if bucket.CreatedAt.IsZero() {
+		bucket.CreatedAt = event.ThreadCreatedAt
+	}
+	if bucket.LastActiveAt.IsZero() || event.Timestamp.After(bucket.LastActiveAt) {
+		bucket.LastActiveAt = event.Timestamp
+	}
+}
+
+func (a *ThreadAccumulator) Results() []ThreadResult {
+	results := make([]ThreadResult, 0, len(a.buckets))
+	for _, result := range a.buckets {
+		results = append(results, *result)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		left := results[i].Usage.NormalizedTotal()
+		right := results[j].Usage.NormalizedTotal()
+		if left == right {
+			return results[i].Tool+"|"+results[i].ID < results[j].Tool+"|"+results[j].ID
 		}
 		return left > right
 	})

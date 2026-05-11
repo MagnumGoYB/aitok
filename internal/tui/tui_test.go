@@ -42,6 +42,9 @@ func TestRenderSmoke(t *testing.T) {
 	if strings.Contains(view, "↻ 30s") {
 		t.Fatalf("TUI toolbar must not render auto-refresh copy: %s", view)
 	}
+	if strings.Contains(view, "📅") {
+		t.Fatalf("TUI toolbar must not render date emoji: %s", view)
+	}
 }
 
 func TestRenderChinese(t *testing.T) {
@@ -176,6 +179,69 @@ func TestModelUsageTableOutputDoesNotIncludeReasoning(t *testing.T) {
 	}
 	if strings.Contains(view, "         250") {
 		t.Fatalf("model usage table output must not add reasoning tokens into output: %s", view)
+	}
+}
+
+func TestToolbarDateFormatsTodayWithoutRangeAndWeekWithRange(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	payload := samplePayload()
+	payload.Period = query.PeriodToday
+	payload.Window = query.Window{Start: time.Date(2026, 5, 11, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 12, 0, 0, 0, 0, loc)}
+	view := RenderWidth(payload, 160)
+	if !strings.Contains(view, "2026-05-11 CST") || strings.Contains(view, "～") || strings.Contains(view, "📅") {
+		t.Fatalf("today toolbar date should show date and zone only: %s", view)
+	}
+
+	payload.Period = query.PeriodThisWeek
+	payload.Window = query.Window{Start: time.Date(2026, 5, 4, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 11, 0, 0, 0, 0, loc)}
+	view = RenderWidth(payload, 180)
+	if !strings.Contains(view, "2026-05-04 00:00 ～ 2026-05-11 00:00 CST") {
+		t.Fatalf("non-today toolbar date should show window range and zone: %s", view)
+	}
+}
+
+func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Requests: 1, Events: 1, Usage: usage.TokenUsage{Input: 10}, CostUSD: 0.001},
+		{ID: "thread-b", Name: "Deploy", Tool: "claude", Model: "claude-sonnet", Provider: "unknown", Requests: 1, Events: 1, Usage: usage.TokenUsage{Input: 8}, CostUSD: 0.002},
+	}
+	view := RenderWidth(payload, 160)
+	for _, expected := range []string{"Threads", "ID", "Name", "Provider", "Login bug", "thread-a", "│"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("threads box missing %q: %s", expected, view)
+		}
+	}
+}
+
+func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+		{ID: "thread-b", Name: "Deploy", Tool: "claude", Model: "claude-sonnet", Provider: "unknown", Usage: usage.TokenUsage{Input: 8}},
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(keyMsg("t"))
+	m = updated.(model)
+	updated, _ = m.Update(keyMsg("j"))
+	m = updated.(model)
+	if m.threadCursor != 1 {
+		t.Fatalf("thread cursor = %d, want 1", m.threadCursor)
+	}
+	updated, cmd := m.Update(keyMsg("c"))
+	m = updated.(model)
+	if cmd == nil || !strings.Contains(m.copyStatus, "thread-b") {
+		t.Fatalf("copy should set status and emit command, status=%q cmd=%v", m.copyStatus, cmd)
+	}
+	updated, _ = m.Update(keyMsg("home"))
+	m = updated.(model)
+	if m.threadCursor != 0 {
+		t.Fatalf("home should move to first thread, got %d", m.threadCursor)
+	}
+	updated, _ = m.Update(keyMsg("end"))
+	m = updated.(model)
+	if m.threadCursor != 1 {
+		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
 	}
 }
 

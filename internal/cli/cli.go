@@ -58,6 +58,7 @@ type flags struct {
 	pricing        string
 	lang           string
 	renderTUI      bool
+	threads        bool
 	dryRun         bool
 	noVersionCheck bool
 	version        bool
@@ -113,6 +114,7 @@ func New(app App) *cobra.Command {
 		},
 	}
 	addQueryFlags(summary, f)
+	summary.Flags().BoolVar(&f.threads, "threads", false, "include matching threads in the output")
 
 	reportCmd := &cobra.Command{
 		Use:   "report",
@@ -179,6 +181,7 @@ func New(app App) *cobra.Command {
 		Use:   "tui",
 		Short: "Open the terminal dashboard",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			f.threads = true
 			payload, err := buildPayload(cmd.Context(), f, app.Now())
 			if err != nil {
 				return err
@@ -302,14 +305,30 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	}, groupBy, func(event usage.UsageEvent) query.Cost {
 		return query.Cost{USD: catalog.CostFor(event).USD}
 	})
+	filters := query.Filters{
+		Tools:     query.SplitCSV(f.tools),
+		Models:    query.SplitCSV(f.models),
+		Providers: query.SplitCSV(f.providers),
+		CWD:       f.cwd,
+	}
+	threadAcc := query.NewThreadAccumulator(window, filters, func(event usage.UsageEvent) query.Cost {
+		return query.Cost{USD: catalog.CostFor(event).USD}
+	})
 	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
 		acc.Add(event)
+		if f.threads || f.renderTUI {
+			threadAcc.Add(event)
+		}
 		return nil
 	})
 	if err != nil {
 		return report.Payload{}, err
 	}
-	return report.Payload{GeneratedAt: now, Window: window, GroupBy: groupBy, Results: acc.Results()}, nil
+	payload := report.Payload{GeneratedAt: now, Period: period, Window: window, GroupBy: groupBy, Results: acc.Results()}
+	if f.threads || f.renderTUI {
+		payload.Threads = threadAcc.Results()
+	}
+	return payload, nil
 }
 
 func loadPricing(f *flags, home string) (pricing.Catalog, error) {

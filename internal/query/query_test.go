@@ -84,3 +84,31 @@ func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 		t.Fatalf("usage = %+v, want %+v", got[0].Usage, wantUsage)
 	}
 }
+
+func TestThreadAccumulatorGroupsUsageAndCostByThread(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{ID: "a", Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", CWD: "/repo", ThreadID: "thread-a", ThreadName: "Custom title", ThreadSource: "/tmp/a.jsonl", Usage: usage.TokenUsage{Input: 1_000_000}},
+		{ID: "b", Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", CWD: "/repo", ThreadID: "thread-a", ThreadName: "Custom title", ThreadSource: "/tmp/a.jsonl", Usage: usage.TokenUsage{Output: 100_000}},
+		{ID: "c", Timestamp: time.Date(2026, 5, 8, 3, 0, 0, 0, loc), Tool: usage.ToolClaude, Model: "claude", Provider: "unknown", ThreadID: "thread-b", ThreadName: "Other", Usage: usage.TokenUsage{Input: 2}},
+		{ID: "old", Timestamp: time.Date(2026, 5, 7, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", ThreadID: "old", Usage: usage.TokenUsage{Input: 9}},
+	}
+	acc := NewThreadAccumulator(window, Filters{Tools: []string{"codex"}}, func(event usage.UsageEvent) Cost {
+		return Cost{USD: float64(event.Usage.Input)/1_000_000 + float64(event.Usage.Output)/100_000}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 1 {
+		t.Fatalf("len(threads) = %d, want 1", len(got))
+	}
+	thread := got[0]
+	if thread.ID != "thread-a" || thread.Name != "Custom title" || thread.Tool != "codex" || thread.Source != "/tmp/a.jsonl" {
+		t.Fatalf("unexpected thread metadata: %+v", thread)
+	}
+	if thread.Requests != 2 || thread.Events != 2 || thread.Usage.NormalizedTotal() != 1_100_000 || thread.CostUSD != 2 {
+		t.Fatalf("unexpected thread totals: %+v", thread)
+	}
+}
