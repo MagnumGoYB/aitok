@@ -9,7 +9,7 @@ This note is a versioned handoff for future AI coding agents. Read it before con
 - Feature branch used: `codex/tui-period-threads-list`
 - Feature commit: `107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - Merge commit: `97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- Release status: release required after merge, not completed in this iteration note
+- Release status: PR #13 and follow-up TUI fixes were released through `v0.1.20`
 - Primary agent contract: `aitok --no-version-check summary --period today --threads --format json`
 
 ## Why This Iteration Happened
@@ -58,6 +58,25 @@ Important Codex-specific findings:
 - Updated README and README.zh-CN with `summary --threads` and TUI thread shortcuts.
 - Added the implementation plan at `docs/superpowers/plans/2026-05-11-tui-period-threads-list.md`.
 
+## Post-Merge Follow-Ups
+
+After PR #13 merged, several TUI polish releases landed on `main`:
+
+- `v0.1.16`: released the initial TUI period and threads feature after merge.
+- `v0.1.17`: refined the Threads layout by placing Threads before Model Usage, adding a Model Usage border, widening the ID/name spacing, limiting thread-name display width, removing the trailing Threads column line, and aligning the selected-row/tab color with `#00B2FF`.
+- `v0.1.18`: fixed the Threads alignment policy so `Name`, `Tool`, `Model`, `Provider`, and `Req` are left-aligned while `Events`, `Cost`, and `Tokens` are right-aligned.
+- `v0.1.19`: fixed additional TUI layout issues: period range uses ASCII `~`, section gaps are smaller, Threads renders a real scrollbar when overflowing, cursor movement updates the scrollbar offset, and regression coverage confirms TUI Threads respects the selected period window.
+- `v0.1.20`: compacted the dashboard so it fits better in a terminal viewport: toolbar is 3 lines, summary cards are 4 lines, Threads is capped at 6 visible rows, and Model Usage caps provider-heavy output to the top rows instead of filling the screen.
+
+Current TUI layout constraints to preserve:
+
+- Toolbar should stay compact with no vertical padding.
+- Summary cards should stay compact and avoid decorative vertical whitespace.
+- Threads should show at most 6 rows and rely on the scrollbar plus `j/k/home/end` for navigation.
+- Model Usage should handle many provider/model groups by limiting chart rows and table rows; do not let provider-heavy data push the footer off-screen.
+- The date range separator is ASCII `~`, not full-width `～`.
+- `this-week` still means the current natural week window from `query.WindowFor`; it was not changed to a rolling 7-day period.
+
 ## Validation Evidence
 
 Local validation before PR:
@@ -70,6 +89,18 @@ Local validation before PR:
 - `make build`
 - `git diff --check`
 
+Follow-up validation used during the v0.1.17-v0.1.20 polish releases:
+
+- `go test ./internal/tui`
+- `go test ./internal/tui ./internal/cli`
+- `go test ./internal/query ./internal/report ./internal/sources ./internal/tui ./internal/cli`
+- `make check`
+- `make test`
+- `make build`
+- `make validate` before release bumps
+- `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
+- GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, and `v0.1.20` completed successfully.
+
 GitHub PR checks:
 
 - `test`: passed
@@ -79,13 +110,7 @@ GitHub PR checks:
 
 ## Release Follow-Up
 
-PR #13 is merged and is feature + bugfix work. The next agent should continue into the repository release flow unless the user explicitly defers it.
-
-Before releasing:
-
-- Ensure local `main` is updated to `origin/main`.
-- Run the repository release validation expected by the current release flow.
-- Include the TUI period fix and threads feature in release notes.
+No pending release follow-up remains for this iteration as of `v0.1.20`. Future feature or bugfix changes in this area should still follow the repository release flow unless the user explicitly defers it.
 
 ## Future Work
 

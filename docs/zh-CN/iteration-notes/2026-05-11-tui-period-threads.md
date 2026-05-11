@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：合并后需要发版，本记录中尚未完成发版
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.20`
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -58,6 +58,25 @@ Codex 相关的重要发现：
 - 更新 README 和 README.zh-CN，补充 `summary --threads` 和 TUI threads 快捷键。
 - 增加实施计划：`docs/superpowers/plans/2026-05-11-tui-period-threads-list.md`。
 
+## 合并后的跟进
+
+PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
+
+- `v0.1.16`：合并后发布初版 TUI 日期与 threads 功能。
+- `v0.1.17`：优化 Threads 布局，包括 Threads 放在 Model Usage 前、给 Model Usage 加边框、加大 ID/Name 间距、限制 thread name 展示宽度、去掉 Threads 末尾竖线，并让选中行/tab 高亮统一到 `#00B2FF` 色系。
+- `v0.1.18`：修正 Threads 对齐策略，`Name`、`Tool`、`Model`、`Provider`、`Req` 左对齐，`Events`、`Cost`、`Tokens` 右对齐。
+- `v0.1.19`：继续修复 TUI 布局问题：period 范围使用 ASCII `~`，缩小区域间距，Threads 溢出时渲染真实滚动条，光标移动会更新滚动条 offset，并用回归测试确认 TUI Threads 遵守选定 period window。
+- `v0.1.20`：压缩 dashboard，让它更容易放进一个终端视口：toolbar 压到 3 行，summary cards 压到 4 行，Threads 最多展示 6 行，Model Usage 在 provider/model 很多时只展示 top rows，避免撑爆一屏。
+
+当前 TUI 布局约束需要继续保留：
+
+- Toolbar 保持紧凑，不要恢复纵向 padding。
+- Summary cards 保持紧凑，避免装饰性纵向空白。
+- Threads 最多展示 6 行，更多内容依赖滚动条和 `j/k/home/end` 导航。
+- Model Usage 需要能处理很多 provider/model 分组，通过限制 chart 行数和 table 行数避免把 footer 挤出屏幕。
+- 日期范围分隔符使用 ASCII `~`，不是全角 `～`。
+- `this-week` 仍然是 `query.WindowFor` 里的当前自然周窗口，没有改成滚动 7 天。
+
 ## 验证证据
 
 PR 前本地验证：
@@ -70,6 +89,18 @@ PR 前本地验证：
 - `make build`
 - `git diff --check`
 
+`v0.1.17` 到 `v0.1.20` 后续 polish 发版期间使用过的验证：
+
+- `go test ./internal/tui`
+- `go test ./internal/tui ./internal/cli`
+- `go test ./internal/query ./internal/report ./internal/sources ./internal/tui ./internal/cli`
+- `make check`
+- `make test`
+- `make build`
+- `make validate`，在 release bump 前执行
+- `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
+- `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20` 的 GitHub Release workflows 均已成功。
+
 GitHub PR 检查：
 
 - `test`：通过
@@ -79,13 +110,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-PR #13 已合并，并且属于 feature + bugfix。下一位 Agent 应继续进入仓库既有发版流程，除非用户明确要求延后。
-
-发版前：
-
-- 确认本地 `main` 已更新到 `origin/main`。
-- 跑当前 release flow 要求的仓库发布验证。
-- Release notes 中包含 TUI 日期修复和 threads 功能。
+截至 `v0.1.20`，本轮迭代没有待跟进发版。后续如果继续修改这里的 feature 或 bugfix，仍然按仓库发布流程处理，除非用户明确要求延后。
 
 ## 后续工作
 
