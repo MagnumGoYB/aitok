@@ -160,9 +160,16 @@ func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
 
 func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	view := RenderWidth(samplePayload(), 140)
-	if !strings.Contains(stripANSI(view), "1,225") || !strings.Contains(stripANSI(view), "\n│  Model") {
-		t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
+	lines := strings.Split(stripANSI(view), "\n")
+	for i, line := range lines {
+		if strings.Contains(line, "1,225") && strings.Contains(line, "█") {
+			if i+2 >= len(lines) || strings.Trim(lines[i+1], " │") != "" || !strings.Contains(lines[i+2], "Model") {
+				t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
+			}
+			return
+		}
 	}
+	t.Fatalf("model usage chart line missing: %s", view)
 }
 
 func TestModelUsageCapsRowsWhenProvidersAreMany(t *testing.T) {

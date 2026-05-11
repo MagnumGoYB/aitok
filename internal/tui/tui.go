@@ -311,7 +311,7 @@ func (m model) modelUsageBox(results []query.Result, total int64, copy localized
 		b.WriteString(mutedStyle.Render(copy.empty))
 	} else {
 		b.WriteString(m.chart(results, total))
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		b.WriteString(strings.TrimRight(m.table(results), "\n"))
 	}
 	return lipgloss.NewStyle().
