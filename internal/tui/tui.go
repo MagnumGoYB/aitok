@@ -27,6 +27,19 @@ const (
 	LanguageChinese Language = "zh-CN"
 )
 
+type tableAlign int
+
+const (
+	alignLeft tableAlign = iota
+	alignRight
+)
+
+type tableColumn struct {
+	value string
+	width int
+	align tableAlign
+}
+
 type model struct {
 	payload      report.Payload
 	activeTool   string
@@ -207,14 +220,14 @@ func (m model) View() string {
 	b.WriteString(titleStyle.Render(copy.title))
 	b.WriteString("\n")
 	b.WriteString(subtitleStyle.Render(copy.subtitle))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	b.WriteString(m.toolbar(copy))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	b.WriteString(m.cards(summary, copy))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	if len(m.payload.Threads) > 0 {
 		b.WriteString(m.threadsBox(copy))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 	}
 	b.WriteString(m.modelUsageBox(results, summary.total, copy))
 	b.WriteString("\n")
@@ -260,7 +273,7 @@ func (m model) windowLabel(copy localizedCopy) string {
 	if m.payload.Period == query.PeriodToday {
 		return start.Format("2006-01-02") + " " + zone
 	}
-	return start.Format("2006-01-02 15:04") + " ～ " + m.payload.Window.End.In(start.Location()).Format("2006-01-02 15:04") + " " + zone
+	return start.Format("2006-01-02 15:04") + " ~ " + m.payload.Window.End.In(start.Location()).Format("2006-01-02 15:04") + " " + zone
 }
 
 func (m model) cards(summary totals, copy localizedCopy) string {
@@ -409,7 +422,8 @@ func (m model) threadsBox(copy localizedCopy) string {
 	if end > len(threads) {
 		end = len(threads)
 	}
-	header := mutedStyle.Render(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"))
+	overflow := len(threads) > height
+	header := mutedStyle.Render(threadLine(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"), -1, m.threadOffset, height, len(threads), overflow))
 	var lines []string
 	lines = append(lines, sectionStyle.Render(copy.threads))
 	lines = append(lines, header)
@@ -426,6 +440,7 @@ func (m model) threadsBox(copy localizedCopy) string {
 			report.FormatUSD(thread.CostUSD),
 			compact(thread.Usage.NormalizedTotal()),
 		)
+		line = threadLine(line, i-m.threadOffset, m.threadOffset, height, len(threads), overflow)
 		if i == m.threadCursor {
 			line = selectedRowStyle.Render(line)
 		}
@@ -624,17 +639,62 @@ func displayText(value string, width int) string {
 }
 
 func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens string) string {
-	return strings.Join([]string{
-		padRight(id, 14),
-		padRight(name, 28),
-		padRight(tool, 8),
-		padRight(modelName, 18),
-		padRight(provider, 10),
-		padRight(req, 6),
-		padLeft(events, 6),
-		padLeft(cost, 9),
-		padLeft(tokens, 9),
-	}, " ")
+	columns := []tableColumn{
+		{value: id, width: 14, align: alignLeft},
+		{value: name, width: 28, align: alignLeft},
+		{value: tool, width: 8, align: alignLeft},
+		{value: modelName, width: 18, align: alignLeft},
+		{value: provider, width: 10, align: alignLeft},
+		{value: req, width: 6, align: alignLeft},
+		{value: events, width: 6, align: alignRight},
+		{value: cost, width: 9, align: alignRight},
+		{value: tokens, width: 9, align: alignRight},
+	}
+	parts := make([]string, 0, len(columns))
+	for _, column := range columns {
+		value := displayText(column.value, column.width)
+		if column.align == alignRight {
+			parts = append(parts, padLeft(value, column.width))
+		} else {
+			parts = append(parts, padRight(value, column.width))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func threadLine(row string, visibleIndex, offset, visibleHeight, total int, overflow bool) string {
+	if !overflow {
+		return row
+	}
+	return row + " " + scrollMarker(visibleIndex, offset, visibleHeight, total)
+}
+
+func scrollMarker(visibleIndex, offset, visibleHeight, total int) string {
+	if visibleIndex < 0 {
+		return " "
+	}
+	if total <= visibleHeight || visibleHeight <= 0 {
+		return " "
+	}
+	thumbHeight := visibleHeight * visibleHeight / total
+	if thumbHeight < 1 {
+		thumbHeight = 1
+	}
+	if thumbHeight > visibleHeight {
+		thumbHeight = visibleHeight
+	}
+	track := visibleHeight - thumbHeight
+	start := 0
+	if track > 0 {
+		maxOffset := total - visibleHeight
+		if maxOffset > 0 {
+			start = offset * track / maxOffset
+		}
+	}
+	if visibleIndex >= start && visibleIndex < start+thumbHeight {
+		return "┃"
+	}
+	return "│"
 }
 
 func padRight(value string, width int) string {

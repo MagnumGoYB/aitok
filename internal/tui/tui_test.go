@@ -215,22 +215,81 @@ func TestToolbarDateFormatsTodayWithoutRangeAndWeekWithRange(t *testing.T) {
 	payload.Period = query.PeriodThisWeek
 	payload.Window = query.Window{Start: time.Date(2026, 5, 4, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 11, 0, 0, 0, 0, loc)}
 	view = RenderWidth(payload, 180)
-	if !strings.Contains(view, "2026-05-04 00:00 ～ 2026-05-11 00:00 CST") {
+	if !strings.Contains(view, "2026-05-04 00:00 ~ 2026-05-11 00:00 CST") || strings.Contains(view, "～") {
 		t.Fatalf("non-today toolbar date should show window range and zone: %s", view)
+	}
+}
+
+func TestViewUsesCompactSectionSpacing(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Requests: 1, Events: 1, Usage: usage.TokenUsage{Input: 10}, CostUSD: 0.001},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	if strings.Contains(view, "\n\n\n") {
+		t.Fatalf("TUI sections should not use excessive vertical gaps:\n%s", view)
 	}
 }
 
 func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
 	payload := samplePayload()
-	payload.Threads = []query.ThreadResult{
-		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Requests: 1, Events: 1, Usage: usage.TokenUsage{Input: 10}, CostUSD: 0.001},
-		{ID: "thread-b", Name: "Deploy", Tool: "claude", Model: "claude-sonnet", Provider: "unknown", Requests: 1, Events: 1, Usage: usage.TokenUsage{Input: 8}, CostUSD: 0.002},
+	for i := 0; i < 12; i++ {
+		payload.Threads = append(payload.Threads, query.ThreadResult{
+			ID:       "thread-" + string(rune('a'+i)),
+			Name:     "Login bug",
+			Tool:     "codex",
+			Model:    "gpt-5.4",
+			Provider: "openai",
+			Requests: 1,
+			Events:   1,
+			Usage:    usage.TokenUsage{Input: int64(10 + i)},
+			CostUSD:  0.001,
+		})
 	}
 	view := RenderWidth(payload, 160)
-	for _, expected := range []string{"Threads", "ID", "Name", "Provider", "Login bug", "thread-a", "│"} {
+	for _, expected := range []string{"Threads", "ID", "Name", "Provider", "Login bug", "thread-a", "┃"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("threads box missing %q: %s", expected, view)
 		}
+	}
+}
+
+func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
+	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"))
+	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "297", "$34.9399", "45.5m"))
+
+	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"} {
+		want := runewidth.StringWidth(header[:strings.Index(header, label)])
+		got := runewidth.StringWidth(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
+		if got != want && label != "Events" && label != "Cost" && label != "Tokens" {
+			t.Fatalf("%s column should start at width %d, got %d\nheader=%q\nrow=%q", label, want, got, header, row)
+		}
+	}
+	if runewidth.StringWidth(header) != runewidth.StringWidth(row) {
+		t.Fatalf("header and row should have equal display width, got %d/%d\n%s\n%s", runewidth.StringWidth(header), runewidth.StringWidth(row), header, row)
+	}
+}
+
+func columnValueForLabel(label, row string) string {
+	switch label {
+	case "Name":
+		return "修正日期范围与threads列表"
+	case "Tool":
+		return "codex"
+	case "Model":
+		return "gpt-5.5"
+	case "Provider":
+		return "bcb"
+	case "Req":
+		return "297"
+	case "Events":
+		return "297"
+	case "Cost":
+		return "$34.9399"
+	case "Tokens":
+		return "45.5m"
+	default:
+		return ""
 	}
 }
 
@@ -341,6 +400,38 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	m = updated.(model)
 	if m.threadCursor != 1 {
 		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
+	}
+}
+
+func TestThreadsScrollBarFollowsCursorOffset(t *testing.T) {
+	payload := samplePayload()
+	for i := 0; i < 16; i++ {
+		payload.Threads = append(payload.Threads, query.ThreadResult{
+			ID:       "thread-" + string(rune('a'+i)),
+			Name:     "Login bug",
+			Tool:     "codex",
+			Model:    "gpt-5.4",
+			Provider: "openai",
+			Usage:    usage.TokenUsage{Input: int64(100 - i)},
+		})
+	}
+	m := NewModel(payload)
+	m.width = 160
+	updated, _ := m.Update(keyMsg("end"))
+	m = updated.(model)
+	box := stripANSI(m.threadsBox(copyFor(LanguageEnglish)))
+	if !strings.Contains(box, "thread-p") || strings.Contains(box, "thread-a") {
+		t.Fatalf("end should scroll the viewport to the last thread:\n%s", box)
+	}
+	lines := strings.Split(box, "\n")
+	lastThumb := -1
+	for i, line := range lines {
+		if strings.Contains(line, "┃") {
+			lastThumb = i
+		}
+	}
+	if lastThumb < len(lines)-4 {
+		t.Fatalf("scroll thumb should move near the bottom after end, line=%d total=%d\n%s", lastThumb, len(lines), box)
 	}
 }
 

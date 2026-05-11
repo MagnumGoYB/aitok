@@ -146,6 +146,33 @@ func TestTUIRenderCommandPrintsDashboard(t *testing.T) {
 	}
 }
 
+func TestTUIRenderThreadsRespectPeriodWindow(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "today.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"today-thread","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"response_item","timestamp":"2026-05-08T01:00:01Z","payload":{"type":"message","role":"user","content":"Today thread"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:02Z","payload":{"model":"gpt-5.5","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}`+"\n")
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "07", "old.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-07T01:00:00Z","payload":{"id":"old-thread","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"response_item","timestamp":"2026-05-07T01:00:01Z","payload":{"type":"message","role":"user","content":"Old thread"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-07T01:00:02Z","payload":{"model":"gpt-5.5","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-07T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}}`+"\n")
+
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "tui", "--period", "today", "--render"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Today thread") || strings.Contains(got, "Old thread") || strings.Contains(got, "old-thread") {
+		t.Fatalf("tui threads should respect the requested period window: %s", got)
+	}
+}
+
 func TestTUIRenderCommandSupportsChinese(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
