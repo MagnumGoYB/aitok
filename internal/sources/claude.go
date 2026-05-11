@@ -40,8 +40,12 @@ func (c Claude) Scan(ctx context.Context, handle func(usage.UsageEvent) error) e
 		if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
+		meta := parseClaudeThreadMeta(path)
+		if meta.Skip {
+			return nil
+		}
 		return readJSONLines(ctx, path, func(obj map[string]any) error {
-			event, ok := c.parseEvent(path, obj)
+			event, ok := c.parseEvent(path, obj, meta)
 			if !ok {
 				return nil
 			}
@@ -55,7 +59,7 @@ func (c Claude) Scan(ctx context.Context, handle func(usage.UsageEvent) error) e
 	return err
 }
 
-func (c Claude) parseEvent(path string, obj map[string]any) (usage.UsageEvent, bool) {
+func (c Claude) parseEvent(path string, obj map[string]any, meta threadMeta) (usage.UsageEvent, bool) {
 	if stringValue(obj["type"]) != "assistant" {
 		return usage.UsageEvent{}, false
 	}
@@ -86,14 +90,19 @@ func (c Claude) parseEvent(path string, obj map[string]any) (usage.UsageEvent, b
 		id = claudeHash(ts, model, tokens)
 	}
 	return usage.UsageEvent{
-		ID:        id,
-		Timestamp: ts,
-		Tool:      usage.ToolClaude,
-		Model:     model,
-		Provider:  "unknown",
-		CWD:       stringValue(obj["cwd"]),
-		Source:    path,
-		Usage:     tokens,
+		ID:                 id,
+		Timestamp:          ts,
+		Tool:               usage.ToolClaude,
+		Model:              model,
+		Provider:           "unknown",
+		CWD:                stringValue(obj["cwd"]),
+		Source:             path,
+		ThreadID:           meta.ID,
+		ThreadName:         meta.Name,
+		ThreadSource:       meta.Source,
+		ThreadCreatedAt:    meta.CreatedAt,
+		ThreadLastActiveAt: meta.LastActiveAt,
+		Usage:              tokens,
 	}, true
 }
 

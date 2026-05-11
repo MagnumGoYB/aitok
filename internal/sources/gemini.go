@@ -37,8 +37,18 @@ func (g Gemini) Scan(ctx context.Context, handle func(usage.UsageEvent) error) e
 	if outfile == "" {
 		return nil
 	}
+	threads := g.sessionMetaByID()
 	err := readJSONLines(ctx, outfile, func(obj map[string]any) error {
 		if event, ok := g.parseEvent(outfile, obj); ok {
+			if meta, found := threads[event.ThreadID]; found {
+				event.ThreadName = meta.Name
+				event.ThreadSource = meta.Source
+				event.ThreadCreatedAt = meta.CreatedAt
+				event.ThreadLastActiveAt = meta.LastActiveAt
+				if event.CWD == "" {
+					event.CWD = meta.CWD
+				}
+			}
 			return handle(event)
 		}
 		return nil
@@ -98,14 +108,91 @@ func (g Gemini) parseEvent(path string, obj map[string]any) (usage.UsageEvent, b
 		id = path + "|" + ts.Format(time.RFC3339Nano) + "|" + model
 	}
 	return usage.UsageEvent{
-		ID:        id,
-		Timestamp: ts,
-		Tool:      usage.ToolGemini,
-		Model:     usage.Unknown(model),
-		Provider:  usage.Unknown(provider),
-		Source:    path,
-		Usage:     tokens,
+		ID:           id,
+		Timestamp:    ts,
+		Tool:         usage.ToolGemini,
+		Model:        usage.Unknown(model),
+		Provider:     usage.Unknown(provider),
+		Source:       path,
+		ThreadID:     id,
+		ThreadName:   usage.Unknown(id),
+		ThreadSource: path,
+		Usage:        tokens,
 	}, true
+}
+
+func (g Gemini) sessionMetaByID() map[string]threadMeta {
+	out := map[string]threadMeta{}
+	tmpDir := filepath.Join(g.Home, ".gemini", "tmp")
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return out
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		projectRoot := strings.TrimSpace(readString(filepath.Join(tmpDir, entry.Name(), ".project_root")))
+		chatsDir := filepath.Join(tmpDir, entry.Name(), "chats")
+		files, err := os.ReadDir(chatsDir)
+		if err != nil {
+			continue
+		}
+		for _, file := range files {
+			if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
+				continue
+			}
+			path := filepath.Join(chatsDir, file.Name())
+			if meta, ok := parseGeminiSessionMeta(path, projectRoot); ok {
+				out[meta.ID] = meta
+			}
+		}
+	}
+	return out
+}
+
+func parseGeminiSessionMeta(path, cwd string) (threadMeta, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return threadMeta{}, false
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return threadMeta{}, false
+	}
+	id := stringValue(obj["sessionId"])
+	if id == "" {
+		return threadMeta{}, false
+	}
+	meta := threadMeta{
+		ID:           id,
+		CWD:          cwd,
+		Source:       path,
+		CreatedAt:    parseTimestamp(stringValue(obj["startTime"])),
+		LastActiveAt: parseTimestamp(stringValue(obj["lastUpdated"])),
+	}
+	if messages, ok := obj["messages"].([]any); ok {
+		for _, msg := range messages {
+			m := objectValue(msg)
+			if m == nil || stringValue(m["type"]) != "user" {
+				continue
+			}
+			if text := extractText(m["content"]); strings.TrimSpace(text) != "" {
+				meta.Name = truncateTitle(text)
+				break
+			}
+		}
+	}
+	meta.Name = chooseThreadTitle(meta.Name, pathBase(cwd), shortID(id))
+	return meta, true
+}
+
+func readString(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func isGeminiUsage(flat map[string]any) bool {

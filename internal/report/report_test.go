@@ -58,3 +58,40 @@ func TestWriteTableIncludesRequestsAndCost(t *testing.T) {
 		t.Fatalf("table must render borders and column separators: %s", got)
 	}
 }
+
+func TestWriteThreadsWhenPayloadIncludesThreads(t *testing.T) {
+	payload := Payload{
+		Results: []query.Result{{
+			Key:      map[string]string{"tool": "codex"},
+			Requests: 1,
+			Events:   1,
+			Usage:    usage.TokenUsage{Input: 5},
+		}},
+		Threads: []query.ThreadResult{{
+			ID:       "thread-a",
+			Name:     "Custom title",
+			Tool:     "codex",
+			Model:    "gpt-5.4",
+			Provider: "openai",
+			Requests: 1,
+			Events:   1,
+			Usage:    usage.TokenUsage{Input: 5},
+			CostUSD:  0.0001,
+		}},
+	}
+	var out bytes.Buffer
+	if err := Write(&out, "markdown", payload); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "## Threads") || !strings.Contains(got, "| thread-a | Custom title | codex | gpt-5.4 | openai |") {
+		t.Fatalf("markdown output missing threads: %s", got)
+	}
+	out.Reset()
+	if err := Write(&out, "json", payload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"threads"`) || !strings.Contains(out.String(), `"id": "thread-a"`) {
+		t.Fatalf("json output missing threads: %s", out.String())
+	}
+}

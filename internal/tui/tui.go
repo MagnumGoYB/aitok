@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"sort"
@@ -26,13 +27,17 @@ const (
 )
 
 type model struct {
-	payload    report.Payload
-	activeTool string
-	search     string
-	searching  bool
-	width      int
-	language   Language
-	refresh    func() (report.Payload, error)
+	payload      report.Payload
+	activeTool   string
+	search       string
+	searching    bool
+	width        int
+	language     Language
+	refresh      func() (report.Payload, error)
+	focusedPane  string
+	threadCursor int
+	threadOffset int
+	copyStatus   string
 }
 
 type refreshResultMsg struct {
@@ -136,6 +141,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTool = string(usage.ToolCodex)
 		case "4":
 			m.activeTool = string(usage.ToolGemini)
+		case "t":
+			if m.focusedPane == "threads" {
+				m.focusedPane = ""
+			} else {
+				m.focusedPane = "threads"
+			}
+		case "up", "k":
+			if m.focusedPane == "threads" {
+				m.moveThreadCursor(-1)
+			}
+		case "down", "j":
+			if m.focusedPane == "threads" {
+				m.moveThreadCursor(1)
+			}
+		case "home":
+			if m.focusedPane == "threads" {
+				m.threadCursor = 0
+				m.ensureThreadVisible()
+			}
+		case "end":
+			if m.focusedPane == "threads" && len(m.payload.Threads) > 0 {
+				m.threadCursor = len(m.payload.Threads) - 1
+				m.ensureThreadVisible()
+			}
+		case "c":
+			if m.focusedPane == "threads" && len(m.payload.Threads) > 0 {
+				id := m.payload.Threads[m.threadCursor].ID
+				m.copyStatus = "copied " + id
+				return m, copyOSC52(id)
+			}
 		}
 	}
 	return m, nil
@@ -177,8 +212,16 @@ func (m model) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.table(results))
 	}
+	if len(m.payload.Threads) > 0 {
+		b.WriteString("\n\n")
+		b.WriteString(m.threadsBox(copy))
+	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render(copy.help))
+	help := copy.help
+	if m.copyStatus != "" {
+		help += "  " + m.copyStatus
+	}
+	b.WriteString(helpStyle.Render(help))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -194,11 +237,7 @@ func (m model) toolbar(copy localizedCopy) string {
 	if m.searching {
 		search += "▌"
 	}
-	date := m.payload.Window.Start.Format("2006-01-02")
-	if m.payload.Window.Start.IsZero() {
-		date = copy.today
-	}
-	right := mutedStyle.Render("📅 " + date)
+	right := mutedStyle.Render(m.windowLabel(copy))
 	content := lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(tabs, "  "), "     ", search, "     ", right)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -206,6 +245,21 @@ func (m model) toolbar(copy localizedCopy) string {
 		Padding(1, 2).
 		Width(clamp(m.width-4, 72, 180)).
 		Render(content)
+}
+
+func (m model) windowLabel(copy localizedCopy) string {
+	start := m.payload.Window.Start
+	if start.IsZero() {
+		return copy.today
+	}
+	zone := start.Location().String()
+	if zone == "Local" {
+		zone, _ = start.Zone()
+	}
+	if m.payload.Period == query.PeriodToday {
+		return start.Format("2006-01-02") + " " + zone
+	}
+	return start.Format("2006-01-02 15:04") + " ～ " + m.payload.Window.End.In(start.Location()).Format("2006-01-02 15:04") + " " + zone
 }
 
 func (m model) cards(summary totals, copy localizedCopy) string {
@@ -280,6 +334,105 @@ func (m model) table(results []query.Result) string {
 	return b.String()
 }
 
+func (m *model) moveThreadCursor(delta int) {
+	if len(m.payload.Threads) == 0 {
+		m.threadCursor = 0
+		m.threadOffset = 0
+		return
+	}
+	m.threadCursor += delta
+	if m.threadCursor < 0 {
+		m.threadCursor = 0
+	}
+	if m.threadCursor >= len(m.payload.Threads) {
+		m.threadCursor = len(m.payload.Threads) - 1
+	}
+	m.ensureThreadVisible()
+}
+
+func (m *model) ensureThreadVisible() {
+	height := m.threadViewportHeight()
+	if m.threadCursor < m.threadOffset {
+		m.threadOffset = m.threadCursor
+	}
+	if m.threadCursor >= m.threadOffset+height {
+		m.threadOffset = m.threadCursor - height + 1
+	}
+	if m.threadOffset < 0 {
+		m.threadOffset = 0
+	}
+}
+
+func (m model) threadViewportHeight() int {
+	if m.width < 100 {
+		return 6
+	}
+	return 10
+}
+
+func (m model) threadsBox(copy localizedCopy) string {
+	threads := m.payload.Threads
+	height := m.threadViewportHeight()
+	if m.threadCursor >= len(threads) {
+		m.threadCursor = len(threads) - 1
+	}
+	if m.threadCursor < 0 {
+		m.threadCursor = 0
+	}
+	if m.threadOffset > len(threads)-1 {
+		m.threadOffset = len(threads) - 1
+	}
+	if m.threadOffset < 0 {
+		m.threadOffset = 0
+	}
+	end := m.threadOffset + height
+	if end > len(threads) {
+		end = len(threads)
+	}
+	header := mutedStyle.Render(fmt.Sprintf("%-12s %-28s %-8s %-18s %-10s %6s %6s %9s %9s %s", "ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens", "│"))
+	var lines []string
+	lines = append(lines, sectionStyle.Render(copy.threads))
+	lines = append(lines, header)
+	for i := m.threadOffset; i < end; i++ {
+		thread := threads[i]
+		scroll := m.scrollBar(i, len(threads), height)
+		line := fmt.Sprintf("%-12s %-28s %-8s %-18s %-10s %6d %6d %9s %9s %s",
+			truncate(thread.ID, 12),
+			truncate(thread.Name, 28),
+			thread.Tool,
+			truncate(thread.Model, 18),
+			truncate(thread.Provider, 10),
+			thread.Requests,
+			thread.Events,
+			report.FormatUSD(thread.CostUSD),
+			compact(thread.Usage.NormalizedTotal()),
+			scroll,
+		)
+		if i == m.threadCursor {
+			line = selectedRowStyle.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Width(clamp(m.width-4, 72, 180)).
+		Render(strings.Join(lines, "\n"))
+}
+
+func (m model) scrollBar(index, total, height int) string {
+	if total <= height {
+		return "│"
+	}
+	visibleIndex := index - m.threadOffset
+	thumb := int(float64(m.threadCursor) / float64(total-1) * float64(height-1))
+	if visibleIndex == thumb {
+		return "█"
+	}
+	return "│"
+}
+
 func (m model) filteredResults() []query.Result {
 	var out []query.Result
 	needle := strings.ToLower(strings.TrimSpace(m.search))
@@ -351,6 +504,7 @@ type localizedCopy struct {
 	totalTokens  string
 	cachedTokens string
 	modelUsage   string
+	threads      string
 	empty        string
 	help         string
 }
@@ -368,8 +522,9 @@ func copyFor(language Language) localizedCopy {
 			totalTokens:  "总 Token 数",
 			cachedTokens: "缓存 Token",
 			modelUsage:   "模型用量",
+			threads:      "会话",
 			empty:        "当前查询没有找到用量事件。",
-			help:         "1 全部  2 Claude Code  3 Codex  4 Gemini  / 搜索  esc 清空  l 语言  q 退出",
+			help:         "1 全部  2 Claude Code  3 Codex  4 Gemini  t 会话  j/k 移动  c 复制ID  / 搜索  esc 清空  l 语言  q 退出",
 		}
 	}
 	return localizedCopy{
@@ -383,8 +538,17 @@ func copyFor(language Language) localizedCopy {
 		totalTokens:  "Total Tokens",
 		cachedTokens: "Cached Tokens",
 		modelUsage:   "Model Usage",
+		threads:      "Threads",
 		empty:        "No usage events found for this query.",
-		help:         "1 All  2 Claude Code  3 Codex  4 Gemini  / search  esc clear  l language  q quit",
+		help:         "1 All  2 Claude Code  3 Codex  4 Gemini  t threads  j/k move  c copy ID  / search  esc clear  l language  q quit",
+	}
+}
+
+func copyOSC52(value string) tea.Cmd {
+	return func() tea.Msg {
+		encoded := base64.StdEncoding.EncodeToString([]byte(value))
+		fmt.Printf("\033]52;c;%s\a", encoded)
+		return nil
 	}
 }
 
@@ -472,14 +636,15 @@ var (
 	purple = lipgloss.Color("99")
 	orange = lipgloss.Color("208")
 
-	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	subtitleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	activeTabStyle = lipgloss.NewStyle().Foreground(blue).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
-	tabStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
-	labelStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	valueStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	sectionStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	helpStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	barStyle       = lipgloss.NewStyle().Foreground(blue)
+	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	subtitleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	activeTabStyle   = lipgloss.NewStyle().Foreground(blue).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
+	tabStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	labelStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	valueStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	sectionStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	mutedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	barStyle         = lipgloss.NewStyle().Foreground(blue)
+	selectedRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("88")).Bold(true)
 )

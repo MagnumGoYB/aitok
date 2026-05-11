@@ -40,14 +40,19 @@ func (u TokenUsage) Add(v TokenUsage) TokenUsage {
 }
 
 type UsageEvent struct {
-	ID        string     `json:"id"`
-	Timestamp time.Time  `json:"timestamp"`
-	Tool      Tool       `json:"tool"`
-	Model     string     `json:"model"`
-	Provider  string     `json:"provider"`
-	CWD       string     `json:"cwd,omitempty"`
-	Source    string     `json:"source,omitempty"`
-	Usage     TokenUsage `json:"usage"`
+	ID                 string     `json:"id"`
+	Timestamp          time.Time  `json:"timestamp"`
+	Tool               Tool       `json:"tool"`
+	Model              string     `json:"model"`
+	Provider           string     `json:"provider"`
+	CWD                string     `json:"cwd,omitempty"`
+	Source             string     `json:"source,omitempty"`
+	ThreadID           string     `json:"thread_id,omitempty"`
+	ThreadName         string     `json:"thread_name,omitempty"`
+	ThreadSource       string     `json:"thread_source,omitempty"`
+	ThreadCreatedAt    time.Time  `json:"thread_created_at,omitempty"`
+	ThreadLastActiveAt time.Time  `json:"thread_last_active_at,omitempty"`
+	Usage              TokenUsage `json:"usage"`
 }
 
 func Unknown(value string) string {

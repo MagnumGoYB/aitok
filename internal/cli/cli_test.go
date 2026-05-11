@@ -72,6 +72,37 @@ func TestAgentJSONSummaryKeepsStdoutMachineReadableAndStderrEmpty(t *testing.T) 
 	}
 }
 
+func TestSummaryJSONOmitsThreadsByDefaultAndIncludesWithFlag(t *testing.T) {
+	home := t.TempDir()
+	session := filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout-2026-05-08T01-00-00-019e0000-0000-7000-8000-000000000001.jsonl")
+	writeFixture(t, session,
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"thread-a","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"response_item","timestamp":"2026-05-08T01:00:01Z","payload":{"type":"message","role":"user","content":"Fix login bug"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:02Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}`+"\n")
+	now := func() time.Time { return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC) }
+
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: now})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), `"threads"`) {
+		t.Fatalf("summary JSON should omit threads by default: %s", out.String())
+	}
+
+	out.Reset()
+	cmd = New(App{Out: &out, Now: now})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json", "--threads"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"threads"`) || !strings.Contains(out.String(), `"id": "thread-a"`) || !strings.Contains(out.String(), `"name": "Fix login bug"`) {
+		t.Fatalf("summary --threads should include thread payload: %s", out.String())
+	}
+}
+
 func TestSummaryUsesCustomPricingFile(t *testing.T) {
 	home := t.TempDir()
 	pricingPath := filepath.Join(home, "pricing.json")
