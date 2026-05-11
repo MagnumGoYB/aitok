@@ -165,6 +165,26 @@ func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	}
 }
 
+func TestModelUsageCapsRowsWhenProvidersAreMany(t *testing.T) {
+	payload := samplePayload()
+	payload.Results = nil
+	for i := 0; i < 12; i++ {
+		payload.Results = append(payload.Results, query.Result{
+			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "provider-" + string(rune('a'+i))},
+			Requests: 10 - i,
+			Usage:    usage.TokenUsage{Input: int64(1_000_000 - i*10_000)},
+			CostUSD:  float64(12 - i),
+		})
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	if strings.Contains(view, "provider-h") || strings.Contains(view, "provider-l") {
+		t.Fatalf("model usage should cap provider-heavy output to top rows:\n%s", view)
+	}
+	if !strings.Contains(view, "provider-a") || !strings.Contains(view, "provider-f") {
+		t.Fatalf("model usage should keep the most important provider rows:\n%s", view)
+	}
+}
+
 func TestThreadsRenderBeforeBorderedModelUsage(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
@@ -251,6 +271,30 @@ func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("threads box missing %q: %s", expected, view)
 		}
+	}
+}
+
+func TestThreadViewportHeightCapsAtSixRows(t *testing.T) {
+	m := NewModel(samplePayload())
+	m.width = 160
+	if got := m.threadViewportHeight(); got != 6 {
+		t.Fatalf("large screens should cap threads viewport at 6 rows, got %d", got)
+	}
+	m.width = 80
+	if got := m.threadViewportHeight(); got != 6 {
+		t.Fatalf("narrow screens should keep compact threads viewport at 6 rows, got %d", got)
+	}
+}
+
+func TestTUILayoutUsesCompactToolbarAndCards(t *testing.T) {
+	m := NewModel(samplePayload())
+	toolbar := stripANSI(m.toolbar(copyFor(LanguageEnglish)))
+	if got := len(strings.Split(toolbar, "\n")); got > 3 {
+		t.Fatalf("toolbar should stay compact, got %d lines:\n%s", got, toolbar)
+	}
+	card := stripANSI(cardWithWidth("Requests", "4,906", "↯", blue, 28))
+	if got := len(strings.Split(card, "\n")); got > 5 {
+		t.Fatalf("summary cards should stay compact, got %d lines:\n%s", got, card)
 	}
 }
 

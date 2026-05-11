@@ -256,7 +256,7 @@ func (m model) toolbar(copy localizedCopy) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
-		Padding(1, 2).
+		Padding(0, 2).
 		Width(clamp(m.width-4, 72, 180)).
 		Render(content)
 }
@@ -311,7 +311,7 @@ func (m model) modelUsageBox(results []query.Result, total int64, copy localized
 		b.WriteString(mutedStyle.Render(copy.empty))
 	} else {
 		b.WriteString(m.chart(results, total))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 		b.WriteString(strings.TrimRight(m.table(results), "\n"))
 	}
 	return lipgloss.NewStyle().
@@ -339,7 +339,7 @@ func (m model) chart(results []query.Result, max int64) string {
 			barStyle.Render(strings.Repeat("█", width)),
 			mutedStyle.Render(formatInt(total)),
 		))
-		if len(lines) == 8 {
+		if len(lines) == 6 {
 			break
 		}
 	}
@@ -360,7 +360,7 @@ func (m model) table(results []query.Result) string {
 			compact(result.Usage.Output),
 			compact(result.Usage.CachedInput+result.Usage.CacheCreation),
 		))
-		if strings.TrimSpace(b.String()) != "" && strings.Count(b.String(), "\n") > 12 {
+		if strings.TrimSpace(b.String()) != "" && strings.Count(b.String(), "\n") > 6 {
 			break
 		}
 	}
@@ -400,7 +400,7 @@ func (m model) threadViewportHeight() int {
 	if m.width < 100 {
 		return 6
 	}
-	return 10
+	return 6
 }
 
 func (m model) threadsBox(copy localizedCopy) string {
@@ -598,11 +598,11 @@ func cardWithWidth(label, value, icon string, color lipgloss.Color, width int) s
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
-		Padding(1, 2).
+		Padding(0, 2).
 		Width(width).
-		Height(5).
+		Height(2).
 		MarginRight(2).
-		Render(labelStyle.Render(label) + "\n\n" + valueStyle.Render(value) + "  " + iconStyle.Render(icon))
+		Render(labelStyle.Render(label) + "\n" + valueStyle.Render(value) + "  " + iconStyle.Render(icon))
 }
 
 func formatInt(value int64) string {
