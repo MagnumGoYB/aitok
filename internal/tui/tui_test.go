@@ -248,8 +248,43 @@ func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 	if !strings.Contains(box, "ID             Name") {
 		t.Fatalf("ID and Name columns should have a larger left-aligned gap: %s", box)
 	}
-	if !strings.Contains(box, "Req Events") {
-		t.Fatalf("numeric headers should be right-aligned to their columns, not centered: %s", box)
+	if !strings.Contains(box, "Req    Events") {
+		t.Fatalf("Req should be left-aligned and Events should remain right-aligned: %s", box)
+	}
+}
+
+func TestThreadRowAlignmentPolicy(t *testing.T) {
+	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens")
+	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "261", "$31.3324", "41.4m")
+
+	for _, expected := range []string{
+		"Name                         Tool",
+		"Tool     Model",
+		"Model              Provider",
+		"Provider   Req",
+		"Req    Events",
+	} {
+		if !strings.Contains(header, expected) {
+			t.Fatalf("header should keep left-aligned gap %q:\n%s", expected, header)
+		}
+	}
+	for _, expected := range []string{
+		"Fix title                    codex",
+		"codex    gpt-5.5",
+		"gpt-5.5            bcb",
+		"bcb        261",
+	} {
+		if !strings.Contains(row, expected) {
+			t.Fatalf("row should keep left-aligned gap %q:\n%s", expected, row)
+		}
+	}
+	for _, expected := range []string{
+		"   261  $31.3324",
+		"$31.3324     41.4m",
+	} {
+		if !strings.Contains(row, expected) {
+			t.Fatalf("events/cost/tokens should remain right-aligned %q:\n%s", expected, row)
+		}
 	}
 }
 

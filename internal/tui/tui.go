@@ -630,7 +630,7 @@ func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens st
 		padRight(tool, 8),
 		padRight(modelName, 18),
 		padRight(provider, 10),
-		padLeft(req, 6),
+		padRight(req, 6),
 		padLeft(events, 6),
 		padLeft(cost, 9),
 		padLeft(tokens, 9),
