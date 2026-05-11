@@ -26,6 +26,7 @@
 
 - 随仓库版本化的迭代交接记录放在 `docs/iteration-notes/`，中文镜像在 `docs/zh-CN/iteration-notes/`。
 - 继续处理 agent-cost-governance、价格覆盖、预算、doctor、发布或 GitHub 自动化相关工作前，先阅读 `docs/zh-CN/iteration-notes/2026-05-09-agent-cost-governance.md`。
+- 继续处理 TUI 日期展示、本地 thread/session 列表、source 标题提取，或 PR #13 合并后的发版跟进前，先阅读 `docs/zh-CN/iteration-notes/2026-05-11-tui-period-threads.md`。
 
 除非明确要求，否则不在当前范围内：
 
