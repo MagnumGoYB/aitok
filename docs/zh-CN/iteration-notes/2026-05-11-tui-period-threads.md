@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.25`；当前这轮 post-release feature/bugfix 跟进目标版本为 `v0.1.26`
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.26`；当前迭代没有待跟进发版。
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -58,9 +58,18 @@ Codex 相关的重要发现：
 - 更新 README 和 README.zh-CN，补充 `summary --threads` 和 TUI threads 快捷键。
 - 增加实施计划：`docs/superpowers/plans/2026-05-11-tui-period-threads-list.md`。
 
-## 合并后的跟进
+## 2026-05-12 跟进时间线
 
-PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
+PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版。2026-05-12 的提交如下：
+
+- `c636a71` / `v0.1.21`：统一 TUI cost 列视觉对齐，并标准化面向 Claude 的文档措辞。
+- `b239c6a` + `10f1d0d` / `v0.1.22`：修复 Threads 过滤逻辑，让 active tool/search 状态、光标移动、复制动作和滚动条计算都基于过滤后的 thread 列表，并完成发版。
+- `5e36baf` / `v0.1.23`：让 Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
+- `8ca2d23` / `v0.1.24`：修复 Model Usage 图表在 100 万以下 token 行之间的比例显示，并在 Model Usage 表格中增加总 `Tokens` 列。
+- `7492313` / `v0.1.25`：保持同一 thread ID 只出一行，把 thread `model=mixed` 改成逗号拼接的模型列表，压缩默认输出中重复的 request/event 展示，并让 Model Usage bar 在同一色系内按用量深浅区分。
+- `f004bcb` / `v0.1.26`：为查询输出增加 `--sort tokens|cost`，TUI 支持用 `s` 切换排序指标，在 Threads 和 Model Usage 中显示指标标识，补齐遗漏的表头/Search 本地化，并在 Cost 排序时让 Model Usage chart 的 bar 和标签按 USD 金额展示。
+
+本迭代完整版本序列如下：
 
 - `v0.1.16`：合并后发布初版 TUI 日期与 threads 功能。
 - `v0.1.17`：优化 Threads 布局，包括 Threads 放在 Model Usage 前、给 Model Usage 加边框、加大 ID/Name 间距、限制 thread name 展示宽度、去掉 Threads 末尾竖线，并让选中行/tab 高亮统一到 `#00B2FF` 色系。
@@ -72,12 +81,13 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - `v0.1.23`：让 Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
 - `v0.1.24`：已修复 Model Usage 图表在 100 万以下 token 行之间的比例显示，并在 Model Usage 表格中增加总 `Tokens` 列。
 - `v0.1.25`：保持同一 thread ID 只出一行，把 thread `model=mixed` 改成逗号拼接的模型列表，压缩默认输出中重复的 request/event 展示，并让 Model Usage bar 在同一色系内按用量深浅区分。
-- 待发 `v0.1.26` feature/bugfix 范围：为查询输出增加 `--sort tokens|cost`，TUI 支持用 `s` 切换排序指标，在 Threads 和 Model Usage 中显示指标标识，补齐遗漏的表头/Search 本地化，并在 Cost 排序时让 Model Usage chart 的 bar 和标签按 USD 金额展示。
+- `v0.1.26`：为查询输出增加 `--sort tokens|cost`，TUI 支持用 `s` 切换排序指标，在 Threads 和 Model Usage 中显示指标标识，补齐遗漏的表头/Search 本地化，并在 Cost 排序时让 Model Usage chart 的 bar 和标签按 USD 金额展示。
 
 当前 TUI 布局约束需要继续保留：
 
 - Threads 过滤逻辑必须与 active tool tabs 和 search term 保持同步。任何光标移动、Home/End 跳转、复制动作、滚动条 offset 计算，都必须基于过滤后的 thread slice，而不是原始未过滤 payload。
 - 查询输出支持两种降序排序指标：默认 `tokens`，传入 `--sort cost` 后按成本排序。TUI 可用 `s` 切换当前指标，并且 Threads 与 Model Usage 必须显示当前排序指标标识。
+- Model Usage 图表必须与当前指标一致：Tokens 模式按 token count 计算 bar 和右侧标签；Cost 模式按 USD cost 计算 bar 和右侧标签。
 - 旧的 `t threads` 聚焦快捷键已从用户可见帮助中移除；`j/k/home/end/c` 直接作用于过滤后的 Threads 列表。
 - `Cost` 要和其他数值列保持同一策略：在 Model Usage 与 Threads 中都按渲染后的末端右对齐，即使值里包含 `$`。
 
@@ -113,7 +123,9 @@ PR 前本地验证：
 - `make validate`，在 release bump 前执行
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
 - `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21`、`v0.1.22`、`v0.1.23` 的 GitHub Release workflows 均已成功。
-- 当前 `v0.1.26` 的验证目标：tag 前执行 `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.26 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
+- `v0.1.26` 本地验证已通过：`go test ./internal/query ./internal/report ./internal/cli ./internal/tui`、`make validate`、`GITHUB_REF_NAME=v0.1.26 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
+- `v0.1.26` GitHub Actions 已通过：tag `v0.1.26` 的 `Release` 和 `Build`，以及 `main` 上的 `CI`、`Build`、`Release`。
+- `v0.1.26` GitHub Release 已成功发布，包含 darwin、linux、windows archives 和 `checksums.txt`：`https://github.com/MagnumGoYB/aitok/releases/tag/v0.1.26`。
 
 GitHub PR 检查：
 
@@ -124,7 +136,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-截至 `v0.1.25`，原始 PR #13 范围已没有待跟进发版。当前 query sort 与 Cost chart 跟进应作为 `v0.1.26` 发布，除非用户明确要求延后发版。
+截至 `v0.1.26`，原始 PR #13 范围以及 2026-05-12 query sort / Cost chart 跟进都没有待跟进发版。
 
 ## 后续工作
 

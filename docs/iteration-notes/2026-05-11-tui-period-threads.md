@@ -9,7 +9,7 @@ This note is a versioned handoff for future AI coding agents. Read it before con
 - Feature branch used: `codex/tui-period-threads-list`
 - Feature commit: `107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - Merge commit: `97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- Release status: PR #13 and follow-up TUI fixes were released through `v0.1.25`; the current post-release feature/bugfix follow-up is targeting `v0.1.26`
+- Release status: PR #13 and follow-up TUI fixes were released through `v0.1.26`; no release follow-up is currently pending for this iteration.
 - Primary agent contract: `aitok --no-version-check summary --period today --threads --format json`
 
 ## Why This Iteration Happened
@@ -58,9 +58,18 @@ Important Codex-specific findings:
 - Updated README and README.zh-CN with `summary --threads` and TUI thread shortcuts.
 - Added the implementation plan at `docs/superpowers/plans/2026-05-11-tui-period-threads-list.md`.
 
-## Post-Merge Follow-Ups
+## 2026-05-12 Follow-Up Timeline
 
-After PR #13 merged, several TUI polish releases landed on `main`:
+After PR #13 merged, several TUI polish releases landed on `main`. The 2026-05-12 commits were:
+
+- `c636a71` / `v0.1.21`: aligned TUI cost columns and standardized Claude-facing docs wording.
+- `b239c6a` + `10f1d0d` / `v0.1.22`: fixed Threads filtering so active tool/search state, cursor movement, copy actions, and scrollbar math operate on the filtered thread list; released the fix.
+- `5e36baf` / `v0.1.23`: made Threads default to descending token usage order in both `summary --threads` payloads and the TUI filtered view.
+- `8ca2d23` / `v0.1.24`: fixed Model Usage chart ratios for sub-1m token rows and added total `Tokens` to the Model Usage table.
+- `7492313` / `v0.1.25`: kept one row per thread ID, replaced thread `model=mixed` with a compact comma-joined model list, merged redundant request/event-heavy default output, and shaded Model Usage bars within one hue family so relative usage is still visually distinct.
+- `f004bcb` / `v0.1.26`: added `--sort tokens|cost`, let TUI switch sort metrics with `s`, showed metric badges in Threads and Model Usage, localized missed table/search labels, and scaled Model Usage chart bars/labels by USD when Cost sorting is active.
+
+The full version sequence for this iteration is:
 
 - `v0.1.16`: released the initial TUI period and threads feature after merge.
 - `v0.1.17`: refined the Threads layout by placing Threads before Model Usage, adding a Model Usage border, widening the ID/name spacing, limiting thread-name display width, removing the trailing Threads column line, and aligning the selected-row/tab color with `#00B2FF`.
@@ -72,12 +81,13 @@ After PR #13 merged, several TUI polish releases landed on `main`:
 - `v0.1.23`: made Threads default to descending token usage order in both `summary --threads` payloads and the TUI filtered view.
 - `v0.1.24`: fixed Model Usage chart ratios for sub-1m token rows and added total `Tokens` to the Model Usage table.
 - `v0.1.25`: kept one row per thread ID, replaced thread `model=mixed` with a compact comma-joined model list, merged redundant request/event-heavy default output, and shaded Model Usage bars within one hue family so relative usage is still visually distinct.
-- Pending `v0.1.26` feature/bugfix scope: add `--sort tokens|cost` for query outputs, let TUI switch sort metrics with `s`, show metric badges in Threads and Model Usage, localize missed table/search labels, and scale Model Usage chart bars/labels by USD when Cost sorting is active.
+- `v0.1.26`: added `--sort tokens|cost` for query outputs, let TUI switch sort metrics with `s`, showed metric badges in Threads and Model Usage, localized missed table/search labels, and scaled Model Usage chart bars/labels by USD when Cost sorting is active.
 
 Current TUI layout constraints to preserve:
 
 - Threads filtering must stay in sync with the active tool tabs and search term. Any cursor movement, Home/End jump, copy action, and scrollbar math should operate on the filtered thread slice instead of the unfiltered payload.
 - Query output supports two descending sort metrics: `tokens` by default and `cost` when `--sort cost` is passed. TUI can switch the active metric with `s` and must show the current metric badge in Threads and Model Usage.
+- Model Usage chart must use the active metric consistently: Tokens mode scales bars and labels by token count; Cost mode scales bars and labels by USD cost.
 - The old `t threads` focus shortcut has been removed from user-facing help; `j/k/home/end/c` operate directly on the filtered Threads list.
 - `Cost` should be treated like the other numeric columns: right-aligned by its rendered end edge in both Model Usage and Threads, even when values include `$`.
 
@@ -113,7 +123,9 @@ Follow-up validation used during the v0.1.17-v0.1.20 polish releases:
 - `make validate` before release bumps
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
 - GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, `v0.1.20`, `v0.1.21`, `v0.1.22`, and `v0.1.23` completed successfully.
-- Current `v0.1.26` validation target: `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`, `make test`, `make build`, `make validate`, `GITHUB_REF_NAME=v0.1.26 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`, and `git diff --check` before tagging.
+- `v0.1.26` local validation passed: `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`, `make validate`, `GITHUB_REF_NAME=v0.1.26 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`, and `git diff --check`.
+- `v0.1.26` GitHub Actions passed: `Release` and `Build` for tag `v0.1.26`, plus `CI`, `Build`, and `Release` on `main`.
+- `v0.1.26` GitHub Release published successfully with darwin, linux, windows archives and `checksums.txt`: `https://github.com/MagnumGoYB/aitok/releases/tag/v0.1.26`.
 
 GitHub PR checks:
 
@@ -124,7 +136,7 @@ GitHub PR checks:
 
 ## Release Follow-Up
 
-No pending release follow-up remains for the original PR #13 scope as of `v0.1.25`. The current query-sort and Cost-chart follow-up should ship as `v0.1.26` unless the user explicitly defers release work.
+No pending release follow-up remains for the original PR #13 scope or the 2026-05-12 query-sort/Cost-chart follow-up as of `v0.1.26`.
 
 ## Future Work
 
