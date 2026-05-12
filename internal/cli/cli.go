@@ -51,6 +51,7 @@ type flags struct {
 	format         string
 	full           bool
 	groupBy        string
+	sortBy         string
 	tools          []string
 	models         []string
 	providers      []string
@@ -273,6 +274,7 @@ func addQueryFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.period, "period", string(query.PeriodToday), "period: today, yesterday, this-week, last-week, this-month")
 	cmd.Flags().StringVar(&f.format, "format", "table", "format: table, json, markdown")
 	cmd.Flags().StringVar(&f.groupBy, "group-by", "tool,model,provider", "comma-separated groups: tool,model,provider,day,cwd")
+	cmd.Flags().StringVar(&f.sortBy, "sort", string(query.SortByTokens), "sort descending by metric: tokens or cost")
 	cmd.Flags().StringArrayVar(&f.tools, "tool", nil, "filter by tool")
 	cmd.Flags().StringArrayVar(&f.models, "model", nil, "filter by model")
 	cmd.Flags().StringArrayVar(&f.providers, "provider", nil, "filter by provider/auth type")
@@ -300,21 +302,20 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 		return report.Payload{}, err
 	}
 	groupBy := query.ParseGroupBy(f.groupBy)
-	acc := query.NewAccumulator(window, query.Filters{
-		Tools:     query.SplitCSV(f.tools),
-		Models:    query.SplitCSV(f.models),
-		Providers: query.SplitCSV(f.providers),
-		CWD:       f.cwd,
-	}, groupBy, func(event usage.UsageEvent) query.Cost {
-		return query.Cost{USD: catalog.CostFor(event).USD}
-	})
+	sortBy, err := query.ParseSortMetric(f.sortBy)
+	if err != nil {
+		return report.Payload{}, err
+	}
 	filters := query.Filters{
 		Tools:     query.SplitCSV(f.tools),
 		Models:    query.SplitCSV(f.models),
 		Providers: query.SplitCSV(f.providers),
 		CWD:       f.cwd,
 	}
-	threadAcc := query.NewThreadAccumulator(window, filters, func(event usage.UsageEvent) query.Cost {
+	acc := query.NewAccumulatorWithSort(window, filters, groupBy, sortBy, func(event usage.UsageEvent) query.Cost {
+		return query.Cost{USD: catalog.CostFor(event).USD}
+	})
+	threadAcc := query.NewThreadAccumulatorWithSort(window, filters, sortBy, func(event usage.UsageEvent) query.Cost {
 		return query.Cost{USD: catalog.CostFor(event).USD}
 	})
 	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
@@ -327,7 +328,7 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	if err != nil {
 		return report.Payload{}, err
 	}
-	payload := report.Payload{GeneratedAt: now, Period: period, Window: window, GroupBy: groupBy, Results: acc.Results()}
+	payload := report.Payload{GeneratedAt: now, Period: period, Window: window, GroupBy: groupBy, SortBy: sortBy, Results: acc.Results()}
 	if f.threads || f.renderTUI {
 		payload.Threads = threadAcc.Results()
 	}

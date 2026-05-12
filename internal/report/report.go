@@ -19,6 +19,7 @@ type Payload struct {
 	Period      query.Period         `json:"period,omitempty"`
 	Window      query.Window         `json:"window"`
 	GroupBy     query.GroupBy        `json:"group_by"`
+	SortBy      query.SortMetric     `json:"sort_by,omitempty"`
 	Results     []query.Result       `json:"results"`
 	Threads     []query.ThreadResult `json:"threads,omitempty"`
 }

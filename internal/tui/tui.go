@@ -49,6 +49,7 @@ type model struct {
 	language     Language
 	refresh      func() (report.Payload, error)
 	focusedPane  string
+	sortBy       query.SortMetric
 	threadCursor int
 	threadOffset int
 	copyStatus   string
@@ -64,7 +65,7 @@ func NewModel(payload report.Payload) model {
 }
 
 func NewModelWithLanguage(payload report.Payload, language Language) model {
-	return model{payload: payload, activeTool: allTools, width: 120, language: normalizeLanguage(language)}
+	return model{payload: payload, activeTool: allTools, width: 120, language: normalizeLanguage(language), sortBy: normalizePayloadSort(payload.SortBy)}
 }
 
 func NewModelWithRefresh(payload report.Payload, language Language, refresh func() (report.Payload, error)) model {
@@ -114,6 +115,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshResultMsg:
 		if msg.err == nil {
 			m.payload = msg.payload
+			if m.sortBy == "" {
+				m.sortBy = normalizePayloadSort(msg.payload.SortBy)
+			}
 		}
 		return m, m.scheduleRefresh()
 	case tea.WindowSizeMsg:
@@ -144,6 +148,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searching = true
 		case "l":
 			m.language = toggleLanguage(m.language)
+		case "s":
+			m.sortBy = toggleSortMetric(m.sortBy)
+			m.ensureThreadVisible()
 		case "esc":
 			m.search = ""
 			m.searching = false
@@ -159,12 +166,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "4":
 			m.activeTool = string(usage.ToolGemini)
 			m.ensureThreadVisible()
-		case "t":
-			if m.focusedPane == "threads" {
-				m.focusedPane = ""
-			} else {
-				m.focusedPane = "threads"
-			}
 		case "up", "k":
 			if m.canMoveThreads() {
 				m.focusedPane = "threads"
@@ -310,14 +311,14 @@ func (m model) tab(value, label string) string {
 
 func (m model) modelUsageBox(results []query.Result, total int64, copy localizedCopy) string {
 	var b strings.Builder
-	b.WriteString(sectionStyle.Render(copy.modelUsage))
+	b.WriteString(sectionStyle.Render(copy.modelUsage + " " + copy.sortBadge(m.sortBy)))
 	b.WriteString("\n")
 	if len(results) == 0 {
 		b.WriteString(mutedStyle.Render(copy.empty))
 	} else {
 		b.WriteString(m.chart(results, total))
 		b.WriteString("\n\n")
-		b.WriteString(strings.TrimRight(m.table(results), "\n"))
+		b.WriteString(strings.TrimRight(m.table(results, copy), "\n"))
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -328,17 +329,32 @@ func (m model) modelUsageBox(results []query.Result, total int64, copy localized
 }
 
 func (m model) chart(results []query.Result, max int64) string {
-	if max <= 0 {
-		max = 1
+	maxValue := float64(max)
+	if normalizePayloadSort(m.sortBy) == query.SortByCost {
+		maxValue = 0
+		for _, result := range results {
+			if result.CostUSD > maxValue {
+				maxValue = result.CostUSD
+			}
+		}
+	}
+	if maxValue <= 0 {
+		maxValue = 1
 	}
 	var lines []string
 	for i, result := range results {
 		total := result.Usage.NormalizedTotal()
+		value := float64(total)
+		labelValue := formatInt(total)
+		if normalizePayloadSort(m.sortBy) == query.SortByCost {
+			value = result.CostUSD
+			labelValue = report.FormatUSD(result.CostUSD)
+		}
 		label := padRight(tableText(resultLabel(result), modelColumnWidth), modelColumnWidth)
 		lines = append(lines, fmt.Sprintf("%s  %s %s",
 			label,
-			modelUsageBarStyle(i, minInt(len(results), 6)).Render(tokenBar(total, max, 28)),
-			mutedStyle.Render(formatInt(total)),
+			modelUsageBarStyle(i, minInt(len(results), 6)).Render(metricBar(value, maxValue, 28)),
+			mutedStyle.Render(labelValue),
 		))
 		if len(lines) == 6 {
 			break
@@ -347,9 +363,9 @@ func (m model) chart(results []query.Result, max int64) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m model) table(results []query.Result) string {
+func (m model) table(results []query.Result, copy localizedCopy) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render(modelTableRow("Model", "Req", "Cost", "Tokens", "Input", "Output", "Cached")))
+	b.WriteString(mutedStyle.Render(modelTableRow(copy.headerModel, copy.headerReq, copy.headerCost, copy.headerTokens, copy.headerInput, copy.headerOutput, copy.headerCached)))
 	b.WriteString("\n")
 	for _, result := range results {
 		b.WriteString(modelTableRow(
@@ -444,9 +460,9 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 		end = len(threads)
 	}
 	overflow := len(threads) > height
-	header := mutedStyle.Render(threadLine(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"), -1, m.threadOffset, height, len(threads), overflow))
+	header := mutedStyle.Render(threadLine(threadRow(copy.headerID, copy.headerName, copy.headerTool, copy.headerModel, copy.headerProvider, copy.headerReq, copy.headerCost, copy.headerTokens), -1, m.threadOffset, height, len(threads), overflow))
 	var lines []string
-	lines = append(lines, sectionStyle.Render(copy.threads))
+	lines = append(lines, sectionStyle.Render(copy.threads+" "+copy.sortBadge(m.sortBy)))
 	lines = append(lines, header)
 	for i := m.threadOffset; i < end; i++ {
 		thread := threads[i]
@@ -489,7 +505,7 @@ func (m model) filteredResults() []query.Result {
 		out = append(out, result)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].Usage.NormalizedTotal() > out[j].Usage.NormalizedTotal()
+		return compareResults(out[i], out[j], m.sortBy)
 	})
 	return out
 }
@@ -526,13 +542,11 @@ func (m model) filteredThreads() []query.ThreadResult {
 		out = append(out, thread)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		leftTokens := out[i].Usage.NormalizedTotal()
-		rightTokens := out[j].Usage.NormalizedTotal()
-		if leftTokens != rightTokens {
-			return leftTokens > rightTokens
+		if compareThreads(out[i], out[j], m.sortBy) {
+			return true
 		}
-		if out[i].CostUSD != out[j].CostUSD {
-			return out[i].CostUSD > out[j].CostUSD
+		if compareThreads(out[j], out[i], m.sortBy) {
+			return false
 		}
 		if !out[i].LastActiveAt.Equal(out[j].LastActiveAt) {
 			return out[i].LastActiveAt.After(out[j].LastActiveAt)
@@ -576,53 +590,99 @@ func formatKey(key map[string]string) string {
 }
 
 type localizedCopy struct {
-	title        string
-	subtitle     string
-	all          string
-	search       string
-	today        string
-	requests     string
-	cost         string
-	totalTokens  string
-	cachedTokens string
-	modelUsage   string
-	threads      string
-	empty        string
-	help         string
+	title          string
+	subtitle       string
+	all            string
+	search         string
+	today          string
+	requests       string
+	cost           string
+	totalTokens    string
+	cachedTokens   string
+	modelUsage     string
+	threads        string
+	empty          string
+	help           string
+	sortTokens     string
+	sortCost       string
+	headerID       string
+	headerName     string
+	headerTool     string
+	headerModel    string
+	headerProvider string
+	headerReq      string
+	headerCost     string
+	headerTokens   string
+	headerInput    string
+	headerOutput   string
+	headerCached   string
+}
+
+func (c localizedCopy) sortBadge(sortBy query.SortMetric) string {
+	if normalizePayloadSort(sortBy) == query.SortByCost {
+		return "[" + c.sortCost + "]"
+	}
+	return "[" + c.sortTokens + "]"
 }
 
 func copyFor(language Language) localizedCopy {
 	if normalizeLanguage(language) == LanguageChinese {
 		return localizedCopy{
-			title:        "使用统计",
-			subtitle:     "查看 AI 模型的使用情况和成本统计",
-			all:          "全部",
-			search:       "Search",
-			today:        "当日",
-			requests:     "总请求数",
-			cost:         "总成本",
-			totalTokens:  "总 Token 数",
-			cachedTokens: "缓存 Token",
-			modelUsage:   "模型用量",
-			threads:      "会话",
-			empty:        "当前查询没有找到用量事件。",
-			help:         "1 全部  2 Claude Code  3 Codex  4 Gemini  t 会话  j/k 移动  c 复制ID  / 搜索  esc 清空  l 语言  q 退出",
+			title:          "使用统计",
+			subtitle:       "查看 AI 模型的使用情况和成本统计",
+			all:            "全部",
+			search:         "搜索",
+			today:          "当日",
+			requests:       "总请求数",
+			cost:           "总成本",
+			totalTokens:    "总 Token 数",
+			cachedTokens:   "缓存 Token",
+			modelUsage:     "模型用量",
+			threads:        "会话",
+			empty:          "当前查询没有找到用量事件。",
+			help:           "1 全部  2 Claude Code  3 Codex  4 Gemini  s 排序  j/k 移动  c 复制ID  / 搜索  esc 清空  l 语言  q 退出",
+			sortTokens:     "按 Tokens",
+			sortCost:       "按 Cost",
+			headerID:       "ID",
+			headerName:     "名称",
+			headerTool:     "工具",
+			headerModel:    "模型",
+			headerProvider: "服务商",
+			headerReq:      "请求",
+			headerCost:     "成本",
+			headerTokens:   "Tokens",
+			headerInput:    "输入",
+			headerOutput:   "输出",
+			headerCached:   "缓存",
 		}
 	}
 	return localizedCopy{
-		title:        "Usage Dashboard",
-		subtitle:     "Monitor AI model usage and estimated cost",
-		all:          "All",
-		search:       "Search",
-		today:        "Today",
-		requests:     "Requests",
-		cost:         "Estimated Cost",
-		totalTokens:  "Total Tokens",
-		cachedTokens: "Cached Tokens",
-		modelUsage:   "Model Usage",
-		threads:      "Threads",
-		empty:        "No usage events found for this query.",
-		help:         "1 All  2 Claude Code  3 Codex  4 Gemini  t threads  j/k move  c copy ID  / search  esc clear  l language  q quit",
+		title:          "Usage Dashboard",
+		subtitle:       "Monitor AI model usage and estimated cost",
+		all:            "All",
+		search:         "Search",
+		today:          "Today",
+		requests:       "Requests",
+		cost:           "Estimated Cost",
+		totalTokens:    "Total Tokens",
+		cachedTokens:   "Cached Tokens",
+		modelUsage:     "Model Usage",
+		threads:        "Threads",
+		empty:          "No usage events found for this query.",
+		help:           "1 All  2 Claude Code  3 Codex  4 Gemini  s sort  j/k move  c copy ID  / search  esc clear  l language  q quit",
+		sortTokens:     "Tokens",
+		sortCost:       "Cost",
+		headerID:       "ID",
+		headerName:     "Name",
+		headerTool:     "Tool",
+		headerModel:    "Model",
+		headerProvider: "Provider",
+		headerReq:      "Req",
+		headerCost:     "Cost",
+		headerTokens:   "Tokens",
+		headerInput:    "Input",
+		headerOutput:   "Output",
+		headerCached:   "Cached",
 	}
 }
 
@@ -648,6 +708,70 @@ func toggleLanguage(language Language) Language {
 		return LanguageEnglish
 	}
 	return LanguageChinese
+}
+
+func normalizePayloadSort(sortBy query.SortMetric) query.SortMetric {
+	if sortBy == query.SortByCost {
+		return query.SortByCost
+	}
+	return query.SortByTokens
+}
+
+func toggleSortMetric(sortBy query.SortMetric) query.SortMetric {
+	if normalizePayloadSort(sortBy) == query.SortByCost {
+		return query.SortByTokens
+	}
+	return query.SortByCost
+}
+
+func compareResults(left, right query.Result, sortBy query.SortMetric) bool {
+	switch normalizePayloadSort(sortBy) {
+	case query.SortByCost:
+		if left.CostUSD != right.CostUSD {
+			return left.CostUSD > right.CostUSD
+		}
+	default:
+		leftTokens := left.Usage.NormalizedTotal()
+		rightTokens := right.Usage.NormalizedTotal()
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+	}
+	if normalizePayloadSort(sortBy) == query.SortByCost {
+		leftTokens := left.Usage.NormalizedTotal()
+		rightTokens := right.Usage.NormalizedTotal()
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+	} else if left.CostUSD != right.CostUSD {
+		return left.CostUSD > right.CostUSD
+	}
+	return formatKey(left.Key) < formatKey(right.Key)
+}
+
+func compareThreads(left, right query.ThreadResult, sortBy query.SortMetric) bool {
+	switch normalizePayloadSort(sortBy) {
+	case query.SortByCost:
+		if left.CostUSD != right.CostUSD {
+			return left.CostUSD > right.CostUSD
+		}
+	default:
+		leftTokens := left.Usage.NormalizedTotal()
+		rightTokens := right.Usage.NormalizedTotal()
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+	}
+	if normalizePayloadSort(sortBy) == query.SortByCost {
+		leftTokens := left.Usage.NormalizedTotal()
+		rightTokens := right.Usage.NormalizedTotal()
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+	} else if left.CostUSD != right.CostUSD {
+		return left.CostUSD > right.CostUSD
+	}
+	return false
 }
 
 func card(label, value, icon string, color lipgloss.Color) string {
@@ -717,10 +841,14 @@ func displayTextWithSuffix(value string, width int, suffix string) string {
 }
 
 func tokenBar(total, max int64, width int) string {
-	if total <= 0 || max <= 0 || width <= 0 {
+	return metricBar(float64(total), float64(max), width)
+}
+
+func metricBar(value, max float64, width int) string {
+	if value <= 0 || max <= 0 || width <= 0 {
 		return ""
 	}
-	units := int((total*int64(width*8) + max/2) / max)
+	units := int((value*float64(width*8) + max/2) / max)
 	if units < 1 {
 		units = 1
 	}

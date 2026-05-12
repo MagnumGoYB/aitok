@@ -104,6 +104,48 @@ func TestSummaryJSONOmitsThreadsByDefaultAndIncludesWithFlag(t *testing.T) {
 	}
 }
 
+func TestSummarySortsModelUsageAndThreadsByCost(t *testing.T) {
+	home := t.TempDir()
+	pricingPath := filepath.Join(home, "pricing.json")
+	writeFixture(t, pricingPath, `{"models":[{"match":"cheap","input_usd_per_mtok":1},{"match":"expensive","input_usd_per_mtok":100}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "cheap.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"cheap-thread","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"cheap","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n")
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "expensive.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T02:00:00Z","payload":{"id":"expensive-thread","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"model":"expensive","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100000,"total_tokens":100000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--pricing", pricingPath, "--no-version-check", "summary", "--period", "today", "--format", "json", "--threads", "--sort", "cost"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary --sort cost should emit valid JSON: %v\n%s", err, out.String())
+	}
+	if payload.SortBy != "cost" || payload.Results[0].Key["model"] != "expensive" || payload.Threads[0].ID != "expensive-thread" {
+		t.Fatalf("summary should sort model usage and threads by cost desc: %+v", payload)
+	}
+}
+
+func TestSummaryRejectsUnknownSortMetric(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--sort", "requests"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "expected tokens or cost") {
+		t.Fatalf("summary should reject unsupported sort metric, err=%v", err)
+	}
+}
+
 func TestSummaryUsesCustomPricingFile(t *testing.T) {
 	home := t.TempDir()
 	pricingPath := filepath.Join(home, "pricing.json")

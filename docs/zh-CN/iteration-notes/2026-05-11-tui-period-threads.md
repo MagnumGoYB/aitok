@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.24`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.25`
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.25`；当前这轮 post-release feature/bugfix 跟进目标版本为 `v0.1.26`
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -71,12 +71,14 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - `v0.1.22`：修复 Threads 过滤逻辑，让 active tool/search 状态、光标移动、复制动作和滚动条计算都基于过滤后的 thread 列表，并让 `Model Usage` 与 `Threads` 里的 `Cost` 按渲染末端对齐。
 - `v0.1.23`：让 Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
 - `v0.1.24`：已修复 Model Usage 图表在 100 万以下 token 行之间的比例显示，并在 Model Usage 表格中增加总 `Tokens` 列。
-- 待发 `v0.1.25` bugfix 范围：保持同一 thread ID 只出一行，把 thread `model=mixed` 改成逗号拼接的模型列表，压缩默认输出中重复的 request/event 展示，并让 Model Usage bar 在同一色系内按用量深浅区分。
+- `v0.1.25`：保持同一 thread ID 只出一行，把 thread `model=mixed` 改成逗号拼接的模型列表，压缩默认输出中重复的 request/event 展示，并让 Model Usage bar 在同一色系内按用量深浅区分。
+- 待发 `v0.1.26` feature/bugfix 范围：为查询输出增加 `--sort tokens|cost`，TUI 支持用 `s` 切换排序指标，在 Threads 和 Model Usage 中显示指标标识，补齐遗漏的表头/Search 本地化，并在 Cost 排序时让 Model Usage chart 的 bar 和标签按 USD 金额展示。
 
 当前 TUI 布局约束需要继续保留：
 
 - Threads 过滤逻辑必须与 active tool tabs 和 search term 保持同步。任何光标移动、Home/End 跳转、复制动作、滚动条 offset 计算，都必须基于过滤后的 thread slice，而不是原始未过滤 payload。
-- Threads 默认排序是 token 消耗降序。Cost、活跃时间和 `tool|id` 只作为并列时的兜底排序。
+- 查询输出支持两种降序排序指标：默认 `tokens`，传入 `--sort cost` 后按成本排序。TUI 可用 `s` 切换当前指标，并且 Threads 与 Model Usage 必须显示当前排序指标标识。
+- 旧的 `t threads` 聚焦快捷键已从用户可见帮助中移除；`j/k/home/end/c` 直接作用于过滤后的 Threads 列表。
 - `Cost` 要和其他数值列保持同一策略：在 Model Usage 与 Threads 中都按渲染后的末端右对齐，即使值里包含 `$`。
 
 - Toolbar 保持紧凑，不要恢复纵向 padding。
@@ -111,7 +113,7 @@ PR 前本地验证：
 - `make validate`，在 release bump 前执行
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
 - `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21`、`v0.1.22`、`v0.1.23` 的 GitHub Release workflows 均已成功。
-- 当前 `v0.1.25` bugfix 的验证目标：tag 前执行 `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.25 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
+- 当前 `v0.1.26` 的验证目标：tag 前执行 `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.26 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
 
 GitHub PR 检查：
 
@@ -122,7 +124,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-截至 `v0.1.24`，原始 PR #13 范围已没有待跟进发版。当前 threads/model 汇总与图表色阶跟进应作为 `v0.1.25` 发布，除非用户明确要求延后发版。
+截至 `v0.1.25`，原始 PR #13 范围已没有待跟进发版。当前 query sort 与 Cost chart 跟进应作为 `v0.1.26` 发布，除非用户明确要求延后发版。
 
 ## 后续工作
 

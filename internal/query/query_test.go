@@ -111,6 +111,50 @@ func TestThreadAccumulatorSortsByTokenUsageThenCost(t *testing.T) {
 	}
 }
 
+func TestThreadAccumulatorSortsByCostWhenRequested(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{ID: "high-token-low-cost", Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, ThreadID: "high-token-low-cost", Usage: usage.TokenUsage{Input: 100}},
+		{ID: "low-token-high-cost", Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, ThreadID: "low-token-high-cost", Usage: usage.TokenUsage{Input: 10}},
+	}
+	acc := NewThreadAccumulatorWithSort(window, Filters{}, SortByCost, func(event usage.UsageEvent) Cost {
+		if event.ThreadID == "low-token-high-cost" {
+			return Cost{USD: 10}
+		}
+		return Cost{USD: 1}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 2 || got[0].ID != "low-token-high-cost" {
+		t.Fatalf("cost sort should order threads by estimated cost desc, got %+v", got)
+	}
+}
+
+func TestAccumulatorSortsByCostWhenRequested(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "cheap", Usage: usage.TokenUsage{Input: 100}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "expensive", Usage: usage.TokenUsage{Input: 10}},
+	}
+	acc := NewAccumulatorWithSort(window, Filters{}, GroupBy{"model"}, SortByCost, func(event usage.UsageEvent) Cost {
+		if event.Model == "expensive" {
+			return Cost{USD: 10}
+		}
+		return Cost{USD: 1}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 2 || got[0].Key["model"] != "expensive" {
+		t.Fatalf("cost sort should order model usage by estimated cost desc, got %+v", got)
+	}
+}
+
 func TestThreadAccumulatorGroupsUsageAndCostByThread(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}

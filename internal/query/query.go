@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +17,13 @@ type Filters struct {
 }
 
 type GroupBy []string
+
+type SortMetric string
+
+const (
+	SortByTokens SortMetric = "tokens"
+	SortByCost   SortMetric = "cost"
+)
 
 type Cost struct {
 	USD float64 `json:"usd"`
@@ -49,6 +57,7 @@ type Accumulator struct {
 	window  Window
 	filters Filters
 	groupBy GroupBy
+	sortBy  SortMetric
 	costFor func(usage.UsageEvent) Cost
 	buckets map[string]*Result
 }
@@ -56,6 +65,7 @@ type Accumulator struct {
 type ThreadAccumulator struct {
 	window  Window
 	filters Filters
+	sortBy  SortMetric
 	costFor func(usage.UsageEvent) Cost
 	buckets map[string]*threadBucket
 }
@@ -87,6 +97,17 @@ func ParseGroupBy(raw string) GroupBy {
 	return groups
 }
 
+func ParseSortMetric(raw string) (SortMetric, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(SortByTokens), "token":
+		return SortByTokens, nil
+	case string(SortByCost), "cost_usd":
+		return SortByCost, nil
+	default:
+		return "", fmt.Errorf("unknown sort metric %q; expected tokens or cost", raw)
+	}
+}
+
 func Aggregate(events []usage.UsageEvent, window Window, filters Filters, groupBy GroupBy) []Result {
 	return AggregateWithCosts(events, window, filters, groupBy, nil)
 }
@@ -100,11 +121,19 @@ func AggregateWithCosts(events []usage.UsageEvent, window Window, filters Filter
 }
 
 func NewAccumulator(window Window, filters Filters, groupBy GroupBy, costFor func(usage.UsageEvent) Cost) *Accumulator {
-	return &Accumulator{window: window, filters: filters, groupBy: groupBy, costFor: costFor, buckets: map[string]*Result{}}
+	return NewAccumulatorWithSort(window, filters, groupBy, SortByTokens, costFor)
 }
 
 func NewThreadAccumulator(window Window, filters Filters, costFor func(usage.UsageEvent) Cost) *ThreadAccumulator {
-	return &ThreadAccumulator{window: window, filters: filters, costFor: costFor, buckets: map[string]*threadBucket{}}
+	return NewThreadAccumulatorWithSort(window, filters, SortByTokens, costFor)
+}
+
+func NewAccumulatorWithSort(window Window, filters Filters, groupBy GroupBy, sortBy SortMetric, costFor func(usage.UsageEvent) Cost) *Accumulator {
+	return &Accumulator{window: window, filters: filters, groupBy: groupBy, sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*Result{}}
+}
+
+func NewThreadAccumulatorWithSort(window Window, filters Filters, sortBy SortMetric, costFor func(usage.UsageEvent) Cost) *ThreadAccumulator {
+	return &ThreadAccumulator{window: window, filters: filters, sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*threadBucket{}}
 }
 
 func (a *Accumulator) Add(event usage.UsageEvent) {
@@ -136,12 +165,10 @@ func (a *Accumulator) Results() []Result {
 		results = append(results, *result)
 	}
 	sort.Slice(results, func(i, j int) bool {
-		left := results[i].Usage.NormalizedTotal()
-		right := results[j].Usage.NormalizedTotal()
-		if left == right {
-			return serializeKey(a.groupBy, results[i].Key) < serializeKey(a.groupBy, results[j].Key)
+		if compareResults(results[i], results[j], a.sortBy) != 0 {
+			return compareResults(results[i], results[j], a.sortBy) < 0
 		}
-		return left > right
+		return serializeKey(a.groupBy, results[i].Key) < serializeKey(a.groupBy, results[j].Key)
 	})
 	return results
 }
@@ -212,13 +239,8 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		results = append(results, thread)
 	}
 	sort.Slice(results, func(i, j int) bool {
-		leftTokens := results[i].Usage.NormalizedTotal()
-		rightTokens := results[j].Usage.NormalizedTotal()
-		if leftTokens != rightTokens {
-			return leftTokens > rightTokens
-		}
-		if results[i].CostUSD != results[j].CostUSD {
-			return results[i].CostUSD > results[j].CostUSD
+		if compareThreads(results[i], results[j], a.sortBy) != 0 {
+			return compareThreads(results[i], results[j], a.sortBy) < 0
 		}
 		leftCreated := results[i].CreatedAt
 		rightCreated := results[j].CreatedAt
@@ -234,6 +256,73 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		return results[i].Tool+"|"+results[i].ID < results[j].Tool+"|"+results[j].ID
 	})
 	return results
+}
+
+func normalizeSortMetric(sortBy SortMetric) SortMetric {
+	switch sortBy {
+	case SortByCost:
+		return SortByCost
+	default:
+		return SortByTokens
+	}
+}
+
+func compareResults(left, right Result, sortBy SortMetric) int {
+	switch normalizeSortMetric(sortBy) {
+	case SortByCost:
+		if left.CostUSD != right.CostUSD {
+			if left.CostUSD > right.CostUSD {
+				return -1
+			}
+			return 1
+		}
+		return compareInt64Desc(left.Usage.NormalizedTotal(), right.Usage.NormalizedTotal())
+	default:
+		if cmp := compareInt64Desc(left.Usage.NormalizedTotal(), right.Usage.NormalizedTotal()); cmp != 0 {
+			return cmp
+		}
+		if left.CostUSD != right.CostUSD {
+			if left.CostUSD > right.CostUSD {
+				return -1
+			}
+			return 1
+		}
+		return 0
+	}
+}
+
+func compareThreads(left, right ThreadResult, sortBy SortMetric) int {
+	switch normalizeSortMetric(sortBy) {
+	case SortByCost:
+		if left.CostUSD != right.CostUSD {
+			if left.CostUSD > right.CostUSD {
+				return -1
+			}
+			return 1
+		}
+		return compareInt64Desc(left.Usage.NormalizedTotal(), right.Usage.NormalizedTotal())
+	default:
+		if cmp := compareInt64Desc(left.Usage.NormalizedTotal(), right.Usage.NormalizedTotal()); cmp != 0 {
+			return cmp
+		}
+		if left.CostUSD != right.CostUSD {
+			if left.CostUSD > right.CostUSD {
+				return -1
+			}
+			return 1
+		}
+		return 0
+	}
+}
+
+func compareInt64Desc(left, right int64) int {
+	if left > right {
+		return -1
+	}
+	if left < right {
+		return 1
+	}
+	return 0
 }
 
 func summarizeValues(values map[string]struct{}, fallback string) string {

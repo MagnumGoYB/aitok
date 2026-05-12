@@ -65,7 +65,7 @@ aitok --no-version-check budget check --period this-month --limit-usd 20 --forma
 
 For JSON commands, stdout is reserved for the structured payload. Warnings, version prompts, and budget failure summaries are written to stderr or returned through the process exit status. `budget check` exits with status `1` when the limit is exceeded but still writes the full JSON payload to stdout for parsing.
 
-The TUI uses English by default. Pass `--lang zh-CN` to start in Chinese, or press `l` inside the TUI to switch languages. When threads are present, press `t` to focus the Threads box, `j/k` or arrow keys to move the selected row, `home/end` to jump, and `c` to copy the selected thread ID through OSC52.
+The TUI uses English by default. Pass `--lang zh-CN` to start in Chinese, or press `l` inside the TUI to switch languages. Model Usage and Threads sort by descending token usage by default; pass `--sort cost` for cost ordering, or press `s` inside the TUI to switch between Tokens and Cost. When threads are present, use `j/k` or arrow keys to move the selected row, `home/end` to jump, and `c` to copy the selected thread ID through OSC52.
 
 `aitok update` checks the latest GitHub Release immediately and runs the matching local upgrade command when the install method supports it. Homebrew installs use `brew update && brew upgrade --cask aitok`; Go installs use `go install github.com/MagnumGoYB/aitok/cmd/aitok@latest`. Direct release binaries print the download URL.
 
@@ -98,7 +98,7 @@ To include matching local sessions in the summary payload, pass `--threads`:
 aitok summary --period today --threads --format json
 ```
 
-Thread rows include ID, name, tool, model, provider, token usage, requests, events, source, and estimated USD cost. The title comes from local logs only, preferring custom title, AI summary title, first real user message, cwd basename, then short ID.
+Thread rows include ID, name, tool, model, provider, token usage, requests, events, source, and estimated USD cost. Query output sorts by descending token usage unless `--sort cost` is passed. The title comes from local logs only, preferring custom title, AI summary title, first real user message, cwd basename, then short ID.
 
 ```json
 {

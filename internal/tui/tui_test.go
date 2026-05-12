@@ -29,6 +29,8 @@ func TestRenderSmoke(t *testing.T) {
 		"Cached Tokens",
 		"Model Usage",
 		"Search:",
+		"[Tokens]",
+		"s sort",
 		"/ search",
 		"l language",
 	} {
@@ -60,6 +62,11 @@ func TestRenderChinese(t *testing.T) {
 		"总 Token 数",
 		"缓存 Token",
 		"模型用量",
+		"搜索:",
+		"[按 Tokens]",
+		"s 排序",
+		"模型",
+		"请求",
 		"/ 搜索",
 		"l 语言",
 	} {
@@ -623,6 +630,56 @@ func TestThreadsDefaultOrderFollowsTokenUsage(t *testing.T) {
 	}
 	if threads[0].ID != "high-token" {
 		t.Fatalf("threads should default to token usage desc, got %+v", threads)
+	}
+}
+
+func TestTUISortToggleOrdersThreadsAndModelUsageByCost(t *testing.T) {
+	payload := samplePayload()
+	payload.Results = []query.Result{
+		{Key: map[string]string{"tool": "codex", "model": "cheap"}, Usage: usage.TokenUsage{Input: 100}, CostUSD: 1},
+		{Key: map[string]string{"tool": "codex", "model": "expensive"}, Usage: usage.TokenUsage{Input: 10}, CostUSD: 10},
+	}
+	payload.Threads = []query.ThreadResult{
+		{ID: "cheap-thread", Name: "Cheap", Tool: "codex", Model: "cheap", Provider: "openai", Usage: usage.TokenUsage{Input: 100}, CostUSD: 1},
+		{ID: "expensive-thread", Name: "Expensive", Tool: "codex", Model: "expensive", Provider: "openai", Usage: usage.TokenUsage{Input: 10}, CostUSD: 10},
+	}
+	m := NewModel(payload)
+	if m.filteredThreads()[0].ID != "cheap-thread" || m.filteredResults()[0].Key["model"] != "cheap" {
+		t.Fatalf("default sort should use tokens desc")
+	}
+	updated, _ := m.Update(keyMsg("s"))
+	m = updated.(model)
+	view := stripANSI(m.View())
+	if m.filteredThreads()[0].ID != "expensive-thread" || m.filteredResults()[0].Key["model"] != "expensive" {
+		t.Fatalf("s should switch threads and model usage to cost desc")
+	}
+	if !strings.Contains(view, "[Cost]") {
+		t.Fatalf("TUI should show active cost sort badge:\n%s", view)
+	}
+}
+
+func TestModelUsageChartUsesCostMetricWhenSortingByCost(t *testing.T) {
+	payload := samplePayload()
+	payload.SortBy = query.SortByCost
+	payload.Results = []query.Result{
+		{Key: map[string]string{"tool": "codex", "model": "cheap"}, Usage: usage.TokenUsage{Input: 1_000_000}, CostUSD: 1},
+		{Key: map[string]string{"tool": "codex", "model": "expensive"}, Usage: usage.TokenUsage{Input: 100_000}, CostUSD: 10},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	expensiveUnits := modelUsageBarUnits(t, view, "expensive")
+	cheapUnits := modelUsageBarUnits(t, view, "cheap")
+	if expensiveUnits <= cheapUnits {
+		t.Fatalf("cost sort chart should scale bars by cost, expensive=%d cheap=%d\n%s", expensiveUnits, cheapUnits, view)
+	}
+	if !strings.Contains(view, "$10.0000") || strings.Contains(view, "1,000,000") {
+		t.Fatalf("cost sort chart should label rows with USD amounts, not tokens:\n%s", view)
+	}
+}
+
+func TestTUIHelpRemovesThreadsFocusShortcut(t *testing.T) {
+	view := stripANSI(RenderWidth(samplePayload(), 140))
+	if strings.Contains(view, "t threads") || strings.Contains(view, "t 会话") {
+		t.Fatalf("TUI help should not expose t threads shortcut:\n%s", view)
 	}
 }
 
