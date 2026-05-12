@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,21 +63,57 @@ func TestCostForCodexDoesNotChargeCachedInputAtFullInputRate(t *testing.T) {
 func TestCostForClaudeKeepsInputAndCacheSeparate(t *testing.T) {
 	catalog := Catalog{
 		Models: []ModelPrice{{
-			Match:              "claude-sonnet-4",
-			InputUSDPerMTok:    3,
-			OutputUSDPerMTok:   15,
-			CacheHitUSDPerMTok: 0.3,
+			Match:                 "claude-sonnet-4",
+			InputUSDPerMTok:       3,
+			OutputUSDPerMTok:      15,
+			CacheHitUSDPerMTok:    0.3,
+			CacheMakeUSDPerMTok:   3.75,
+			CacheMake1hUSDPerMTok: 6,
 		}},
 	}
 	cost := catalog.CostFor(usage.UsageEvent{
 		Tool:  usage.ToolClaude,
 		Model: "claude-sonnet-4",
 		Usage: usage.TokenUsage{
-			Input:       10_000_000,
-			CachedInput: 8_000_000,
+			Input:           10_000_000,
+			CachedInput:     8_000_000,
+			CacheCreation:   3_000_000,
+			CacheCreation5m: 2_000_000,
+			CacheCreation1h: 1_000_000,
 		},
 	})
-	if got, want := cost.USD, 32.4; got != want {
+	if got, want := cost.USD, 45.9; got != want {
+		t.Fatalf("cost = %.4f, want %.4f", got, want)
+	}
+}
+
+func TestDefaultCatalogPricesClaudeOpus47BeforeOpus4(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:  usage.ToolClaude,
+		Model: "claude-opus-4-7",
+		Usage: usage.TokenUsage{
+			Input:       1_280_283,
+			Output:      219_935,
+			CachedInput: 66_152_448,
+		},
+	})
+	if got, want := cost.USD, 44.976014; math.Abs(got-want) > 0.000001 {
+		t.Fatalf("cost = %.6f, want %.6f", got, want)
+	}
+}
+
+func TestCostForGemini25ProUsesAboveThresholdPricing(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:     usage.ToolGemini,
+		Model:    "gemini-2.5-pro",
+		Provider: "google",
+		Usage: usage.TokenUsage{
+			Input:       250_000,
+			Output:      100_000,
+			CachedInput: 50_000,
+		},
+	})
+	if got, want := cost.USD, 2.1375; math.Abs(got-want) > 0.000001 {
 		t.Fatalf("cost = %.4f, want %.4f", got, want)
 	}
 }

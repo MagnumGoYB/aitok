@@ -14,16 +14,16 @@
       "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
       "manual_review": true,
       "sha256": "",
-      "required_text": ["Claude Opus 4", "Claude Sonnet 4", "Cache reads"],
-      "review_hint": "Review Claude model input/output, cache write, and cache read pricing. Update claude-* defaults when official prices change.",
-      "models_owned": ["claude-opus-4", "claude-sonnet-4", "claude-3-7-sonnet"]
+      "required_text": ["Claude Opus 4.7", "Claude Sonnet 4.5", "1h Cache writes", "Cache reads"],
+      "review_hint": "Review Claude model input/output, 5m cache write, 1h cache write, and cache read pricing. Update claude-* defaults when official prices change.",
+      "models_owned": ["claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5", "claude-opus-4", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet", "claude-3-5-haiku", "claude-3-haiku"]
     },
     {
       "name": "gemini",
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "sha256": "",
       "required_text": ["Gemini 2.5 Pro", "Gemini 2.5 Flash", "Context caching"],
-      "review_hint": "Review Gemini input/output and cached token pricing. Update gemini-* defaults when official prices change.",
+      "review_hint": "Review Gemini input/output, cached token pricing, and long-prompt tiers. Update gemini-* defaults when official prices change.",
       "models_owned": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
     }
   ]

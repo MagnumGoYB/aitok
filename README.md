@@ -109,6 +109,7 @@ Thread rows include ID, name, tool, model, provider, token usage, requests, even
       "output_usd_per_mtok": 10,
       "cache_hit_usd_per_mtok": 0.125,
       "cache_make_usd_per_mtok": 1.25,
+      "cache_make_1h_usd_per_mtok": 2.5,
       "multiplier": 1
     }
   ]
@@ -121,7 +122,7 @@ Save this as `~/.aitok/pricing.json`, or pass a file explicitly:
 aitok summary --pricing ./pricing.json --format json
 ```
 
-Prices are USD per 1M tokens. Reasoning tokens are charged as output tokens. `multiplier` defaults to `1`.
+Prices are USD per 1M tokens. `cache_hit_usd_per_mtok` is cache read pricing. `cache_make_usd_per_mtok` is the default cache write price, and `cache_make_1h_usd_per_mtok` can override one-hour cache write pricing when a source reports that split. Models with provider prompt tiers can also set `prompt_threshold_tokens` plus `above_threshold_*_usd_per_mtok` fields. Reasoning tokens are charged as output tokens. `multiplier` defaults to `1`.
 
 To check whether local usage contains models that are not covered by the offline catalog or your override file:
 

@@ -81,6 +81,13 @@ func (c Claude) parseEvent(path string, obj map[string]any, meta threadMeta) (us
 		CachedInput:   intValue(rawUsage["cache_read_input_tokens"]),
 		CacheCreation: intValue(rawUsage["cache_creation_input_tokens"]),
 	}
+	if cacheCreation := objectValue(rawUsage["cache_creation"]); cacheCreation != nil {
+		tokens.CacheCreation5m = intValue(cacheCreation["ephemeral_5m_input_tokens"])
+		tokens.CacheCreation1h = intValue(cacheCreation["ephemeral_1h_input_tokens"])
+		if tokens.CacheCreation == 0 {
+			tokens.CacheCreation = tokens.CacheCreation5m + tokens.CacheCreation1h
+		}
+	}
 	if tokens.NormalizedTotal() == 0 && tokens.CachedInput == 0 {
 		return usage.UsageEvent{}, false
 	}

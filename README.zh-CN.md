@@ -109,6 +109,7 @@ Thread 行包含 ID、名称、tool、model、provider、Token 用量、requests
       "output_usd_per_mtok": 10,
       "cache_hit_usd_per_mtok": 0.125,
       "cache_make_usd_per_mtok": 1.25,
+      "cache_make_1h_usd_per_mtok": 2.5,
       "multiplier": 1
     }
   ]
@@ -121,7 +122,7 @@ Thread 行包含 ID、名称、tool、model、provider、Token 用量、requests
 aitok summary --pricing ./pricing.json --format json
 ```
 
-价格单位是 USD / 1M tokens。Reasoning tokens 按 output tokens 计费。`multiplier` 默认是 `1`。
+价格单位是 USD / 1M tokens。`cache_hit_usd_per_mtok` 表示 cache read 价格。`cache_make_usd_per_mtok` 表示默认 cache write 价格；当数据源能区分一小时缓存写入时，可用 `cache_make_1h_usd_per_mtok` 单独覆盖。存在 provider prompt 分层价的模型还可以配置 `prompt_threshold_tokens` 和 `above_threshold_*_usd_per_mtok` 字段。Reasoning tokens 按 output tokens 计费。`multiplier` 默认是 `1`。
 
 如需检查本地用量中是否存在离线价格表或本地覆盖文件无法匹配的模型：
 

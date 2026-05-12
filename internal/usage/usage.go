@@ -11,13 +11,15 @@ const (
 )
 
 type TokenUsage struct {
-	Input         int64 `json:"input"`
-	Output        int64 `json:"output"`
-	CachedInput   int64 `json:"cached_input"`
-	CacheCreation int64 `json:"cache_creation"`
-	Reasoning     int64 `json:"reasoning"`
-	Tool          int64 `json:"tool"`
-	Total         int64 `json:"total"`
+	Input           int64 `json:"input"`
+	Output          int64 `json:"output"`
+	CachedInput     int64 `json:"cached_input"`
+	CacheCreation   int64 `json:"cache_creation"`
+	CacheCreation5m int64 `json:"cache_creation_5m,omitempty"`
+	CacheCreation1h int64 `json:"cache_creation_1h,omitempty"`
+	Reasoning       int64 `json:"reasoning"`
+	Tool            int64 `json:"tool"`
+	Total           int64 `json:"total"`
 }
 
 func (u TokenUsage) NormalizedTotal() int64 {
@@ -29,13 +31,15 @@ func (u TokenUsage) NormalizedTotal() int64 {
 
 func (u TokenUsage) Add(v TokenUsage) TokenUsage {
 	return TokenUsage{
-		Input:         u.Input + v.Input,
-		Output:        u.Output + v.Output,
-		CachedInput:   u.CachedInput + v.CachedInput,
-		CacheCreation: u.CacheCreation + v.CacheCreation,
-		Reasoning:     u.Reasoning + v.Reasoning,
-		Tool:          u.Tool + v.Tool,
-		Total:         u.NormalizedTotal() + v.NormalizedTotal(),
+		Input:           u.Input + v.Input,
+		Output:          u.Output + v.Output,
+		CachedInput:     u.CachedInput + v.CachedInput,
+		CacheCreation:   u.CacheCreation + v.CacheCreation,
+		CacheCreation5m: u.CacheCreation5m + v.CacheCreation5m,
+		CacheCreation1h: u.CacheCreation1h + v.CacheCreation1h,
+		Reasoning:       u.Reasoning + v.Reasoning,
+		Tool:            u.Tool + v.Tool,
+		Total:           u.NormalizedTotal() + v.NormalizedTotal(),
 	}
 }
 
