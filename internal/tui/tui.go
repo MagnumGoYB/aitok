@@ -332,12 +332,12 @@ func (m model) chart(results []query.Result, max int64) string {
 		max = 1
 	}
 	var lines []string
-	for _, result := range results {
+	for i, result := range results {
 		total := result.Usage.NormalizedTotal()
 		label := padRight(tableText(resultLabel(result), modelColumnWidth), modelColumnWidth)
 		lines = append(lines, fmt.Sprintf("%s  %s %s",
 			label,
-			barStyle.Render(tokenBar(total, max, 28)),
+			modelUsageBarStyle(i, minInt(len(results), 6)).Render(tokenBar(total, max, 28)),
 			mutedStyle.Render(formatInt(total)),
 		))
 		if len(lines) == 6 {
@@ -444,7 +444,7 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 		end = len(threads)
 	}
 	overflow := len(threads) > height
-	header := mutedStyle.Render(threadLine(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"), -1, m.threadOffset, height, len(threads), overflow))
+	header := mutedStyle.Render(threadLine(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"), -1, m.threadOffset, height, len(threads), overflow))
 	var lines []string
 	lines = append(lines, sectionStyle.Render(copy.threads))
 	lines = append(lines, header)
@@ -457,7 +457,6 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 			thread.Model,
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
-			fmt.Sprint(thread.Events),
 			report.FormatUSD(thread.CostUSD),
 			compact(thread.Usage.NormalizedTotal()),
 		)
@@ -738,6 +737,31 @@ func tokenBar(total, max int64, width int) string {
 	return bar
 }
 
+func modelUsageBarStyle(index, total int) lipgloss.Style {
+	if total <= 0 {
+		total = 1
+	}
+	palette := []lipgloss.Color{
+		lipgloss.Color("#0A84D6"),
+		lipgloss.Color("#1893E0"),
+		lipgloss.Color("#25A3EA"),
+		lipgloss.Color("#4DB8F0"),
+		lipgloss.Color("#7CCDF5"),
+	}
+	if total == 1 {
+		return lipgloss.NewStyle().Foreground(palette[0])
+	}
+	maxIndex := len(palette) - 1
+	scaled := index * maxIndex / (total - 1)
+	if scaled < 0 {
+		scaled = 0
+	}
+	if scaled > maxIndex {
+		scaled = maxIndex
+	}
+	return lipgloss.NewStyle().Foreground(palette[scaled])
+}
+
 func modelTableRow(modelName, req, cost, tokens, input, output, cached string) string {
 	columns := []tableColumn{
 		{value: modelName, width: modelColumnWidth, align: alignLeft},
@@ -752,7 +776,7 @@ func modelTableRow(modelName, req, cost, tokens, input, output, cached string) s
 	return tableRow(columns, gaps)
 }
 
-func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens string) string {
+func threadRow(id, name, tool, modelName, provider, req, cost, tokens string) string {
 	columns := []tableColumn{
 		{value: id, width: 14, align: alignLeft},
 		{value: name, width: 28, align: alignLeft},
@@ -760,11 +784,10 @@ func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens st
 		{value: modelName, width: 18, align: alignLeft},
 		{value: provider, width: 10, align: alignLeft},
 		{value: req, width: 6, align: alignLeft},
-		{value: events, width: 6, align: alignRight},
 		{value: cost, width: 11, align: alignRight},
 		{value: tokens, width: 9, align: alignRight},
 	}
-	gaps := []int{1, 1, 1, 1, 1, 1, 2, 1}
+	gaps := []int{1, 1, 1, 1, 1, 2, 1}
 	return tableRow(columns, gaps)
 }
 
@@ -848,6 +871,13 @@ func clamp(value, min, max int) int {
 	return value
 }
 
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
 var (
 	modelColumnWidth = 32
 
@@ -861,10 +891,9 @@ var (
 	activeTabStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#00B2FF")).Bold(true).Background(lipgloss.Color("17")).Padding(0, 1)
 	tabStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
 	labelStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	valueStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	valueStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Underline(true)
 	sectionStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	mutedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	barStyle         = lipgloss.NewStyle().Foreground(blue)
 	selectedRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("#00B2FF")).Bold(true)
 )

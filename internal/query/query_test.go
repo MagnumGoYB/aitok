@@ -138,3 +138,60 @@ func TestThreadAccumulatorGroupsUsageAndCostByThread(t *testing.T) {
 		t.Fatalf("unexpected thread totals: %+v", thread)
 	}
 }
+
+func TestThreadAccumulatorFormatsModelListAndMarksMixedProviderWithinSameThread(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                 "a",
+			Timestamp:          time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:               usage.ToolCodex,
+			Model:              "gpt-5.5",
+			Provider:           "bcb",
+			ThreadID:           "thread-a",
+			ThreadName:         "Mixed provider thread",
+			ThreadSource:       "/tmp/a.jsonl",
+			ThreadCreatedAt:    time.Date(2026, 5, 8, 0, 30, 0, 0, loc),
+			ThreadLastActiveAt: time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Usage:              usage.TokenUsage{Input: 100},
+		},
+		{
+			ID:                 "b",
+			Timestamp:          time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Tool:               usage.ToolCodex,
+			Model:              "gpt-5.4",
+			Provider:           "openai",
+			ThreadID:           "thread-a",
+			ThreadName:         "Mixed provider thread",
+			ThreadSource:       "/tmp/a.jsonl",
+			ThreadCreatedAt:    time.Date(2026, 5, 8, 0, 30, 0, 0, loc),
+			ThreadLastActiveAt: time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Usage:              usage.TokenUsage{Input: 10},
+		},
+		{
+			ID:                 "c",
+			Timestamp:          time.Date(2026, 5, 8, 3, 0, 0, 0, loc),
+			Tool:               usage.ToolCodex,
+			Model:              "gpt-5.3",
+			Provider:           "openai",
+			ThreadID:           "thread-a",
+			ThreadName:         "Mixed provider thread",
+			ThreadSource:       "/tmp/a.jsonl",
+			ThreadCreatedAt:    time.Date(2026, 5, 8, 0, 30, 0, 0, loc),
+			ThreadLastActiveAt: time.Date(2026, 5, 8, 3, 0, 0, 0, loc),
+			Usage:              usage.TokenUsage{Input: 1},
+		},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, nil)
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 1 {
+		t.Fatalf("len(threads) = %d, want 1", len(got))
+	}
+	if got[0].ID != "thread-a" || got[0].Model != "gpt-5.3,gpt-5.4,..." || got[0].Provider != "mixed" || got[0].Usage.NormalizedTotal() != 111 {
+		t.Fatalf("mixed thread row = %+v, want id=thread-a model=gpt-5.3,gpt-5.4,... provider=mixed total=111", got[0])
+	}
+}

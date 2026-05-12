@@ -34,12 +34,12 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 	if err := Write(&mdOut, "markdown", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mdOut.String(), "| Group | Requests | Events | Cost USD |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | 1 | $0.0123 |") {
+	if !strings.Contains(mdOut.String(), "| Group | Req | Cost USD | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | 12 |") {
 		t.Fatalf("markdown output unexpected: %s", mdOut.String())
 	}
 }
 
-func TestWriteTableIncludesRequestsAndCost(t *testing.T) {
+func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{{
 		Key:      map[string]string{"model": "gpt-5.4"},
@@ -52,11 +52,32 @@ func TestWriteTableIncludesRequestsAndCost(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "REQUESTS") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "$1.2345") {
+	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "$1.2345") {
 		t.Fatalf("table missing request/cost fields: %s", got)
 	}
-	if !strings.Contains(got, "+-") || !strings.Contains(got, "| GROUP") || !strings.Contains(got, "| REQUESTS") {
+	if strings.Contains(got, "EVENTS") || strings.Contains(got, "CACHE_CREATE") {
+		t.Fatalf("default table should stay compact: %s", got)
+	}
+	if !strings.Contains(got, "+-") || !strings.Contains(got, "| GROUP") || !strings.Contains(got, "| REQ") {
 		t.Fatalf("table must render borders and column separators: %s", got)
+	}
+}
+
+func TestWriteTableFullShowsExpandedColumns(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{{
+		Key:      map[string]string{"model": "gpt-5.4"},
+		Requests: 3,
+		Events:   3,
+		Usage:    usage.TokenUsage{Input: 100, Output: 20},
+		CostUSD:  1.2345,
+	}}, Options{Full: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "EVENTS") || !strings.Contains(got, "CACHE_CREATE") || !strings.Contains(got, "REASONING") {
+		t.Fatalf("full table should show expanded columns: %s", got)
 	}
 }
 
@@ -135,6 +156,49 @@ func TestWriteThreadsWhenPayloadIncludesThreads(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"threads"`) || !strings.Contains(out.String(), `"id": "thread-a"`) {
 		t.Fatalf("json output missing threads: %s", out.String())
+	}
+}
+
+func TestWriteThreadsTableUsesCompactDefaultColumns(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteThreadsTable(&out, []query.ThreadResult{{
+		ID:       "thread-a",
+		Name:     "Custom title",
+		Tool:     "codex",
+		Model:    "gpt-5.4",
+		Provider: "openai",
+		Requests: 1,
+		Events:   1,
+		Usage:    usage.TokenUsage{Input: 5},
+		CostUSD:  0.0001,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "REQ") || strings.Contains(got, "EVENTS") {
+		t.Fatalf("threads default table should stay compact: %s", got)
+	}
+}
+
+func TestWriteThreadsTableFullShowsEvents(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteThreadsTable(&out, []query.ThreadResult{{
+		ID:       "thread-a",
+		Name:     "Custom title",
+		Tool:     "codex",
+		Model:    "gpt-5.4",
+		Provider: "openai",
+		Requests: 1,
+		Events:   1,
+		Usage:    usage.TokenUsage{Input: 5},
+		CostUSD:  0.0001,
+	}}, Options{Full: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "EVENTS") {
+		t.Fatalf("threads full table should show events: %s", out.String())
 	}
 }
 

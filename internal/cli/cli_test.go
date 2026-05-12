@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/buildinfo"
+	"github.com/MagnumGoYB/aitok/internal/report"
 )
 
 func TestSummaryIntegrationJSON(t *testing.T) {
@@ -170,6 +171,70 @@ func TestTUIRenderThreadsRespectPeriodWindow(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "Today thread") || strings.Contains(got, "Old thread") || strings.Contains(got, "old-thread") {
 		t.Fatalf("tui threads should respect the requested period window: %s", got)
+	}
+}
+
+func TestSummaryThreadsKeepSingleRowForSameThreadWithModelListAndMixedProvider(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "mixed.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"thread-a","model_provider":"bcb","cwd":"/repo"}}`+"\n"+
+			`{"type":"custom-title","timestamp":"2026-05-08T01:00:00Z","customTitle":"Mixed provider thread"}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}`+"\n"+
+			`{"type":"session_meta","timestamp":"2026-05-08T02:00:00Z","payload":{"id":"thread-a","model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"id":"turn-b","model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json", "--threads"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary --threads should emit valid JSON: %v\n%s", err, out.String())
+	}
+	if len(payload.Threads) != 1 {
+		t.Fatalf("summary --threads should keep a single row per thread id: %+v", payload.Threads)
+	}
+	thread := payload.Threads[0]
+	if thread.ID != "thread-a" || thread.Model != "gpt-5.4,gpt-5.5" || thread.Provider != "mixed" || thread.Usage.NormalizedTotal() != 110 {
+		t.Fatalf("summary --threads should keep one row and summarize models/providers: %+v", thread)
+	}
+}
+
+func TestSummaryTableUsesCompactDefaultAndFullExpands(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	compact := out.String()
+	if !strings.Contains(compact, "REQ") || strings.Contains(compact, "EVENTS") || strings.Contains(compact, "CACHE_CREATE") {
+		t.Fatalf("summary default table should stay compact: %s", compact)
+	}
+
+	out.Reset()
+	cmd = New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--full"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	full := out.String()
+	if !strings.Contains(full, "EVENTS") || !strings.Contains(full, "CACHE_CREATE") {
+		t.Fatalf("summary --full should expand columns: %s", full)
 	}
 }
 

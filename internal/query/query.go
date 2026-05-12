@@ -57,7 +57,13 @@ type ThreadAccumulator struct {
 	window  Window
 	filters Filters
 	costFor func(usage.UsageEvent) Cost
-	buckets map[string]*ThreadResult
+	buckets map[string]*threadBucket
+}
+
+type threadBucket struct {
+	result    ThreadResult
+	models    map[string]struct{}
+	providers map[string]struct{}
 }
 
 func DefaultGroupBy() GroupBy {
@@ -98,7 +104,7 @@ func NewAccumulator(window Window, filters Filters, groupBy GroupBy, costFor fun
 }
 
 func NewThreadAccumulator(window Window, filters Filters, costFor func(usage.UsageEvent) Cost) *ThreadAccumulator {
-	return &ThreadAccumulator{window: window, filters: filters, costFor: costFor, buckets: map[string]*ThreadResult{}}
+	return &ThreadAccumulator{window: window, filters: filters, costFor: costFor, buckets: map[string]*threadBucket{}}
 }
 
 func (a *Accumulator) Add(event usage.UsageEvent) {
@@ -151,50 +157,59 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	if id == "" {
 		return
 	}
+	model := usage.Unknown(event.Model)
+	provider := usage.Unknown(event.Provider)
 	bucket := a.buckets[string(event.Tool)+"|"+id]
 	if bucket == nil {
-		bucket = &ThreadResult{
-			ID:           id,
-			Name:         usage.Unknown(event.ThreadName),
-			Tool:         string(event.Tool),
-			Model:        usage.Unknown(event.Model),
-			Provider:     usage.Unknown(event.Provider),
-			Source:       event.ThreadSource,
-			CreatedAt:    event.ThreadCreatedAt,
-			LastActiveAt: event.ThreadLastActiveAt,
+		bucket = &threadBucket{
+			result: ThreadResult{
+				ID:           id,
+				Name:         usage.Unknown(event.ThreadName),
+				Tool:         string(event.Tool),
+				Model:        model,
+				Provider:     provider,
+				Source:       event.ThreadSource,
+				CreatedAt:    event.ThreadCreatedAt,
+				LastActiveAt: event.ThreadLastActiveAt,
+			},
+			models:    map[string]struct{}{},
+			providers: map[string]struct{}{},
 		}
 		a.buckets[string(event.Tool)+"|"+id] = bucket
 	}
-	bucket.Events++
-	bucket.Requests++
-	bucket.Usage = bucket.Usage.Add(event.Usage)
+	bucket.result.Events++
+	bucket.result.Requests++
+	bucket.result.Usage = bucket.result.Usage.Add(event.Usage)
 	if a.costFor != nil {
-		bucket.CostUSD += a.costFor(event).USD
+		bucket.result.CostUSD += a.costFor(event).USD
 	}
-	if bucket.Name == "unknown" && event.ThreadName != "" {
-		bucket.Name = event.ThreadName
+	if bucket.result.Name == "unknown" && event.ThreadName != "" {
+		bucket.result.Name = event.ThreadName
 	}
-	if bucket.Model == "unknown" && event.Model != "" {
-		bucket.Model = event.Model
+	if model != "unknown" {
+		bucket.models[model] = struct{}{}
 	}
-	if bucket.Provider == "unknown" && event.Provider != "" {
-		bucket.Provider = event.Provider
+	if provider != "unknown" {
+		bucket.providers[provider] = struct{}{}
 	}
-	if bucket.Source == "" {
-		bucket.Source = event.ThreadSource
+	if bucket.result.Source == "" {
+		bucket.result.Source = event.ThreadSource
 	}
-	if bucket.CreatedAt.IsZero() {
-		bucket.CreatedAt = event.ThreadCreatedAt
+	if bucket.result.CreatedAt.IsZero() {
+		bucket.result.CreatedAt = event.ThreadCreatedAt
 	}
-	if bucket.LastActiveAt.IsZero() || event.Timestamp.After(bucket.LastActiveAt) {
-		bucket.LastActiveAt = event.Timestamp
+	if bucket.result.LastActiveAt.IsZero() || event.Timestamp.After(bucket.result.LastActiveAt) {
+		bucket.result.LastActiveAt = event.Timestamp
 	}
 }
 
 func (a *ThreadAccumulator) Results() []ThreadResult {
 	results := make([]ThreadResult, 0, len(a.buckets))
 	for _, result := range a.buckets {
-		results = append(results, *result)
+		thread := result.result
+		thread.Model = summarizeValues(result.models, "unknown")
+		thread.Provider = summarizeProvider(result.providers, thread.Provider)
+		results = append(results, thread)
 	}
 	sort.Slice(results, func(i, j int) bool {
 		leftTokens := results[i].Usage.NormalizedTotal()
@@ -219,6 +234,33 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		return results[i].Tool+"|"+results[i].ID < results[j].Tool+"|"+results[j].ID
 	})
 	return results
+}
+
+func summarizeValues(values map[string]struct{}, fallback string) string {
+	if len(values) == 0 {
+		return fallback
+	}
+	items := make([]string, 0, len(values))
+	for value := range values {
+		items = append(items, value)
+	}
+	sort.Strings(items)
+	if len(items) <= 2 {
+		return strings.Join(items, ",")
+	}
+	return strings.Join(items[:2], ",") + ",..."
+}
+
+func summarizeProvider(values map[string]struct{}, fallback string) string {
+	if len(values) == 0 {
+		return fallback
+	}
+	if len(values) == 1 {
+		for value := range values {
+			return value
+		}
+	}
+	return "mixed"
 }
 
 func matches(event usage.UsageEvent, filters Filters) bool {

@@ -23,17 +23,25 @@ type Payload struct {
 	Threads     []query.ThreadResult `json:"threads,omitempty"`
 }
 
-func Write(w io.Writer, format string, payload Payload) error {
+type Options struct {
+	Full bool
+}
+
+func Write(w io.Writer, format string, payload Payload, opts ...Options) error {
+	var option Options
+	if len(opts) > 0 {
+		option = opts[0]
+	}
 	switch format {
 	case "", "table":
-		if err := WriteTable(w, payload.Results); err != nil {
+		if err := WriteTable(w, payload.Results, option); err != nil {
 			return err
 		}
 		if len(payload.Threads) > 0 {
 			if _, err := fmt.Fprintln(w); err != nil {
 				return err
 			}
-			return WriteThreadsTable(w, payload.Threads)
+			return WriteThreadsTable(w, payload.Threads, option)
 		}
 		return nil
 	case "json":
@@ -41,14 +49,14 @@ func Write(w io.Writer, format string, payload Payload) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		if err := WriteMarkdown(w, payload.Results); err != nil {
+		if err := WriteMarkdown(w, payload.Results, option); err != nil {
 			return err
 		}
 		if len(payload.Threads) > 0 {
 			if _, err := fmt.Fprintln(w, "\n## Threads"); err != nil {
 				return err
 			}
-			return WriteThreadsMarkdown(w, payload.Threads)
+			return WriteThreadsMarkdown(w, payload.Threads, option)
 		}
 		return nil
 	default:
@@ -56,42 +64,78 @@ func Write(w io.Writer, format string, payload Payload) error {
 	}
 }
 
-func WriteThreadsTable(w io.Writer, threads []query.ThreadResult) error {
-	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQUESTS", "EVENTS", "COST_USD", "TOTAL"}
+func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Options) error {
+	var option Options
+	if len(opts) > 0 {
+		option = opts[0]
+	}
+	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "COST_USD", "TOTAL"}
+	if option.Full {
+		headers = []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "EVENTS", "COST_USD", "TOTAL"}
+	}
 	rows := make([][]string, 0, len(threads))
 	for _, thread := range threads {
-		rows = append(rows, []string{
+		row := []string{
 			thread.ID,
 			displayCell(thread.Name, threadNameTableWidth),
 			thread.Tool,
 			thread.Model,
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
-			fmt.Sprint(thread.Events),
 			FormatUSD(thread.CostUSD),
 			fmt.Sprint(thread.Usage.NormalizedTotal()),
-		})
+		}
+		if option.Full {
+			row = []string{
+				thread.ID,
+				displayCell(thread.Name, threadNameTableWidth),
+				thread.Tool,
+				thread.Model,
+				thread.Provider,
+				fmt.Sprint(thread.Requests),
+				fmt.Sprint(thread.Events),
+				FormatUSD(thread.CostUSD),
+				fmt.Sprint(thread.Usage.NormalizedTotal()),
+			}
+		}
+		rows = append(rows, row)
 	}
 	return writeBorderedTable(w, headers, rows)
 }
 
-func WriteTable(w io.Writer, results []query.Result) error {
-	headers := []string{"GROUP", "REQUESTS", "EVENTS", "COST_USD", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
+	var option Options
+	if len(opts) > 0 {
+		option = opts[0]
+	}
+	headers := []string{"GROUP", "REQ", "COST_USD", "TOTAL"}
+	if option.Full {
+		headers = []string{"GROUP", "REQ", "EVENTS", "COST_USD", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+	}
 	rows := make([][]string, 0, len(results))
 	for _, result := range results {
-		rows = append(rows, []string{
+		row := []string{
 			formatKey(result.Key),
 			fmt.Sprint(result.Requests),
-			fmt.Sprint(result.Events),
 			FormatUSD(result.CostUSD),
-			fmt.Sprint(result.Usage.Input),
-			fmt.Sprint(result.Usage.Output),
-			fmt.Sprint(result.Usage.CachedInput),
-			fmt.Sprint(result.Usage.CacheCreation),
-			fmt.Sprint(result.Usage.Reasoning),
-			fmt.Sprint(result.Usage.Tool),
 			fmt.Sprint(result.Usage.NormalizedTotal()),
-		})
+		}
+		if option.Full {
+			row = []string{
+				formatKey(result.Key),
+				fmt.Sprint(result.Requests),
+				fmt.Sprint(result.Events),
+				FormatUSD(result.CostUSD),
+				fmt.Sprint(result.Usage.Input),
+				fmt.Sprint(result.Usage.Output),
+				fmt.Sprint(result.Usage.CachedInput),
+				fmt.Sprint(result.Usage.CacheCreation),
+				fmt.Sprint(result.Usage.Reasoning),
+				fmt.Sprint(result.Usage.Tool),
+				fmt.Sprint(result.Usage.NormalizedTotal()),
+			}
+		}
+		rows = append(rows, row)
 	}
 	return writeBorderedTable(w, headers, rows)
 }
@@ -155,25 +199,48 @@ func writeTableRow(w io.Writer, row []string, widths []int) error {
 	return err
 }
 
-func WriteMarkdown(w io.Writer, results []query.Result) error {
-	if _, err := fmt.Fprintln(w, "| Group | Requests | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
+	var option Options
+	if len(opts) > 0 {
+		option = opts[0]
+	}
+	if option.Full {
+		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
+			return err
+		}
+		for _, result := range results {
+			if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+				escapeMarkdown(formatKey(result.Key)),
+				result.Requests,
+				result.Events,
+				FormatUSD(result.CostUSD),
+				result.Usage.Input,
+				result.Usage.Output,
+				result.Usage.CachedInput,
+				result.Usage.CacheCreation,
+				result.Usage.Reasoning,
+				result.Usage.Tool,
+				result.Usage.NormalizedTotal(),
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "| Group | Req | Cost USD | Total |"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: |"); err != nil {
 		return err
 	}
 	for _, result := range results {
-		if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
 			result.Requests,
-			result.Events,
 			FormatUSD(result.CostUSD),
-			result.Usage.Input,
-			result.Usage.Output,
-			result.Usage.CachedInput,
-			result.Usage.CacheCreation,
-			result.Usage.Reasoning,
-			result.Usage.Tool,
 			result.Usage.NormalizedTotal(),
 		); err != nil {
 			return err
@@ -182,22 +249,49 @@ func WriteMarkdown(w io.Writer, results []query.Result) error {
 	return nil
 }
 
-func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult) error {
-	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Requests | Events | Cost USD | Total |"); err != nil {
+func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Options) error {
+	var option Options
+	if len(opts) > 0 {
+		option = opts[0]
+	}
+	if option.Full {
+		if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Events | Cost USD | Total |"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |"); err != nil {
+			return err
+		}
+		for _, thread := range threads {
+			if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %d | %s | %d |\n",
+				escapeMarkdown(thread.ID),
+				escapeMarkdown(thread.Name),
+				escapeMarkdown(thread.Tool),
+				escapeMarkdown(thread.Model),
+				escapeMarkdown(thread.Provider),
+				thread.Requests,
+				thread.Events,
+				FormatUSD(thread.CostUSD),
+				thread.Usage.NormalizedTotal(),
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Cost USD | Total |"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: |"); err != nil {
 		return err
 	}
 	for _, thread := range threads {
-		if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %d | %s | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %s | %d |\n",
 			escapeMarkdown(thread.ID),
 			escapeMarkdown(thread.Name),
 			escapeMarkdown(thread.Tool),
 			escapeMarkdown(thread.Model),
 			escapeMarkdown(thread.Provider),
 			thread.Requests,
-			thread.Events,
 			FormatUSD(thread.CostUSD),
 			thread.Usage.NormalizedTotal(),
 		); err != nil {

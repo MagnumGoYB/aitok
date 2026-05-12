@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.23`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.24`
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.24`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.25`
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -70,7 +70,8 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - `v0.1.21`：继续统一 TUI 中 cost 列的视觉对齐，并标准化面向 Claude 的文档措辞。
 - `v0.1.22`：修复 Threads 过滤逻辑，让 active tool/search 状态、光标移动、复制动作和滚动条计算都基于过滤后的 thread 列表，并让 `Model Usage` 与 `Threads` 里的 `Cost` 按渲染末端对齐。
 - `v0.1.23`：让 Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
-- 待发 `v0.1.24` bugfix 范围：Model Usage 图表在 100 万以下 token 行之间也要保留可见比例差异，并在 Model Usage 表格中增加总 `Tokens` 列。
+- `v0.1.24`：已修复 Model Usage 图表在 100 万以下 token 行之间的比例显示，并在 Model Usage 表格中增加总 `Tokens` 列。
+- 待发 `v0.1.25` bugfix 范围：保持同一 thread ID 只出一行，把 thread `model=mixed` 改成逗号拼接的模型列表，压缩默认输出中重复的 request/event 展示，并让 Model Usage bar 在同一色系内按用量深浅区分。
 
 当前 TUI 布局约束需要继续保留：
 
@@ -110,7 +111,7 @@ PR 前本地验证：
 - `make validate`，在 release bump 前执行
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
 - `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21`、`v0.1.22`、`v0.1.23` 的 GitHub Release workflows 均已成功。
-- 当前 `v0.1.24` bugfix 的验证目标：tag 前执行 `go test ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.24 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
+- 当前 `v0.1.25` bugfix 的验证目标：tag 前执行 `go test ./internal/query ./internal/report ./internal/cli ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.25 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
 
 GitHub PR 检查：
 
@@ -121,7 +122,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-截至 `v0.1.23`，原始 PR #13 范围已没有待跟进发版。当前 Model Usage 图表/表格跟进应作为 `v0.1.24` 发布，除非用户明确要求延后发版。
+截至 `v0.1.24`，原始 PR #13 范围已没有待跟进发版。当前 threads/model 汇总与图表色阶跟进应作为 `v0.1.25` 发布，除非用户明确要求延后发版。
 
 ## 后续工作
 

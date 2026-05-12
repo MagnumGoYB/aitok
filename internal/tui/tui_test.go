@@ -10,6 +10,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -186,6 +187,21 @@ func TestModelUsageChartKeepsSmallTokenRatiosVisible(t *testing.T) {
 	smallUnits := modelUsageBarUnits(t, view, "gpt-5.5 (openai)")
 	if !(wideUnits > midUnits && midUnits > smallUnits) {
 		t.Fatalf("model usage chart should keep token ratios distinct, got wide=%d mid=%d small=%d\n%s", wideUnits, midUnits, smallUnits, view)
+	}
+}
+
+func TestModelUsageBarStyleUsesSameHueWithDepthByRank(t *testing.T) {
+	first := modelUsageBarStyle(0, 4).GetForeground()
+	second := modelUsageBarStyle(1, 4).GetForeground()
+	last := modelUsageBarStyle(3, 4).GetForeground()
+	if first == second || second == last || first == last {
+		t.Fatalf("bar shades should vary by rank, got first=%v second=%v last=%v", first, second, last)
+	}
+	if first != lipgloss.Color("#0A84D6") {
+		t.Fatalf("highest-usage bar should use the darkest shade, got %v", first)
+	}
+	if last != lipgloss.Color("#7CCDF5") {
+		t.Fatalf("lowest-usage bar should use the lightest shade, got %v", last)
 	}
 }
 
@@ -391,13 +407,13 @@ func TestTUILayoutUsesCompactToolbarAndCards(t *testing.T) {
 }
 
 func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
-	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"))
-	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "297", "$34.9399", "45.5m"))
+	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"))
+	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "$34.9399", "45.5m"))
 
-	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens"} {
+	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"} {
 		want := runewidth.StringWidth(header[:strings.Index(header, label)])
 		got := runewidth.StringWidth(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
-		if got != want && label != "Events" && label != "Cost" && label != "Tokens" {
+		if got != want && label != "Cost" && label != "Tokens" {
 			t.Fatalf("%s column should start at width %d, got %d\nheader=%q\nrow=%q", label, want, got, header, row)
 		}
 	}
@@ -419,8 +435,6 @@ func columnValueForLabel(label, row string) string {
 	case "Provider":
 		return "bcb"
 	case "Req":
-		return "297"
-	case "Events":
 		return "297"
 	case "Cost":
 		return "$34.9399"
@@ -459,21 +473,21 @@ func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 	if !strings.Contains(box, "ID             Name") {
 		t.Fatalf("ID and Name columns should have a larger left-aligned gap: %s", box)
 	}
-	if !strings.Contains(box, "Req    Events") {
-		t.Fatalf("Req should be left-aligned and Events should remain right-aligned: %s", box)
+	if strings.Contains(box, "Events") {
+		t.Fatalf("threads compact box should not render a separate Events column: %s", box)
 	}
 }
 
 func TestThreadRowAlignmentPolicy(t *testing.T) {
-	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Events", "Cost", "Tokens")
-	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "261", "$31.3324", "41.4m")
+	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens")
+	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "$31.3324", "41.4m")
 
 	for _, expected := range []string{
 		"Name                         Tool",
 		"Tool     Model",
 		"Model              Provider",
 		"Provider   Req",
-		"Req    Events",
+		"Req            Cost",
 	} {
 		if !strings.Contains(header, expected) {
 			t.Fatalf("header should keep left-aligned gap %q:\n%s", expected, header)
@@ -490,11 +504,11 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 		}
 	}
 	for _, expected := range []string{
-		"   261     $31.3324",
+		"261        $31.3324",
 		"$31.3324     41.4m",
 	} {
 		if !strings.Contains(row, expected) {
-			t.Fatalf("events/cost/tokens should remain right-aligned %q:\n%s", expected, row)
+			t.Fatalf("req/cost/tokens should preserve the numeric alignment %q:\n%s", expected, row)
 		}
 	}
 }

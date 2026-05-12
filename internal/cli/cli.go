@@ -49,6 +49,7 @@ type UpdateOptions struct {
 type flags struct {
 	period         string
 	format         string
+	full           bool
 	groupBy        string
 	tools          []string
 	models         []string
@@ -110,11 +111,12 @@ func New(app App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return report.Write(app.Out, f.format, payload)
+			return report.Write(app.Out, f.format, payload, report.Options{Full: f.full})
 		},
 	}
 	addQueryFlags(summary, f)
 	summary.Flags().BoolVar(&f.threads, "threads", false, "include matching threads in the output")
+	summary.Flags().BoolVar(&f.full, "full", false, "show the expanded table columns")
 
 	reportCmd := &cobra.Command{
 		Use:   "report",
@@ -124,10 +126,11 @@ func New(app App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return report.Write(app.Out, f.format, payload)
+			return report.Write(app.Out, f.format, payload, report.Options{Full: f.full})
 		},
 	}
 	addQueryFlags(reportCmd, f)
+	reportCmd.Flags().BoolVar(&f.full, "full", false, "show the expanded table columns")
 
 	pricingCmd := &cobra.Command{
 		Use:   "pricing",
