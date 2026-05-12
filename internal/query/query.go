@@ -197,6 +197,20 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		results = append(results, *result)
 	}
 	sort.Slice(results, func(i, j int) bool {
+		leftCreated := results[i].CreatedAt
+		rightCreated := results[j].CreatedAt
+		if leftCreated.IsZero() {
+			leftCreated = results[i].LastActiveAt
+		}
+		if rightCreated.IsZero() {
+			rightCreated = results[j].LastActiveAt
+		}
+		if !leftCreated.Equal(rightCreated) {
+			return leftCreated.After(rightCreated)
+		}
+		if results[i].CostUSD != results[j].CostUSD {
+			return results[i].CostUSD > results[j].CostUSD
+		}
 		left := results[i].Usage.NormalizedTotal()
 		right := results[j].Usage.NormalizedTotal()
 		if left == right {

@@ -172,6 +172,53 @@ func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	t.Fatalf("model usage chart line missing: %s", view)
 }
 
+func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5-中文模型", "provider": "bcb"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 28_345_680, Output: 123_456},
+				CostUSD:  145.4321,
+			},
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 6_125_217, Output: 65_432},
+				CostUSD:  32.5890,
+			},
+		},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	var costStarts []int
+	var inputEnds []int
+	for _, line := range strings.Split(view, "\n") {
+		if !strings.Contains(line, "gpt-5.5") || !strings.Contains(line, "$") {
+			continue
+		}
+		costValue := "$145.4321"
+		costStart := strings.Index(line, costValue)
+		if costStart < 0 {
+			costValue = "$32.5890"
+			costStart = strings.Index(line, costValue)
+		}
+		inputValue := "28.3m"
+		inputStart := strings.Index(line, inputValue)
+		if inputStart < 0 {
+			inputValue = "6.1m"
+			inputStart = strings.Index(line, inputValue)
+		}
+		costStarts = append(costStarts, runewidth.StringWidth(line[:costStart]))
+		inputEnds = append(inputEnds, runewidth.StringWidth(line[:inputStart])+runewidth.StringWidth(inputValue))
+	}
+	if len(costStarts) != 2 || costStarts[0] != costStarts[1] {
+		t.Fatalf("Cost column should align for mixed-width model labels, starts=%v\n%s", costStarts, view)
+	}
+	if len(inputEnds) != 2 || inputEnds[0] != inputEnds[1] {
+		t.Fatalf("Input column should right-align for mixed-width model labels, ends=%v\n%s", inputEnds, view)
+	}
+}
+
 func TestModelUsageCapsRowsWhenProvidersAreMany(t *testing.T) {
 	payload := samplePayload()
 	payload.Results = nil
@@ -390,11 +437,36 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"   261  $31.3324",
-		"$31.3324     41.4m",
+		"$31.3324        41.4m",
 	} {
 		if !strings.Contains(row, expected) {
 			t.Fatalf("events/cost/tokens should remain right-aligned %q:\n%s", expected, row)
 		}
+	}
+}
+
+func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "修正日期范围与threads列表很长很长", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
+		{ID: "019e1522-e729-70c2-b013-bf66207c6b51", Name: "mini_program_wechat", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 61, Events: 61, Usage: usage.TokenUsage{Input: 6_125_217}, CostUSD: 6.7136},
+	}
+	box := stripANSI(NewModel(payload).threadsBox(copyFor(LanguageEnglish)))
+	var starts []int
+	for _, line := range strings.Split(box, "\n") {
+		if !strings.Contains(line, "019e") {
+			continue
+		}
+		cost := "$22.0954"
+		start := strings.Index(line, cost)
+		if start < 0 {
+			cost = "$6.7136"
+			start = strings.Index(line, cost)
+		}
+		starts = append(starts, runewidth.StringWidth(line[:start]))
+	}
+	if len(starts) != 2 || starts[0] != starts[1] {
+		t.Fatalf("threads Cost column should align across rows, starts=%v\n%s", starts, box)
 	}
 }
 
@@ -420,7 +492,7 @@ func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
 	if rowWidths[0] != rowWidths[1] {
 		t.Fatalf("thread row widths must align, got %v\n%s", rowWidths, box)
 	}
-	if strings.Contains(box, "很长很长") || !strings.Contains(box, "…") {
+	if strings.Contains(box, "很长很长") || !strings.Contains(box, "...") {
 		t.Fatalf("thread name should be truncated in TUI display: %s", box)
 	}
 }

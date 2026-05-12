@@ -32,6 +32,7 @@ type tableAlign int
 const (
 	alignLeft tableAlign = iota
 	alignRight
+	alignCurrency
 )
 
 type tableColumn struct {
@@ -333,9 +334,9 @@ func (m model) chart(results []query.Result, max int64) string {
 		if width == 0 && total > 0 {
 			width = 1
 		}
-		lines = append(lines, fmt.Sprintf("%-*s  %s %s",
-			modelColumnWidth,
-			truncate(resultLabel(result), modelColumnWidth),
+		label := padRight(tableText(resultLabel(result), modelColumnWidth), modelColumnWidth)
+		lines = append(lines, fmt.Sprintf("%s  %s %s",
+			label,
 			barStyle.Render(strings.Repeat("█", width)),
 			mutedStyle.Render(formatInt(total)),
 		))
@@ -348,18 +349,18 @@ func (m model) chart(results []query.Result, max int64) string {
 
 func (m model) table(results []query.Result) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render(fmt.Sprintf("%-*s  %8s %10s %12s %12s %12s", modelColumnWidth, "Model", "Req", "Cost", "Input", "Output", "Cached")))
+	b.WriteString(mutedStyle.Render(modelTableRow("Model", "Req", "Cost", "Input", "Output", "Cached")))
 	b.WriteString("\n")
 	for _, result := range results {
-		b.WriteString(fmt.Sprintf("%-*s  %8d %10s %12s %12s %12s\n",
-			modelColumnWidth,
-			truncate(resultLabel(result), modelColumnWidth),
-			result.Requests,
+		b.WriteString(modelTableRow(
+			resultLabel(result),
+			fmt.Sprint(result.Requests),
 			report.FormatUSD(result.CostUSD),
 			compact(result.Usage.Input),
 			compact(result.Usage.Output),
 			compact(result.Usage.CachedInput+result.Usage.CacheCreation),
 		))
+		b.WriteString("\n")
 		if strings.TrimSpace(b.String()) != "" && strings.Count(b.String(), "\n") > 6 {
 			break
 		}
@@ -430,11 +431,11 @@ func (m model) threadsBox(copy localizedCopy) string {
 	for i := m.threadOffset; i < end; i++ {
 		thread := threads[i]
 		line := threadRow(
-			displayText(thread.ID, 12),
-			displayText(thread.Name, 28),
-			displayText(thread.Tool, 8),
-			displayText(thread.Model, 18),
-			displayText(thread.Provider, 10),
+			thread.ID,
+			thread.Name,
+			thread.Tool,
+			thread.Model,
+			thread.Provider,
 			fmt.Sprint(thread.Requests),
 			fmt.Sprint(thread.Events),
 			report.FormatUSD(thread.CostUSD),
@@ -629,13 +630,43 @@ func compact(value int64) string {
 	return fmt.Sprintf("%d", value)
 }
 
-func truncate(value string, width int) string {
-	return displayText(value, width)
+func tableText(value string, width int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	return displayTextWithSuffix(value, width, "...")
 }
 
-func displayText(value string, width int) string {
-	value = strings.Join(strings.Fields(value), " ")
-	return runewidth.Truncate(value, width, "…")
+func displayTextWithSuffix(value string, width int, suffix string) string {
+	if width <= 0 || runewidth.StringWidth(value) <= width {
+		return value
+	}
+	limit := width - runewidth.StringWidth(suffix)
+	if limit <= 0 {
+		return suffix
+	}
+	var b strings.Builder
+	used := 0
+	for _, r := range value {
+		charWidth := runewidth.RuneWidth(r)
+		if used+charWidth > limit {
+			break
+		}
+		b.WriteRune(r)
+		used += charWidth
+	}
+	return b.String() + suffix
+}
+
+func modelTableRow(modelName, req, cost, input, output, cached string) string {
+	columns := []tableColumn{
+		{value: modelName, width: modelColumnWidth, align: alignLeft},
+		{value: req, width: 8, align: alignRight},
+		{value: cost, width: 12, align: alignCurrency},
+		{value: input, width: 12, align: alignRight},
+		{value: output, width: 12, align: alignRight},
+		{value: cached, width: 12, align: alignRight},
+	}
+	gaps := []int{2, 3, 3, 1, 1}
+	return tableRow(columns, gaps)
 }
 
 func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens string) string {
@@ -647,19 +678,34 @@ func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens st
 		{value: provider, width: 10, align: alignLeft},
 		{value: req, width: 6, align: alignLeft},
 		{value: events, width: 6, align: alignRight},
-		{value: cost, width: 9, align: alignRight},
+		{value: cost, width: 11, align: alignCurrency},
 		{value: tokens, width: 9, align: alignRight},
 	}
-	parts := make([]string, 0, len(columns))
-	for _, column := range columns {
-		value := displayText(column.value, column.width)
-		if column.align == alignRight {
+	gaps := []int{1, 1, 1, 1, 1, 1, 2, 1}
+	return tableRow(columns, gaps)
+}
+
+func tableRow(columns []tableColumn, gaps []int) string {
+	parts := make([]string, 0, len(columns)*2-1)
+	for i, column := range columns {
+		value := tableText(column.value, column.width)
+		switch column.align {
+		case alignRight:
 			parts = append(parts, padLeft(value, column.width))
-		} else {
+		case alignCurrency:
+			parts = append(parts, padCurrency(value, column.width))
+		default:
 			parts = append(parts, padRight(value, column.width))
 		}
+		if i < len(columns)-1 {
+			gap := 1
+			if i < len(gaps) {
+				gap = gaps[i]
+			}
+			parts = append(parts, strings.Repeat(" ", gap))
+		}
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, "")
 }
 
 func threadLine(row string, visibleIndex, offset, visibleHeight, total int, overflow bool) string {
@@ -709,6 +755,13 @@ func padLeft(value string, width int) string {
 		return strings.Repeat(" ", padding) + value
 	}
 	return value
+}
+
+func padCurrency(value string, width int) string {
+	if strings.HasPrefix(value, "$") {
+		return padRight(value, width)
+	}
+	return padLeft(value, width)
 }
 
 func clamp(value, min, max int) int {

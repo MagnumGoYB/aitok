@@ -85,6 +85,32 @@ func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 	}
 }
 
+func TestThreadAccumulatorSortsByCreatedAtThenCost(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{ID: "older-expensive", Timestamp: time.Date(2026, 5, 8, 3, 0, 0, 0, loc), Tool: usage.ToolCodex, ThreadID: "older-expensive", ThreadCreatedAt: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Usage: usage.TokenUsage{Input: 1_000_000}},
+		{ID: "newer-cheap", Timestamp: time.Date(2026, 5, 8, 4, 0, 0, 0, loc), Tool: usage.ToolCodex, ThreadID: "newer-cheap", ThreadCreatedAt: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Usage: usage.TokenUsage{Input: 1}},
+		{ID: "newer-expensive", Timestamp: time.Date(2026, 5, 8, 5, 0, 0, 0, loc), Tool: usage.ToolCodex, ThreadID: "newer-expensive", ThreadCreatedAt: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Usage: usage.TokenUsage{Input: 2}},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		return Cost{USD: float64(event.Usage.Input)}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 3 {
+		t.Fatalf("len(threads) = %d, want 3", len(got))
+	}
+	want := []string{"newer-expensive", "newer-cheap", "older-expensive"}
+	for i, id := range want {
+		if got[i].ID != id {
+			t.Fatalf("thread order[%d] = %s, want %s; all=%+v", i, got[i].ID, id, got)
+		}
+	}
+}
+
 func TestThreadAccumulatorGroupsUsageAndCostByThread(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}

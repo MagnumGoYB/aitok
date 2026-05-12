@@ -1,2 +1,5 @@
-model = "gpt-5.5"
-model_provider = "bcb"
+personality = "pragmatic"
+
+[features]
+multi_agent = true
+memories = true
