@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.21`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.22`
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.23`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.24`
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -69,7 +69,8 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - `v0.1.20`：压缩 dashboard，让它更容易放进一个终端视口：toolbar 压到 3 行，summary cards 压到 4 行，Threads 最多展示 6 行，Model Usage 在 provider/model 很多时只展示 top rows，避免撑爆一屏。
 - `v0.1.21`：继续统一 TUI 中 cost 列的视觉对齐，并标准化面向 Claude 的文档措辞。
 - `v0.1.22`：修复 Threads 过滤逻辑，让 active tool/search 状态、光标移动、复制动作和滚动条计算都基于过滤后的 thread 列表，并让 `Model Usage` 与 `Threads` 里的 `Cost` 按渲染末端对齐。
-- 待发 `v0.1.23` feature 范围：Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
+- `v0.1.23`：让 Threads 在 `summary --threads` payload 与 TUI 过滤视图中默认按 token 消耗降序排列。
+- 待发 `v0.1.24` bugfix 范围：Model Usage 图表在 100 万以下 token 行之间也要保留可见比例差异，并在 Model Usage 表格中增加总 `Tokens` 列。
 
 当前 TUI 布局约束需要继续保留：
 
@@ -81,6 +82,8 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - Summary cards 保持紧凑，避免装饰性纵向空白。
 - Threads 最多展示 6 行，更多内容依赖滚动条和 `j/k/home/end` 导航。
 - Model Usage 需要能处理很多 provider/model 分组，通过限制 chart 行数和 table 行数避免把 footer 挤出屏幕。
+- Model Usage 图表不能把所有非零小用量行都压成同样宽度。需要用分段 block 保留更细比例，同时继续保证非零行可见。
+- Model Usage 表格需要在 `Input`、`Output`、`Cached` 之外展示总 `Tokens`，方便用户直接对照图表和表格，不用手动相加。
 - 日期范围分隔符使用 ASCII `~`，不是全角 `～`。
 - `this-week` 仍然是 `query.WindowFor` 里的当前自然周窗口，没有改成滚动 7 天。
 
@@ -106,8 +109,8 @@ PR 前本地验证：
 - `make build`
 - `make validate`，在 release bump 前执行
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
-- `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21`、`v0.1.22` 的 GitHub Release workflows 均已成功。
-- 当前 `v0.1.23` feature 的验证目标：tag 前执行 `go test ./internal/query ./internal/tui`、`make test`、`make build`、`make validate` 与 `git diff --check`。
+- `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21`、`v0.1.22`、`v0.1.23` 的 GitHub Release workflows 均已成功。
+- 当前 `v0.1.24` bugfix 的验证目标：tag 前执行 `go test ./internal/tui`、`make test`、`make build`、`make validate`、`GITHUB_REF_NAME=v0.1.24 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref` 与 `git diff --check`。
 
 GitHub PR 检查：
 
@@ -118,7 +121,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-截至 `v0.1.21`，原始 PR #13 范围已没有待跟进发版。当前这轮 post-release bugfix 仍应作为 `v0.1.22` 发布，除非用户明确要求延后发版。
+截至 `v0.1.23`，原始 PR #13 范围已没有待跟进发版。当前 Model Usage 图表/表格跟进应作为 `v0.1.24` 发布，除非用户明确要求延后发版。
 
 ## 后续工作
 

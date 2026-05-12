@@ -172,6 +172,23 @@ func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	t.Fatalf("model usage chart line missing: %s", view)
 }
 
+func TestModelUsageChartKeepsSmallTokenRatiosVisible(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"}, Usage: usage.TokenUsage{Input: 107_947_474}},
+			{Key: map[string]string{"tool": "claude", "model": "claude-opus-4-7"}, Usage: usage.TokenUsage{Input: 955_754}},
+			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openai"}, Usage: usage.TokenUsage{Input: 585_484}},
+		},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	wideUnits := modelUsageBarUnits(t, view, "gpt-5.5 (bcb)")
+	midUnits := modelUsageBarUnits(t, view, "claude-opus-4-7")
+	smallUnits := modelUsageBarUnits(t, view, "gpt-5.5 (openai)")
+	if !(wideUnits > midUnits && midUnits > smallUnits) {
+		t.Fatalf("model usage chart should keep token ratios distinct, got wide=%d mid=%d small=%d\n%s", wideUnits, midUnits, smallUnits, view)
+	}
+}
+
 func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 	payload := report.Payload{
 		Results: []query.Result{
@@ -216,6 +233,24 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 	}
 	if len(inputEnds) != 2 || inputEnds[0] != inputEnds[1] {
 		t.Fatalf("Input column should right-align for mixed-width model labels, ends=%v\n%s", inputEnds, view)
+	}
+}
+
+func TestModelUsageTableIncludesTotalTokens(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{{
+			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"},
+			Requests: 1,
+			Usage:    usage.TokenUsage{Input: 1000, Output: 200, CachedInput: 50, CacheCreation: 25},
+			CostUSD:  0.1234,
+		}},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	if !strings.Contains(view, "Tokens") {
+		t.Fatalf("model usage table must include a total Tokens column:\n%s", view)
+	}
+	if !strings.Contains(view, "1.2k") {
+		t.Fatalf("model usage table Tokens column should include normalized total tokens:\n%s", view)
 	}
 }
 
@@ -627,6 +662,39 @@ func stripANSI(value string) string {
 		b.WriteByte(ch)
 	}
 	return b.String()
+}
+
+func modelUsageBarUnits(t *testing.T, view, label string) int {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if !strings.Contains(line, label) {
+			continue
+		}
+		count := 0
+		for _, r := range line {
+			switch r {
+			case '█':
+				count += 8
+			case '▉':
+				count += 7
+			case '▊':
+				count += 6
+			case '▋':
+				count += 5
+			case '▌':
+				count += 4
+			case '▍':
+				count += 3
+			case '▎':
+				count += 2
+			case '▏':
+				count++
+			}
+		}
+		return count
+	}
+	t.Fatalf("model usage chart line for %q missing:\n%s", label, view)
+	return 0
 }
 
 func samplePayload() report.Payload {

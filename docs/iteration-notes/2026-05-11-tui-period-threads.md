@@ -9,7 +9,7 @@ This note is a versioned handoff for future AI coding agents. Read it before con
 - Feature branch used: `codex/tui-period-threads-list`
 - Feature commit: `107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - Merge commit: `97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- Release status: PR #13 and follow-up TUI fixes were released through `v0.1.21`; the current post-release bugfix follow-up is targeting `v0.1.22`
+- Release status: PR #13 and follow-up TUI fixes were released through `v0.1.23`; the current post-release bugfix follow-up is targeting `v0.1.24`
 - Primary agent contract: `aitok --no-version-check summary --period today --threads --format json`
 
 ## Why This Iteration Happened
@@ -69,7 +69,8 @@ After PR #13 merged, several TUI polish releases landed on `main`:
 - `v0.1.20`: compacted the dashboard so it fits better in a terminal viewport: toolbar is 3 lines, summary cards are 4 lines, Threads is capped at 6 visible rows, and Model Usage caps provider-heavy output to the top rows instead of filling the screen.
 - `v0.1.21`: aligned cost columns more consistently across the TUI and standardized Claude-facing docs wording.
 - `v0.1.22`: fixed Threads filtering so active tool/search state, cursor movement, copy actions, and scrollbar math operate on the filtered thread list, and aligned `Cost` by its rendered end edge in Model Usage and Threads.
-- Pending `v0.1.23` feature scope: Threads should default to descending token usage order in both `summary --threads` payloads and the TUI filtered view.
+- `v0.1.23`: made Threads default to descending token usage order in both `summary --threads` payloads and the TUI filtered view.
+- Pending `v0.1.24` bugfix scope: Model Usage chart bars should preserve visible differences for sub-1m token rows, and the Model Usage table should include a total `Tokens` column.
 
 Current TUI layout constraints to preserve:
 
@@ -81,6 +82,8 @@ Current TUI layout constraints to preserve:
 - Summary cards should stay compact and avoid decorative vertical whitespace.
 - Threads should show at most 6 rows and rely on the scrollbar plus `j/k/home/end` for navigation.
 - Model Usage should handle many provider/model groups by limiting chart rows and table rows; do not let provider-heavy data push the footer off-screen.
+- Model Usage chart bars should not collapse all small non-zero rows to the same visual width. Preserve sub-cell ratios with partial block rendering while keeping non-zero rows visible.
+- Model Usage table should show total `Tokens` alongside `Input`, `Output`, and `Cached` so users can compare the chart and table without doing mental addition.
 - The date range separator is ASCII `~`, not full-width `～`.
 - `this-week` still means the current natural week window from `query.WindowFor`; it was not changed to a rolling 7-day period.
 
@@ -106,8 +109,8 @@ Follow-up validation used during the v0.1.17-v0.1.20 polish releases:
 - `make build`
 - `make validate` before release bumps
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
-- GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, `v0.1.20`, `v0.1.21`, and `v0.1.22` completed successfully.
-- Current `v0.1.23` feature validation target: `go test ./internal/query ./internal/tui`, `make test`, `make build`, `make validate`, and `git diff --check` before tagging.
+- GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, `v0.1.20`, `v0.1.21`, `v0.1.22`, and `v0.1.23` completed successfully.
+- Current `v0.1.24` bugfix validation target: `go test ./internal/tui`, `make test`, `make build`, `make validate`, `GITHUB_REF_NAME=v0.1.24 GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`, and `git diff --check` before tagging.
 
 GitHub PR checks:
 
@@ -118,7 +121,7 @@ GitHub PR checks:
 
 ## Release Follow-Up
 
-No pending release follow-up remains for the original PR #13 scope as of `v0.1.21`. The current post-release bugfix follow-up should ship as `v0.1.22` unless the user explicitly defers release work.
+No pending release follow-up remains for the original PR #13 scope as of `v0.1.23`. The current Model Usage chart/table follow-up should ship as `v0.1.24` unless the user explicitly defers release work.
 
 ## Future Work
 

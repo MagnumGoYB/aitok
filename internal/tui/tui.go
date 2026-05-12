@@ -334,14 +334,10 @@ func (m model) chart(results []query.Result, max int64) string {
 	var lines []string
 	for _, result := range results {
 		total := result.Usage.NormalizedTotal()
-		width := int(total * 28 / max)
-		if width == 0 && total > 0 {
-			width = 1
-		}
 		label := padRight(tableText(resultLabel(result), modelColumnWidth), modelColumnWidth)
 		lines = append(lines, fmt.Sprintf("%s  %s %s",
 			label,
-			barStyle.Render(strings.Repeat("█", width)),
+			barStyle.Render(tokenBar(total, max, 28)),
 			mutedStyle.Render(formatInt(total)),
 		))
 		if len(lines) == 6 {
@@ -353,13 +349,14 @@ func (m model) chart(results []query.Result, max int64) string {
 
 func (m model) table(results []query.Result) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render(modelTableRow("Model", "Req", "Cost", "Input", "Output", "Cached")))
+	b.WriteString(mutedStyle.Render(modelTableRow("Model", "Req", "Cost", "Tokens", "Input", "Output", "Cached")))
 	b.WriteString("\n")
 	for _, result := range results {
 		b.WriteString(modelTableRow(
 			resultLabel(result),
 			fmt.Sprint(result.Requests),
 			report.FormatUSD(result.CostUSD),
+			compact(result.Usage.NormalizedTotal()),
 			compact(result.Usage.Input),
 			compact(result.Usage.Output),
 			compact(result.Usage.CachedInput+result.Usage.CacheCreation),
@@ -720,16 +717,38 @@ func displayTextWithSuffix(value string, width int, suffix string) string {
 	return b.String() + suffix
 }
 
-func modelTableRow(modelName, req, cost, input, output, cached string) string {
+func tokenBar(total, max int64, width int) string {
+	if total <= 0 || max <= 0 || width <= 0 {
+		return ""
+	}
+	units := int((total*int64(width*8) + max/2) / max)
+	if units < 1 {
+		units = 1
+	}
+	maxUnits := width * 8
+	if units > maxUnits {
+		units = maxUnits
+	}
+	full := units / 8
+	remainder := units % 8
+	bar := strings.Repeat("█", full)
+	if remainder > 0 {
+		bar += string([]rune("▏▎▍▌▋▊▉")[remainder-1])
+	}
+	return bar
+}
+
+func modelTableRow(modelName, req, cost, tokens, input, output, cached string) string {
 	columns := []tableColumn{
 		{value: modelName, width: modelColumnWidth, align: alignLeft},
 		{value: req, width: 8, align: alignRight},
 		{value: cost, width: 12, align: alignRight},
+		{value: tokens, width: 12, align: alignRight},
 		{value: input, width: 12, align: alignRight},
 		{value: output, width: 12, align: alignRight},
 		{value: cached, width: 12, align: alignRight},
 	}
-	gaps := []int{2, 3, 3, 1, 1}
+	gaps := []int{2, 3, 3, 1, 1, 1}
 	return tableRow(columns, gaps)
 }
 
