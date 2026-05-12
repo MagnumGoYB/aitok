@@ -190,7 +190,7 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 		},
 	}
 	view := stripANSI(RenderWidth(payload, 160))
-	var costStarts []int
+	var costEnds []int
 	var inputEnds []int
 	for _, line := range strings.Split(view, "\n") {
 		if !strings.Contains(line, "gpt-5.5") || !strings.Contains(line, "$") {
@@ -208,11 +208,11 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 			inputValue = "6.1m"
 			inputStart = strings.Index(line, inputValue)
 		}
-		costStarts = append(costStarts, runewidth.StringWidth(line[:costStart]))
+		costEnds = append(costEnds, runewidth.StringWidth(line[:costStart])+runewidth.StringWidth(costValue))
 		inputEnds = append(inputEnds, runewidth.StringWidth(line[:inputStart])+runewidth.StringWidth(inputValue))
 	}
-	if len(costStarts) != 2 || costStarts[0] != costStarts[1] {
-		t.Fatalf("Cost column should align for mixed-width model labels, starts=%v\n%s", costStarts, view)
+	if len(costEnds) != 2 || costEnds[0] != costEnds[1] {
+		t.Fatalf("Cost column should right-align for mixed-width model labels, ends=%v\n%s", costEnds, view)
 	}
 	if len(inputEnds) != 2 || inputEnds[0] != inputEnds[1] {
 		t.Fatalf("Input column should right-align for mixed-width model labels, ends=%v\n%s", inputEnds, view)
@@ -366,6 +366,8 @@ func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
 	if runewidth.StringWidth(header) != runewidth.StringWidth(row) {
 		t.Fatalf("header and row should have equal display width, got %d/%d\n%s\n%s", runewidth.StringWidth(header), runewidth.StringWidth(row), header, row)
 	}
+	assertRightAlignedColumn(t, header, row, "Cost", "$34.9399")
+	assertRightAlignedColumn(t, header, row, "Tokens", "45.5m")
 }
 
 func columnValueForLabel(label, row string) string {
@@ -391,6 +393,20 @@ func columnValueForLabel(label, row string) string {
 	}
 }
 
+func assertRightAlignedColumn(t *testing.T, header, row, headerLabel, rowValue string) {
+	t.Helper()
+	headerStart := strings.Index(header, headerLabel)
+	rowStart := strings.Index(row, rowValue)
+	if headerStart < 0 || rowStart < 0 {
+		t.Fatalf("missing alignment values %q/%q\nheader=%q\nrow=%q", headerLabel, rowValue, header, row)
+	}
+	headerEnd := runewidth.StringWidth(header[:headerStart]) + runewidth.StringWidth(headerLabel)
+	rowEnd := runewidth.StringWidth(row[:rowStart]) + runewidth.StringWidth(rowValue)
+	if headerEnd != rowEnd {
+		t.Fatalf("%s column should right-align header and content at width %d, got %d\nheader=%q\nrow=%q", headerLabel, headerEnd, rowEnd, header, row)
+	}
+}
+
 func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
@@ -398,7 +414,7 @@ func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 	}
 	m := NewModel(payload)
 	m.width = 180
-	box := stripANSI(m.threadsBox(copyFor(LanguageEnglish)))
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
 	if strings.Contains(box, "Tokens │") || strings.Contains(box, "28.3m │") {
 		t.Fatalf("threads rows should not render a trailing vertical column: %s", box)
 	}
@@ -436,8 +452,8 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 		}
 	}
 	for _, expected := range []string{
-		"   261  $31.3324",
-		"$31.3324        41.4m",
+		"   261     $31.3324",
+		"$31.3324     41.4m",
 	} {
 		if !strings.Contains(row, expected) {
 			t.Fatalf("events/cost/tokens should remain right-aligned %q:\n%s", expected, row)
@@ -451,8 +467,9 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "修正日期范围与threads列表很长很长", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
 		{ID: "019e1522-e729-70c2-b013-bf66207c6b51", Name: "mini_program_wechat", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 61, Events: 61, Usage: usage.TokenUsage{Input: 6_125_217}, CostUSD: 6.7136},
 	}
-	box := stripANSI(NewModel(payload).threadsBox(copyFor(LanguageEnglish)))
-	var starts []int
+	m := NewModel(payload)
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
+	var ends []int
 	for _, line := range strings.Split(box, "\n") {
 		if !strings.Contains(line, "019e") {
 			continue
@@ -463,10 +480,10 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 			cost = "$6.7136"
 			start = strings.Index(line, cost)
 		}
-		starts = append(starts, runewidth.StringWidth(line[:start]))
+		ends = append(ends, runewidth.StringWidth(line[:start])+runewidth.StringWidth(cost))
 	}
-	if len(starts) != 2 || starts[0] != starts[1] {
-		t.Fatalf("threads Cost column should align across rows, starts=%v\n%s", starts, box)
+	if len(ends) != 2 || ends[0] != ends[1] {
+		t.Fatalf("threads Cost column should right-align across rows, ends=%v\n%s", ends, box)
 	}
 }
 
@@ -478,7 +495,7 @@ func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
 	}
 	m := NewModel(payload)
 	m.width = 180
-	box := m.threadsBox(copyFor(LanguageEnglish))
+	box := m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish))
 	lines := strings.Split(box, "\n")
 	var rowWidths []int
 	for _, line := range lines {
@@ -526,6 +543,21 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	}
 }
 
+func TestThreadsFilterByActiveTool(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "codex-thread", Name: "Codex task", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+		{ID: "claude-thread", Name: "Claude task", Tool: "claude", Model: "claude-opus", Provider: "unknown", Usage: usage.TokenUsage{Input: 20}},
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(keyMsg("3"))
+	m = updated.(model)
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "codex-thread") || strings.Contains(view, "claude-thread") {
+		t.Fatalf("threads should follow active tool filter:\n%s", view)
+	}
+}
+
 func TestThreadsScrollBarFollowsCursorOffset(t *testing.T) {
 	payload := samplePayload()
 	for i := 0; i < 16; i++ {
@@ -542,7 +574,7 @@ func TestThreadsScrollBarFollowsCursorOffset(t *testing.T) {
 	m.width = 160
 	updated, _ := m.Update(keyMsg("end"))
 	m = updated.(model)
-	box := stripANSI(m.threadsBox(copyFor(LanguageEnglish)))
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
 	if !strings.Contains(box, "thread-p") || strings.Contains(box, "thread-a") {
 		t.Fatalf("end should scroll the viewport to the last thread:\n%s", box)
 	}

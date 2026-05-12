@@ -9,7 +9,7 @@
 - 使用过的功能分支：`codex/tui-period-threads-list`
 - 功能提交：`107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - 合并提交：`97e4cbbd8bcd08e5a2667b415eb35122de434acc`
-- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.20`
+- 发版状态：PR #13 以及后续 TUI 修复已发布到 `v0.1.21`；当前这轮 post-release bugfix 跟进目标版本为 `v0.1.22`
 - 主要 Agent 调用契约：`aitok --no-version-check summary --period today --threads --format json`
 
 ## 这轮迭代为什么发生
@@ -67,8 +67,13 @@ PR #13 合并后，`main` 上继续落了多轮 TUI polish 发版：
 - `v0.1.18`：修正 Threads 对齐策略，`Name`、`Tool`、`Model`、`Provider`、`Req` 左对齐，`Events`、`Cost`、`Tokens` 右对齐。
 - `v0.1.19`：继续修复 TUI 布局问题：period 范围使用 ASCII `~`，缩小区域间距，Threads 溢出时渲染真实滚动条，光标移动会更新滚动条 offset，并用回归测试确认 TUI Threads 遵守选定 period window。
 - `v0.1.20`：压缩 dashboard，让它更容易放进一个终端视口：toolbar 压到 3 行，summary cards 压到 4 行，Threads 最多展示 6 行，Model Usage 在 provider/model 很多时只展示 top rows，避免撑爆一屏。
+- `v0.1.21`：继续统一 TUI 中 cost 列的视觉对齐，并标准化面向 Claude 的文档措辞。
+- 待发 `v0.1.22` bugfix 范围：Threads 必须遵守当前 tool filter/search 状态，光标移动与复制动作必须基于过滤后的 thread 列表，`Model Usage` 与 `Threads` 里的 `Cost` 需要像其他数值列一样按末端真正右对齐，而不是把 `$` 固定在左边。
 
 当前 TUI 布局约束需要继续保留：
+
+- Threads 过滤逻辑必须与 active tool tabs 和 search term 保持同步。任何光标移动、Home/End 跳转、复制动作、滚动条 offset 计算，都必须基于过滤后的 thread slice，而不是原始未过滤 payload。
+- `Cost` 要和其他数值列保持同一策略：在 Model Usage 与 Threads 中都按渲染后的末端右对齐，即使值里包含 `$`。
 
 - Toolbar 保持紧凑，不要恢复纵向 padding。
 - Summary cards 保持紧凑，避免装饰性纵向空白。
@@ -99,7 +104,8 @@ PR 前本地验证：
 - `make build`
 - `make validate`，在 release bump 前执行
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
-- `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20` 的 GitHub Release workflows 均已成功。
+- `v0.1.16`、`v0.1.17`、`v0.1.18`、`v0.1.19`、`v0.1.20`、`v0.1.21` 的 GitHub Release workflows 均已成功。
+- 当前 `v0.1.22` bugfix 的验证目标：tag 前执行 `go test ./internal/tui ./internal/cli`、`make test`、`make build`、`make validate` 与 `git diff --check`。
 
 GitHub PR 检查：
 
@@ -110,7 +116,7 @@ GitHub PR 检查：
 
 ## 发版跟进
 
-截至 `v0.1.20`，本轮迭代没有待跟进发版。后续如果继续修改这里的 feature 或 bugfix，仍然按仓库发布流程处理，除非用户明确要求延后。
+截至 `v0.1.21`，原始 PR #13 范围已没有待跟进发版。当前这轮 post-release bugfix 仍应作为 `v0.1.22` 发布，除非用户明确要求延后发版。
 
 ## 后续工作
 

@@ -32,7 +32,6 @@ type tableAlign int
 const (
 	alignLeft tableAlign = iota
 	alignRight
-	alignCurrency
 )
 
 type tableColumn struct {
@@ -150,12 +149,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searching = false
 		case "1":
 			m.activeTool = allTools
+			m.ensureThreadVisible()
 		case "2":
 			m.activeTool = string(usage.ToolClaude)
+			m.ensureThreadVisible()
 		case "3":
 			m.activeTool = string(usage.ToolCodex)
+			m.ensureThreadVisible()
 		case "4":
 			m.activeTool = string(usage.ToolGemini)
+			m.ensureThreadVisible()
 		case "t":
 			if m.focusedPane == "threads" {
 				m.focusedPane = ""
@@ -181,13 +184,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end":
 			if m.canMoveThreads() {
 				m.focusedPane = "threads"
-				m.threadCursor = len(m.payload.Threads) - 1
+				m.threadCursor = len(m.filteredThreads()) - 1
 				m.ensureThreadVisible()
 			}
 		case "c":
 			if m.canMoveThreads() {
 				m.focusedPane = "threads"
-				id := m.payload.Threads[m.threadCursor].ID
+				id := m.filteredThreads()[m.threadCursor].ID
 				m.copyStatus = "copied " + id
 				return m, copyOSC52(id)
 			}
@@ -197,7 +200,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) canMoveThreads() bool {
-	return len(m.payload.Threads) > 0 && !m.searching
+	return len(m.filteredThreads()) > 0 && !m.searching
 }
 
 func (m model) scheduleRefresh() tea.Cmd {
@@ -215,6 +218,7 @@ func (m model) View() string {
 		m.width = 120
 	}
 	results := m.filteredResults()
+	threads := m.filteredThreads()
 	summary := summarize(results)
 	copy := copyFor(m.language)
 	var b strings.Builder
@@ -226,8 +230,8 @@ func (m model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.cards(summary, copy))
 	b.WriteString("\n")
-	if len(m.payload.Threads) > 0 {
-		b.WriteString(m.threadsBox(copy))
+	if len(threads) > 0 {
+		b.WriteString(m.threadsBox(threads, copy))
 		b.WriteString("\n")
 	}
 	b.WriteString(m.modelUsageBox(results, summary.total, copy))
@@ -369,7 +373,8 @@ func (m model) table(results []query.Result) string {
 }
 
 func (m *model) moveThreadCursor(delta int) {
-	if len(m.payload.Threads) == 0 {
+	threads := m.filteredThreads()
+	if len(threads) == 0 {
 		m.threadCursor = 0
 		m.threadOffset = 0
 		return
@@ -378,13 +383,25 @@ func (m *model) moveThreadCursor(delta int) {
 	if m.threadCursor < 0 {
 		m.threadCursor = 0
 	}
-	if m.threadCursor >= len(m.payload.Threads) {
-		m.threadCursor = len(m.payload.Threads) - 1
+	if m.threadCursor >= len(threads) {
+		m.threadCursor = len(threads) - 1
 	}
 	m.ensureThreadVisible()
 }
 
 func (m *model) ensureThreadVisible() {
+	threads := m.filteredThreads()
+	if len(threads) == 0 {
+		m.threadCursor = 0
+		m.threadOffset = 0
+		return
+	}
+	if m.threadCursor >= len(threads) {
+		m.threadCursor = len(threads) - 1
+	}
+	if m.threadCursor < 0 {
+		m.threadCursor = 0
+	}
 	height := m.threadViewportHeight()
 	if m.threadCursor < m.threadOffset {
 		m.threadOffset = m.threadCursor
@@ -395,6 +412,13 @@ func (m *model) ensureThreadVisible() {
 	if m.threadOffset < 0 {
 		m.threadOffset = 0
 	}
+	maxOffset := len(threads) - height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.threadOffset > maxOffset {
+		m.threadOffset = maxOffset
+	}
 }
 
 func (m model) threadViewportHeight() int {
@@ -404,8 +428,7 @@ func (m model) threadViewportHeight() int {
 	return 6
 }
 
-func (m model) threadsBox(copy localizedCopy) string {
-	threads := m.payload.Threads
+func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) string {
 	height := m.threadViewportHeight()
 	if m.threadCursor >= len(threads) {
 		m.threadCursor = len(threads) - 1
@@ -491,6 +514,33 @@ func summarize(results []query.Result) totals {
 		out.cached += result.Usage.CachedInput + result.Usage.CacheCreation
 	}
 	return out
+}
+
+func (m model) filteredThreads() []query.ThreadResult {
+	var out []query.ThreadResult
+	needle := strings.ToLower(strings.TrimSpace(m.search))
+	for _, thread := range m.payload.Threads {
+		tool := strings.ToLower(thread.Tool)
+		if m.activeTool != allTools && tool != m.activeTool {
+			continue
+		}
+		if needle != "" && !strings.Contains(threadSearchText(thread), needle) {
+			continue
+		}
+		out = append(out, thread)
+	}
+	return out
+}
+
+func threadSearchText(thread query.ThreadResult) string {
+	return strings.ToLower(strings.Join([]string{
+		thread.ID,
+		thread.Name,
+		thread.Tool,
+		thread.Model,
+		thread.Provider,
+		thread.Source,
+	}, " "))
 }
 
 func resultLabel(result query.Result) string {
@@ -660,7 +710,7 @@ func modelTableRow(modelName, req, cost, input, output, cached string) string {
 	columns := []tableColumn{
 		{value: modelName, width: modelColumnWidth, align: alignLeft},
 		{value: req, width: 8, align: alignRight},
-		{value: cost, width: 12, align: alignCurrency},
+		{value: cost, width: 12, align: alignRight},
 		{value: input, width: 12, align: alignRight},
 		{value: output, width: 12, align: alignRight},
 		{value: cached, width: 12, align: alignRight},
@@ -678,7 +728,7 @@ func threadRow(id, name, tool, modelName, provider, req, events, cost, tokens st
 		{value: provider, width: 10, align: alignLeft},
 		{value: req, width: 6, align: alignLeft},
 		{value: events, width: 6, align: alignRight},
-		{value: cost, width: 11, align: alignCurrency},
+		{value: cost, width: 11, align: alignRight},
 		{value: tokens, width: 9, align: alignRight},
 	}
 	gaps := []int{1, 1, 1, 1, 1, 1, 2, 1}
@@ -692,8 +742,6 @@ func tableRow(columns []tableColumn, gaps []int) string {
 		switch column.align {
 		case alignRight:
 			parts = append(parts, padLeft(value, column.width))
-		case alignCurrency:
-			parts = append(parts, padCurrency(value, column.width))
 		default:
 			parts = append(parts, padRight(value, column.width))
 		}
@@ -755,13 +803,6 @@ func padLeft(value string, width int) string {
 		return strings.Repeat(" ", padding) + value
 	}
 	return value
-}
-
-func padCurrency(value string, width int) string {
-	if strings.HasPrefix(value, "$") {
-		return padRight(value, width)
-	}
-	return padLeft(value, width)
 }
 
 func clamp(value, min, max int) int {
