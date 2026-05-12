@@ -321,10 +321,13 @@ func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
 		})
 	}
 	view := RenderWidth(payload, 160)
-	for _, expected := range []string{"Threads", "ID", "Name", "Provider", "Login bug", "thread-a", "┃"} {
+	for _, expected := range []string{"Threads", "ID", "Name", "Provider", "Login bug", "thread-l", "┃"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("threads box missing %q: %s", expected, view)
 		}
+	}
+	if strings.Contains(view, "thread-a") {
+		t.Fatalf("threads first page should show the highest-token rows first:\n%s", view)
 	}
 }
 
@@ -555,6 +558,22 @@ func TestThreadsFilterByActiveTool(t *testing.T) {
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "codex-thread") || strings.Contains(view, "claude-thread") {
 		t.Fatalf("threads should follow active tool filter:\n%s", view)
+	}
+}
+
+func TestThreadsDefaultOrderFollowsTokenUsage(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "low-token", Name: "Low token task", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+		{ID: "high-token", Name: "High token task", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 100}},
+	}
+	m := NewModel(payload)
+	threads := m.filteredThreads()
+	if len(threads) != 2 {
+		t.Fatalf("len(threads) = %d, want 2", len(threads))
+	}
+	if threads[0].ID != "high-token" {
+		t.Fatalf("threads should default to token usage desc, got %+v", threads)
 	}
 }
 

@@ -85,7 +85,7 @@ func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 	}
 }
 
-func TestThreadAccumulatorSortsByCreatedAtThenCost(t *testing.T) {
+func TestThreadAccumulatorSortsByTokenUsageThenCost(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
 	events := []usage.UsageEvent{
@@ -103,7 +103,7 @@ func TestThreadAccumulatorSortsByCreatedAtThenCost(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("len(threads) = %d, want 3", len(got))
 	}
-	want := []string{"newer-expensive", "newer-cheap", "older-expensive"}
+	want := []string{"older-expensive", "newer-expensive", "newer-cheap"}
 	for i, id := range want {
 		if got[i].ID != id {
 			t.Fatalf("thread order[%d] = %s, want %s; all=%+v", i, got[i].ID, id, got)

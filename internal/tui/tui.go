@@ -529,6 +529,20 @@ func (m model) filteredThreads() []query.ThreadResult {
 		}
 		out = append(out, thread)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		leftTokens := out[i].Usage.NormalizedTotal()
+		rightTokens := out[j].Usage.NormalizedTotal()
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+		if out[i].CostUSD != out[j].CostUSD {
+			return out[i].CostUSD > out[j].CostUSD
+		}
+		if !out[i].LastActiveAt.Equal(out[j].LastActiveAt) {
+			return out[i].LastActiveAt.After(out[j].LastActiveAt)
+		}
+		return out[i].Tool+"|"+out[i].ID < out[j].Tool+"|"+out[j].ID
+	})
 	return out
 }
 

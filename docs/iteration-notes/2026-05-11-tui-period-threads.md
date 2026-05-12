@@ -68,11 +68,13 @@ After PR #13 merged, several TUI polish releases landed on `main`:
 - `v0.1.19`: fixed additional TUI layout issues: period range uses ASCII `~`, section gaps are smaller, Threads renders a real scrollbar when overflowing, cursor movement updates the scrollbar offset, and regression coverage confirms TUI Threads respects the selected period window.
 - `v0.1.20`: compacted the dashboard so it fits better in a terminal viewport: toolbar is 3 lines, summary cards are 4 lines, Threads is capped at 6 visible rows, and Model Usage caps provider-heavy output to the top rows instead of filling the screen.
 - `v0.1.21`: aligned cost columns more consistently across the TUI and standardized Claude-facing docs wording.
-- Pending `v0.1.22` bugfix scope: Threads must respect the active tool filter/search state, cursor and copy actions must operate on the filtered thread list, and `Cost` in Model Usage and Threads should be truly right-aligned rather than keeping `$` left-pinned.
+- `v0.1.22`: fixed Threads filtering so active tool/search state, cursor movement, copy actions, and scrollbar math operate on the filtered thread list, and aligned `Cost` by its rendered end edge in Model Usage and Threads.
+- Pending `v0.1.23` feature scope: Threads should default to descending token usage order in both `summary --threads` payloads and the TUI filtered view.
 
 Current TUI layout constraints to preserve:
 
 - Threads filtering must stay in sync with the active tool tabs and search term. Any cursor movement, Home/End jump, copy action, and scrollbar math should operate on the filtered thread slice instead of the unfiltered payload.
+- Threads default sort is descending token usage. Cost, activity time, and `tool|id` are only tie-breakers.
 - `Cost` should be treated like the other numeric columns: right-aligned by its rendered end edge in both Model Usage and Threads, even when values include `$`.
 
 - Toolbar should stay compact with no vertical padding.
@@ -104,8 +106,8 @@ Follow-up validation used during the v0.1.17-v0.1.20 polish releases:
 - `make build`
 - `make validate` before release bumps
 - `GITHUB_REF_NAME=vX.Y.Z GITHUB_REF_TYPE=tag go run ./tools/version --check-ref`
-- GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, `v0.1.20`, and `v0.1.21` completed successfully.
-- Current `v0.1.22` bugfix validation target: `go test ./internal/tui ./internal/cli`, `make test`, `make build`, `make validate`, and `git diff --check` before tagging.
+- GitHub Release workflows for `v0.1.16`, `v0.1.17`, `v0.1.18`, `v0.1.19`, `v0.1.20`, `v0.1.21`, and `v0.1.22` completed successfully.
+- Current `v0.1.23` feature validation target: `go test ./internal/query ./internal/tui`, `make test`, `make build`, `make validate`, and `git diff --check` before tagging.
 
 GitHub PR checks:
 
