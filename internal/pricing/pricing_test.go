@@ -9,7 +9,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
-func TestCalculateUsesDefaultPricesAndMultiplier(t *testing.T) {
+func TestCalculateUsesCCSwitchCostFormulaAndMultiplier(t *testing.T) {
 	catalog := Catalog{
 		Models: []ModelPrice{{
 			Match:               "gpt-5.4",
@@ -30,7 +30,7 @@ func TestCalculateUsesDefaultPricesAndMultiplier(t *testing.T) {
 			Reasoning:     100_000,
 		},
 	})
-	if got, want := cost.USD, 16.9; got != want {
+	if got, want := cost.USD, 12.9; got != want {
 		t.Fatalf("cost = %.4f, want %.4f", got, want)
 	}
 	if cost.Currency != "USD" || cost.Multiplier != 2 || cost.Source != "configured" {
@@ -60,7 +60,7 @@ func TestCostForCodexDoesNotChargeCachedInputAtFullInputRate(t *testing.T) {
 	}
 }
 
-func TestCostForClaudeKeepsInputAndCacheSeparate(t *testing.T) {
+func TestCostForClaudeDoesNotChargeCachedInputAtFullInputRate(t *testing.T) {
 	catalog := Catalog{
 		Models: []ModelPrice{{
 			Match:                 "claude-sonnet-4",
@@ -82,7 +82,7 @@ func TestCostForClaudeKeepsInputAndCacheSeparate(t *testing.T) {
 			CacheCreation1h: 1_000_000,
 		},
 	})
-	if got, want := cost.USD, 45.9; got != want {
+	if got, want := cost.USD, 15.9; got != want {
 		t.Fatalf("cost = %.4f, want %.4f", got, want)
 	}
 }
@@ -97,7 +97,7 @@ func TestDefaultCatalogPricesClaudeOpus47BeforeOpus4(t *testing.T) {
 			CachedInput: 66_152_448,
 		},
 	})
-	if got, want := cost.USD, 44.976014; math.Abs(got-want) > 0.000001 {
+	if got, want := cost.USD, 38.574599; math.Abs(got-want) > 0.000001 {
 		t.Fatalf("cost = %.6f, want %.6f", got, want)
 	}
 }
@@ -113,7 +113,7 @@ func TestCostForGemini25ProUsesAboveThresholdPricing(t *testing.T) {
 			CachedInput: 50_000,
 		},
 	})
-	if got, want := cost.USD, 2.1375; math.Abs(got-want) > 0.000001 {
+	if got, want := cost.USD, 2.0125; math.Abs(got-want) > 0.000001 {
 		t.Fatalf("cost = %.4f, want %.4f", got, want)
 	}
 }

@@ -78,6 +78,44 @@
 - 未定价事件
 - 未识别的 model/provider 组合
 
+## 2026-05-13 用量准确性 BUG 修复
+
+发版目标：`v0.1.28`。
+
+用户报告 `summary --period yesterday` 与本地已验证的 CC-Switch 结果不一致，对应窗口是 `2026-05-12 00:00 ~ 2026-05-13 00:00`。本次 BUG 修复把 CC-Switch 作为参考产品口径。
+
+根因：
+
+- Codex session 日志里的 `total_token_usage` 是累计计数器。`aitok` 之前把每条 `last_token_usage` 当作独立请求，只去掉完全重复行，导致所有 period 下的 token、请求数、缓存 token 和成本都会漂移。
+- Claude session 日志里同一个 `message.id` 可能出现多行；没有 `stop_reason` 的中间行不是最终 API 调用。`aitok` 之前把这些中间行也计入统计。
+- 模型名没有稳定归一化 provider 前缀和日期后缀。
+- 成本公式仍会让非 Codex 工具的 cached input 走完整 input 价格，并把 Codex `reasoning_output_tokens` 当作 output 成本计费。CC-Switch 的成本公式基于 `(input_tokens - cache_read_tokens)`、`output_tokens`、`cache_read_tokens` 和 `cache_creation_tokens`。
+
+修复：
+
+- Codex 优先读取 `total_token_usage`，按文件内累计值计算 delta，跳过零增量边界行；只有缺少累计值时才回退到 `last_token_usage`，并补充扫描 `~/.codex/archived_sessions`。
+- Claude 按 `message.id` 聚合，只保留带 `stop_reason` 的最终行；最终性相同时保留 output 更大的行，并跳过未完成或零 output 行。
+- Codex 和 Claude 模型名统一转小写、去 provider 前缀、去日期后缀。
+- 离线成本估算改为 CC-Switch 公式，并且不再把 reasoning token 叠加进 output 成本。
+
+修复后的参考 smoke：
+
+- Period：`yesterday`，窗口 `2026-05-12T00:00:00+08:00` 到 `2026-05-13T00:00:00+08:00`。
+- 请求数：`875`。
+- 总 token：`60,718,109`；input `60,398,385`；output `319,724`。
+- 缓存 token：`103,962,752`。
+- 成本：`$75.8474705`，展示为 `$75.8475`。
+- 模型总量：`claude-opus-4-7=852,249`、`gpt-5.5=43,968,237`、`gpt-5.4=15,897,623`。
+
+验证：
+
+- `go test ./internal/pricing ./internal/sources`。
+- `make test`。
+- `make build`。
+- `git diff --check`。
+- `go run ./cmd/aitok summary --period yesterday --format json --no-version-check`。
+- `go run ./cmd/aitok summary --period this-week --format json --no-version-check`。
+
 ## 工具和缓存决策
 
 早期验证使用 `/tmp` 或 `/private/tmp` 存 Go cache，只是因为沙箱拒绝写入 Go 默认的 `~/Library/Caches`。

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
@@ -44,16 +45,37 @@ func (c Claude) Scan(ctx context.Context, handle func(usage.UsageEvent) error) e
 		if meta.Skip {
 			return nil
 		}
+		events := map[string]usage.UsageEvent{}
 		return readJSONLines(ctx, path, func(obj map[string]any) error {
 			event, ok := c.parseEvent(path, obj, meta)
 			if !ok {
 				return nil
 			}
-			if _, exists := seen[event.ID]; exists {
-				return nil
+			existing, exists := events[event.ID]
+			if !exists || shouldReplaceClaudeEvent(existing, event) {
+				events[event.ID] = event
 			}
-			seen[event.ID] = struct{}{}
-			return handle(event)
+			return nil
+		}, func() error {
+			ids := make([]string, 0, len(events))
+			for id := range events {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			for _, id := range ids {
+				event := events[id]
+				if !eventIsCompleteClaudeResponse(event) {
+					continue
+				}
+				if _, exists := seen[event.ID]; exists {
+					continue
+				}
+				seen[event.ID] = struct{}{}
+				if err := handle(event); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 	})
 	return err
@@ -91,8 +113,11 @@ func (c Claude) parseEvent(path string, obj map[string]any, meta threadMeta) (us
 	if tokens.NormalizedTotal() == 0 && tokens.CachedInput == 0 {
 		return usage.UsageEvent{}, false
 	}
-	model := usage.Unknown(stringValue(msg["model"]))
-	id := stringValue(obj["uuid"])
+	model := usage.Unknown(normalizeClaudeModel(stringValue(msg["model"])))
+	id := stringValue(msg["id"])
+	if id == "" {
+		id = stringValue(obj["uuid"])
+	}
 	if id == "" {
 		id = claudeHash(ts, model, tokens)
 	}
@@ -110,7 +135,26 @@ func (c Claude) parseEvent(path string, obj map[string]any, meta threadMeta) (us
 		ThreadCreatedAt:    meta.CreatedAt,
 		ThreadLastActiveAt: meta.LastActiveAt,
 		Usage:              tokens,
+		Complete:           stringValue(msg["stop_reason"]) != "",
 	}, true
+}
+
+func eventIsCompleteClaudeResponse(event usage.UsageEvent) bool {
+	return event.Complete && event.Usage.Output > 0
+}
+
+func shouldReplaceClaudeEvent(existing, next usage.UsageEvent) bool {
+	if next.Complete && !existing.Complete {
+		return true
+	}
+	if next.Complete == existing.Complete {
+		return next.Usage.Output > existing.Usage.Output
+	}
+	return false
+}
+
+func normalizeClaudeModel(raw string) string {
+	return normalizeCodexModel(raw)
 }
 
 func claudeHash(ts time.Time, model string, tokens usage.TokenUsage) string {

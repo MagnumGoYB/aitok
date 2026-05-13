@@ -56,6 +56,7 @@ type UsageEvent struct {
 	ThreadSource       string     `json:"thread_source,omitempty"`
 	ThreadCreatedAt    time.Time  `json:"thread_created_at,omitempty"`
 	ThreadLastActiveAt time.Time  `json:"thread_last_active_at,omitempty"`
+	Complete           bool       `json:"-"`
 	Usage              TokenUsage `json:"usage"`
 }
 

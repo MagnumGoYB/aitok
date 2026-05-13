@@ -102,7 +102,7 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 	cacheMake1h := cacheMake1hPrice(price)
 	cacheCreation5m, cacheCreation1h, cacheCreationOther := cacheCreationParts(event.Usage)
 	usd := perMillion(billableInput(event), price.InputUSDPerMTok) +
-		perMillion(event.Usage.Output+event.Usage.Reasoning, price.OutputUSDPerMTok) +
+		perMillion(event.Usage.Output, price.OutputUSDPerMTok) +
 		perMillion(event.Usage.CachedInput, price.CacheHitUSDPerMTok) +
 		perMillion(cacheCreation5m+cacheCreationOther, cacheMake) +
 		perMillion(cacheCreation1h, cacheMake1h)
@@ -116,9 +116,6 @@ func (c Catalog) Covers(event usage.UsageEvent) bool {
 
 func billableInput(event usage.UsageEvent) int64 {
 	input := event.Usage.Input
-	if event.Tool != usage.ToolCodex {
-		return input
-	}
 	cached := event.Usage.CachedInput + event.Usage.CacheCreation
 	if input <= cached {
 		return 0

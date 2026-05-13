@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-func readJSONLines(ctx context.Context, path string, handle func(map[string]any) error) error {
+func readJSONLines(ctx context.Context, path string, handle func(map[string]any) error, done ...func() error) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -32,6 +32,13 @@ func readJSONLines(ctx context.Context, path string, handle func(map[string]any)
 			}
 		}
 		if errors.Is(err, io.EOF) {
+			for _, fn := range done {
+				if fn != nil {
+					if doneErr := fn(); doneErr != nil {
+						return doneErr
+					}
+				}
+			}
 			return nil
 		}
 		if err != nil {

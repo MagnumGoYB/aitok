@@ -78,6 +78,44 @@ Future pricing work should preserve the distinction between:
 - unpriced events
 - unrecognized model/provider combinations
 
+## 2026-05-13 Usage Accuracy Bugfix
+
+Release target: `v0.1.28`.
+
+The user reported that `summary --period yesterday` did not match the locally verified CC-Switch result for `2026-05-12 00:00 ~ 2026-05-13 00:00`. CC-Switch was treated as the reference product contract for this bugfix.
+
+Root causes:
+
+- Codex session logs expose `total_token_usage` as a cumulative counter. `aitok` was treating each `last_token_usage` row as an independent request and only deduplicating exact repeats, so period totals, request counts, cache totals, and costs drifted across all periods.
+- Claude session logs can contain multiple rows for the same `message.id`; intermediate rows without `stop_reason` are not final API calls. `aitok` was counting those rows.
+- Model names were not normalized consistently for provider prefixes or date suffixes.
+- The cost formula still charged cached input at full input price for non-Codex tools and counted Codex `reasoning_output_tokens` as billable output. CC-Switch calculates cost from `(input_tokens - cache_read_tokens)`, `output_tokens`, `cache_read_tokens`, and `cache_creation_tokens`.
+
+Fix:
+
+- Codex now prefers `total_token_usage`, computes a per-file delta, skips zero-delta boundary rows, falls back to `last_token_usage` only when cumulative totals are absent, and scans `~/.codex/archived_sessions`.
+- Claude now groups rows by `message.id`, keeps the final row with `stop_reason`, chooses the larger output row when finality is tied, and skips incomplete or zero-output rows.
+- Codex and Claude model names are normalized by lowercasing, stripping provider prefixes, and stripping date suffixes.
+- Offline cost estimation now follows the CC-Switch formula and does not add reasoning tokens into output cost.
+
+Reference smoke after the fix:
+
+- Period: `yesterday`, window `2026-05-12T00:00:00+08:00` to `2026-05-13T00:00:00+08:00`.
+- Requests: `875`.
+- Total tokens: `60,718,109`; input `60,398,385`; output `319,724`.
+- Cached tokens: `103,962,752`.
+- Cost: `$75.8474705`, displayed as `$75.8475`.
+- Model totals: `claude-opus-4-7=852,249`, `gpt-5.5=43,968,237`, `gpt-5.4=15,897,623`.
+
+Validation:
+
+- `go test ./internal/pricing ./internal/sources`.
+- `make test`.
+- `make build`.
+- `git diff --check`.
+- `go run ./cmd/aitok summary --period yesterday --format json --no-version-check`.
+- `go run ./cmd/aitok summary --period this-week --format json --no-version-check`.
+
 ## Tooling And Cache Decision
 
 Earlier validation used `/tmp` or `/private/tmp` for Go caches only because the sandbox denied Go default cache writes under `~/Library/Caches`.

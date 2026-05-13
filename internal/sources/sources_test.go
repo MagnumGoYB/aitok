@@ -14,7 +14,7 @@ func TestClaudeReadsJSONLAndDeduplicates(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude", "projects", "repo")
 	mustMkdir(t, dir)
-	line := `{"type":"assistant","uuid":"same","timestamp":"2026-05-08T01:02:03Z","cwd":"/repo","message":{"model":"anthropic/claude-sonnet-4.5","usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}}}`
+	line := `{"type":"assistant","uuid":"same","timestamp":"2026-05-08T01:02:03Z","cwd":"/repo","message":{"id":"msg_same","model":"anthropic/claude-sonnet-4.5","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}}}`
 	mustWrite(t, filepath.Join(dir, "session.jsonl"), line+"\n"+line+"\n"+"{bad json}\n")
 	events, err := NewClaude(Options{Home: home}).Read(context.Background())
 	if err != nil {
@@ -23,8 +23,28 @@ func TestClaudeReadsJSONLAndDeduplicates(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("len(events) = %d, want 1", len(events))
 	}
-	if events[0].Model != "anthropic/claude-sonnet-4.5" || events[0].Usage.Input != 10 || events[0].Usage.CachedInput != 3 || events[0].Usage.CacheCreation5m != 1 || events[0].Usage.CacheCreation1h != 3 {
+	if events[0].Model != "claude-sonnet-4.5" || events[0].Usage.Input != 10 || events[0].Usage.CachedInput != 3 || events[0].Usage.CacheCreation5m != 1 || events[0].Usage.CacheCreation1h != 3 {
 		t.Fatalf("unexpected event: %+v", events[0])
+	}
+}
+
+func TestClaudeKeepsFinalStopReasonEntryByMessageID(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude", "projects", "repo")
+	mustMkdir(t, dir)
+	body := `{"type":"assistant","uuid":"early","timestamp":"2026-05-08T01:02:03Z","cwd":"/repo","message":{"id":"msg_1","model":"anthropic/claude-opus-4-7-20260501","usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":3}}}` + "\n" +
+		`{"type":"assistant","uuid":"final","timestamp":"2026-05-08T01:02:04Z","cwd":"/repo","message":{"id":"msg_1","model":"anthropic/claude-opus-4-7-20260501","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":3}}}` + "\n" +
+		`{"type":"assistant","uuid":"unfinished","timestamp":"2026-05-08T01:02:05Z","cwd":"/repo","message":{"id":"msg_2","model":"claude-opus-4-7","usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "session.jsonl"), body)
+	events, err := NewClaude(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ID != "msg_1" || events[0].Model != "claude-opus-4-7" || events[0].Usage.Output != 5 {
+		t.Fatalf("unexpected final event: %+v", events[0])
 	}
 }
 
@@ -73,15 +93,15 @@ func TestCodexAssociatesContextWithTokenCounts(t *testing.T) {
 	}
 }
 
-func TestCodexKeepsDistinctTokenCountsWithinTurn(t *testing.T) {
+func TestCodexUsesTotalTokenUsageDeltasWithinTurn(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
 	mustMkdir(t, dir)
 	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}` + "\n" +
-		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
-		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}` + "\n" +
-		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n" +
-		`{"type":"event_msg","timestamp":"2026-05-08T01:00:04Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"openai/GPT-5.4-2026-03-05","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":4,"output_tokens":2,"total_tokens":12},"last_token_usage":{"input_tokens":10,"cached_input_tokens":4,"output_tokens":2,"total_tokens":12}}}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"cached_input_tokens":10,"output_tokens":6,"total_tokens":36},"last_token_usage":{"input_tokens":20,"cached_input_tokens":6,"output_tokens":4,"total_tokens":24}}}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:04Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"cached_input_tokens":10,"output_tokens":6,"total_tokens":36},"last_token_usage":{"input_tokens":20,"cached_input_tokens":6,"output_tokens":4,"total_tokens":24}}}}` + "\n"
 	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
 	events, err := NewCodex(Options{Home: home}).Read(context.Background())
 	if err != nil {
@@ -90,14 +110,48 @@ func TestCodexKeepsDistinctTokenCountsWithinTurn(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Usage.Input != 10 || events[0].Usage.Output != 2 {
+	if events[0].Model != "gpt-5.4" || events[0].Usage.Input != 10 || events[0].Usage.Output != 2 || events[0].Usage.CachedInput != 4 {
 		t.Fatalf("unexpected first token count: %+v", events[0])
 	}
-	if events[1].Usage.Input != 20 || events[1].Usage.Output != 4 {
-		t.Fatalf("unexpected second token count: %+v", events[1])
+	if events[1].Usage.Input != 20 || events[1].Usage.Output != 4 || events[1].Usage.CachedInput != 6 {
+		t.Fatalf("unexpected second delta token count: %+v", events[1])
 	}
 	if got := events[1].Timestamp.Format("15:04:05"); got != "01:00:03" {
 		t.Fatalf("timestamp = %s, want first duplicate token_count timestamp", got)
+	}
+}
+
+func TestCodexFallsBackToLastTokenUsageWhenTotalMissing(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Usage.Input != 20 || events[0].Usage.Output != 4 {
+		t.Fatalf("unexpected fallback token count: %+v", events)
+	}
+}
+
+func TestCodexReadsArchivedSessions(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "archived_sessions")
+	mustMkdir(t, dir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"archive-thread","model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":4}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ThreadID != "archive-thread" {
+		t.Fatalf("unexpected archived events: %+v", events)
 	}
 }
 
