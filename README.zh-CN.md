@@ -96,13 +96,13 @@ TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也
 --group-by tool,model,provider,day,cwd
 ```
 
-报告会返回请求数量、Token 总量、缓存 Token 和预估 USD 成本。若需要在 summary payload 中包含匹配的本机会话列表，传入 `--threads`：
+报告会返回请求数量、Token 总量、缓存 Token、预估 USD 成本，以及每个 `model/provider` 分组实际匹配到的价格。默认离线价格表来自官方公开价格快照，显示为 `official`；命中 `~/.aitok/pricing.json` 本地覆盖时显示为 `custom`。如果自定义分组合并了多种价格定义，则价格显示为 `mixed`。若需要在 summary payload 中包含匹配的本机会话列表，传入 `--threads`：
 
 ```bash
 aitok summary --period today --threads --format json
 ```
 
-Thread 行包含 ID、名称、tool、model、provider、Token 用量、requests、events、source 和预估 USD 成本。查询输出默认按 token 用量降序排列，传入 `--sort cost` 后按成本降序排列。标题只读取本地日志，优先级为 custom title、AI 总结标题、首条真实用户消息、cwd basename、short ID。
+Thread 行包含 ID、名称、tool、model、provider、Token 用量、requests、events、source、预估 USD 成本，以及可用时的匹配价格详情。查询输出默认按 token 用量降序排列，传入 `--sort cost` 后按成本降序排列。标题只读取本地日志，优先级为 custom title、AI 总结标题、首条真实用户消息、cwd basename、short ID。
 
 成本默认使用基于官方公开价格快照的离线 model 价格表，也支持本地覆盖：
 
@@ -188,6 +188,7 @@ aitok setup gemini
 make setup
 make check
 make test
+make test-packages PKGS="./internal/query ./internal/report"
 make test-harness
 make vet
 make build

@@ -40,6 +40,7 @@ Out of scope unless explicitly requested:
 - Format and static checks: `make check`
 - Enable local git hooks: `make setup`
 - Full tests: `make test`
+- Targeted package tests: `make test-packages PKGS="./internal/query ./internal/report"`
 - Harness-only tests: `make test-harness`
 - Vet: `make vet`
 - Build: `make build`
@@ -47,7 +48,7 @@ Out of scope unless explicitly requested:
 - Full local validation: `make validate`
 - PR metadata check: `make validate-pr-body`
 - Commit message check: `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
-- Avoid raw `go run` in sandboxed agent sessions; use `make run ARGS="..."` so Go build/cache output stays under `.cache/aitok`.
+- Avoid raw `go test`, `go vet`, `go build`, or `go run` in sandboxed agent sessions; use the Makefile targets so Go build/cache output stays under `.cache/aitok`. For targeted package tests, use `make test-packages PKGS="./internal/query ./internal/report"` instead of raw `go test ./internal/query ./internal/report`.
 
 ## 3) Iteration Self-Constraint Protocol
 

@@ -40,6 +40,7 @@
 - 格式和静态检查：`make check`
 - 启用本地 git hooks：`make setup`
 - 全量测试：`make test`
+- 指定包测试：`make test-packages PKGS="./internal/query ./internal/report"`
 - Harness-only 测试：`make test-harness`
 - Vet：`make vet`
 - 构建：`make build`
@@ -47,7 +48,7 @@
 - 完整本地验证：`make validate`
 - PR 元数据校验：`make validate-pr-body`
 - 提交消息检查：`make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
-- 沙箱内 agent session 避免直接使用 `go run`；使用 `make run ARGS="..."`，让 Go build/cache 输出固定落在 `.cache/aitok`。
+- 沙箱内 agent session 避免直接使用 `go test`、`go vet`、`go build` 或 `go run`；统一使用 Makefile 目标，让 Go build/cache 输出固定落在 `.cache/aitok`。指定包测试使用 `make test-packages PKGS="./internal/query ./internal/report"`，不要直接运行 raw `go test ./internal/query ./internal/report`。
 
 ## 3) 迭代前自我约束流程
 

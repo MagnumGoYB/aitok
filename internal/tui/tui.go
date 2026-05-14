@@ -365,13 +365,14 @@ func (m model) chart(results []query.Result, max int64) string {
 
 func (m model) table(results []query.Result, copy localizedCopy) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render(modelTableRow(copy.headerModel, copy.headerReq, copy.headerCost, copy.headerTokens, copy.headerInput, copy.headerOutput, copy.headerCached)))
+	b.WriteString(mutedStyle.Render(modelTableRow(copy.headerModel, copy.headerReq, copy.headerCost, copy.headerPrice, copy.headerTokens, copy.headerInput, copy.headerOutput, copy.headerCached)))
 	b.WriteString("\n")
 	for _, result := range results {
 		b.WriteString(modelTableRow(
 			resultLabel(result),
 			fmt.Sprint(result.Requests),
 			report.FormatUSD(result.CostUSD),
+			priceLabel(result.Price, result.PriceSource),
 			compact(result.Usage.NormalizedTotal()),
 			compact(result.Usage.Input),
 			compact(result.Usage.Output),
@@ -612,6 +613,7 @@ type localizedCopy struct {
 	headerProvider string
 	headerReq      string
 	headerCost     string
+	headerPrice    string
 	headerTokens   string
 	headerInput    string
 	headerOutput   string
@@ -650,6 +652,7 @@ func copyFor(language Language) localizedCopy {
 			headerProvider: "服务商",
 			headerReq:      "请求",
 			headerCost:     "成本",
+			headerPrice:    "价格",
 			headerTokens:   "Tokens",
 			headerInput:    "输入",
 			headerOutput:   "输出",
@@ -679,6 +682,7 @@ func copyFor(language Language) localizedCopy {
 		headerProvider: "Provider",
 		headerReq:      "Req",
 		headerCost:     "Cost",
+		headerPrice:    "Price",
 		headerTokens:   "Tokens",
 		headerInput:    "Input",
 		headerOutput:   "Output",
@@ -890,18 +894,40 @@ func modelUsageBarStyle(index, total int) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(palette[scaled])
 }
 
-func modelTableRow(modelName, req, cost, tokens, input, output, cached string) string {
+func modelTableRow(modelName, req, cost, price, tokens, input, output, cached string) string {
 	columns := []tableColumn{
-		{value: modelName, width: modelColumnWidth, align: alignLeft},
-		{value: req, width: 8, align: alignRight},
-		{value: cost, width: 12, align: alignRight},
-		{value: tokens, width: 12, align: alignRight},
-		{value: input, width: 12, align: alignRight},
-		{value: output, width: 12, align: alignRight},
-		{value: cached, width: 12, align: alignRight},
+		{value: modelName, width: 26, align: alignLeft},
+		{value: req, width: 5, align: alignRight},
+		{value: cost, width: 10, align: alignRight},
+		{value: tableText(price, 29), width: 29, align: alignLeft},
+		{value: tokens, width: 8, align: alignRight},
+		{value: input, width: 8, align: alignRight},
+		{value: output, width: 7, align: alignRight},
+		{value: cached, width: 7, align: alignRight},
 	}
-	gaps := []int{2, 3, 3, 1, 1, 1}
+	gaps := []int{1, 1, 1, 1, 1, 1, 1}
 	return tableRow(columns, gaps)
+}
+
+func priceLabel(price *query.Price, source string) string {
+	if price == nil {
+		return sourceLabel(source)
+	}
+	if price.Source == "mixed" || price.Source == "unpriced" {
+		return price.Source
+	}
+	return fmt.Sprintf("%s in=%s out=%s", sourceLabel(price.Source), rateLabel(price.InputUSDPerMTok), rateLabel(price.OutputUSDPerMTok))
+}
+
+func sourceLabel(source string) string {
+	if strings.TrimSpace(source) == "" {
+		return "unknown"
+	}
+	return source
+}
+
+func rateLabel(value float64) string {
+	return fmt.Sprintf("$%.4g/M", value)
 }
 
 func threadRow(id, name, tool, modelName, provider, req, cost, tokens string) string {

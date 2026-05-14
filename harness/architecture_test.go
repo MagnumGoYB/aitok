@@ -22,6 +22,7 @@ func TestHarnessDocsAndCommandsStayAligned(t *testing.T) {
 		"make setup",
 		"make check",
 		"make test",
+		"make test-packages",
 		"make test-harness",
 		"make vet",
 		"make build",
@@ -475,10 +476,13 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	prTemplate := read(t, ".github", "pull_request_template.md")
 	gitignore := read(t, ".gitignore")
 
-	for _, target := range []string{"check:", "test:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "validate:"} {
+	for _, target := range []string{"check:", "test:", "test-packages:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "validate:"} {
 		if !strings.Contains(makefile, target) {
 			t.Fatalf("Makefile missing %s", target)
 		}
+	}
+	if !strings.Contains(makefile, `@test -n "$(PKGS)"`) || !strings.Contains(makefile, "$(GO) test $(PKGS)") {
+		t.Fatal("Makefile test-packages must require PKGS and run targeted packages with repository-local Go caches")
 	}
 	for _, command := range []string{"make validate", "make test-harness"} {
 		if !strings.Contains(ci, command) {
@@ -511,6 +515,18 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	}
 	if !strings.Contains(makefile, "AITOK_CACHE_DIR ?= $(CURDIR)/.cache/aitok") {
 		t.Fatal("Makefile must default Go caches to the repository-local ignored cache directory")
+	}
+	for name, content := range map[string]string{
+		"AGENTS.md":                         read(t, "AGENTS.md"),
+		"AGENTS.zh-CN.md":                   read(t, "AGENTS.zh-CN.md"),
+		"docs/harness-engineering.md":       read(t, "docs", "harness-engineering.md"),
+		"docs/zh-CN/harness-engineering.md": read(t, "docs", "zh-CN", "harness-engineering.md"),
+	} {
+		for _, expected := range []string{"make test-packages", "go test", ".cache/aitok"} {
+			if !strings.Contains(content, expected) {
+				t.Fatalf("%s must keep sandboxed Go cache guidance visible with %s", name, expected)
+			}
+		}
 	}
 	if !strings.Contains(makefile, "gofmt -l $$(git ls-files '*.go')") {
 		t.Fatal("Makefile check must format only tracked Go source files")

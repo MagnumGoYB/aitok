@@ -96,7 +96,7 @@ Grouping:
 --group-by tool,model,provider,day,cwd
 ```
 
-Reports include request count, token totals, cache tokens, and estimated USD cost. Cost uses an offline default model price catalog based on an official public pricing snapshot and can be overridden locally:
+Reports include request count, token totals, cache tokens, estimated USD cost, and the matched price used for each `model/provider` group. Cost uses an offline default model price catalog based on an official public pricing snapshot and can be overridden locally. Rows backed by the bundled catalog show `official`; rows matched by `~/.aitok/pricing.json` show `custom`. If a custom grouping combines multiple price definitions, the price is shown as `mixed`.
 
 To include matching local sessions in the summary payload, pass `--threads`:
 
@@ -104,7 +104,7 @@ To include matching local sessions in the summary payload, pass `--threads`:
 aitok summary --period today --threads --format json
 ```
 
-Thread rows include ID, name, tool, model, provider, token usage, requests, events, source, and estimated USD cost. Query output sorts by descending token usage unless `--sort cost` is passed. The title comes from local logs only, preferring custom title, AI summary title, first real user message, cwd basename, then short ID.
+Thread rows include ID, name, tool, model, provider, token usage, requests, events, source, estimated USD cost, and matched price details when available. Query output sorts by descending token usage unless `--sort cost` is passed. The title comes from local logs only, preferring custom title, AI summary title, first real user message, cwd basename, then short ID.
 
 ```json
 {
@@ -188,6 +188,7 @@ This configures local telemetry output and sets `logPrompts=false` so prompts ar
 make setup
 make check
 make test
+make test-packages PKGS="./internal/query ./internal/report"
 make test-harness
 make vet
 make build

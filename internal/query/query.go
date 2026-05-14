@@ -26,16 +26,33 @@ const (
 )
 
 type Cost struct {
-	USD float64 `json:"usd"`
+	USD                   float64 `json:"usd"`
+	Source                string  `json:"source,omitempty"`
+	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`
+	OutputUSDPerMTok      float64 `json:"output_usd_per_mtok,omitempty"`
+	CacheHitUSDPerMTok    float64 `json:"cache_hit_usd_per_mtok,omitempty"`
+	CacheMakeUSDPerMTok   float64 `json:"cache_make_usd_per_mtok,omitempty"`
+	CacheMake1hUSDPerMTok float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
+}
+
+type Price struct {
+	Source                string  `json:"source"`
+	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`
+	OutputUSDPerMTok      float64 `json:"output_usd_per_mtok,omitempty"`
+	CacheHitUSDPerMTok    float64 `json:"cache_hit_usd_per_mtok,omitempty"`
+	CacheMakeUSDPerMTok   float64 `json:"cache_make_usd_per_mtok,omitempty"`
+	CacheMake1hUSDPerMTok float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
 }
 
 type Result struct {
-	Key      map[string]string `json:"key"`
-	Events   int               `json:"events"`
-	Requests int               `json:"requests"`
-	CostUSD  float64           `json:"cost_usd"`
-	Usage    usage.TokenUsage  `json:"usage"`
-	Examples map[string]string `json:"examples,omitempty"`
+	Key         map[string]string `json:"key"`
+	Events      int               `json:"events"`
+	Requests    int               `json:"requests"`
+	CostUSD     float64           `json:"cost_usd"`
+	PriceSource string            `json:"price_source,omitempty"`
+	Price       *Price            `json:"price,omitempty"`
+	Usage       usage.TokenUsage  `json:"usage"`
+	Examples    map[string]string `json:"examples,omitempty"`
 }
 
 type ThreadResult struct {
@@ -50,6 +67,8 @@ type ThreadResult struct {
 	Events       int              `json:"events"`
 	Requests     int              `json:"requests"`
 	CostUSD      float64          `json:"cost_usd"`
+	PriceSource  string           `json:"price_source,omitempty"`
+	Price        *Price           `json:"price,omitempty"`
 	Usage        usage.TokenUsage `json:"usage"`
 }
 
@@ -71,9 +90,11 @@ type ThreadAccumulator struct {
 }
 
 type threadBucket struct {
-	result    ThreadResult
-	models    map[string]struct{}
-	providers map[string]struct{}
+	result       ThreadResult
+	models       map[string]struct{}
+	providers    map[string]struct{}
+	priceSources map[string]struct{}
+	price        *Price
 }
 
 func DefaultGroupBy() GroupBy {
@@ -149,7 +170,10 @@ func (a *Accumulator) Add(event usage.UsageEvent) {
 	a.buckets[bucketKey].Requests++
 	a.buckets[bucketKey].Usage = a.buckets[bucketKey].Usage.Add(event.Usage)
 	if a.costFor != nil {
-		a.buckets[bucketKey].CostUSD += a.costFor(event).USD
+		cost := a.costFor(event)
+		a.buckets[bucketKey].CostUSD += cost.USD
+		a.buckets[bucketKey].PriceSource = mergePriceSource(a.buckets[bucketKey].PriceSource, cost.Source)
+		a.buckets[bucketKey].Price = mergePrice(a.buckets[bucketKey].Price, cost)
 	}
 	if event.CWD != "" && a.buckets[bucketKey].Examples["cwd"] == "" {
 		a.buckets[bucketKey].Examples["cwd"] = event.CWD
@@ -199,8 +223,9 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 				CreatedAt:    event.ThreadCreatedAt,
 				LastActiveAt: event.ThreadLastActiveAt,
 			},
-			models:    map[string]struct{}{},
-			providers: map[string]struct{}{},
+			models:       map[string]struct{}{},
+			providers:    map[string]struct{}{},
+			priceSources: map[string]struct{}{},
 		}
 		a.buckets[string(event.Tool)+"|"+id] = bucket
 	}
@@ -208,7 +233,12 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	bucket.result.Requests++
 	bucket.result.Usage = bucket.result.Usage.Add(event.Usage)
 	if a.costFor != nil {
-		bucket.result.CostUSD += a.costFor(event).USD
+		cost := a.costFor(event)
+		bucket.result.CostUSD += cost.USD
+		if source := priceSourceLabel(cost.Source); source != "" {
+			bucket.priceSources[source] = struct{}{}
+		}
+		bucket.price = mergePrice(bucket.price, cost)
 	}
 	if bucket.result.Name == "unknown" && event.ThreadName != "" {
 		bucket.result.Name = event.ThreadName
@@ -236,6 +266,8 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		thread := result.result
 		thread.Model = summarizeValues(result.models, "unknown")
 		thread.Provider = summarizeProvider(result.providers, thread.Provider)
+		thread.PriceSource = summarizeValues(result.priceSources, "")
+		thread.Price = result.price
 		results = append(results, thread)
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -256,6 +288,70 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		return results[i].Tool+"|"+results[i].ID < results[j].Tool+"|"+results[j].ID
 	})
 	return results
+}
+
+func mergePriceSource(existing, next string) string {
+	next = priceSourceLabel(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" || existing == next {
+		return next
+	}
+	return "mixed"
+}
+
+func priceSourceLabel(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "user", "configured":
+		return "custom"
+	case "default":
+		return "official"
+	case "unknown":
+		return "unpriced"
+	case "mixed":
+		return "mixed"
+	default:
+		return ""
+	}
+}
+
+func mergePrice(existing *Price, cost Cost) *Price {
+	next := priceFromCost(cost)
+	if next == nil {
+		return existing
+	}
+	if existing == nil {
+		return next
+	}
+	if pricesEqual(*existing, *next) {
+		return existing
+	}
+	return &Price{Source: "mixed"}
+}
+
+func priceFromCost(cost Cost) *Price {
+	source := priceSourceLabel(cost.Source)
+	if source == "" {
+		return nil
+	}
+	return &Price{
+		Source:                source,
+		InputUSDPerMTok:       cost.InputUSDPerMTok,
+		OutputUSDPerMTok:      cost.OutputUSDPerMTok,
+		CacheHitUSDPerMTok:    cost.CacheHitUSDPerMTok,
+		CacheMakeUSDPerMTok:   cost.CacheMakeUSDPerMTok,
+		CacheMake1hUSDPerMTok: cost.CacheMake1hUSDPerMTok,
+	}
+}
+
+func pricesEqual(left, right Price) bool {
+	return left.Source == right.Source &&
+		left.InputUSDPerMTok == right.InputUSDPerMTok &&
+		left.OutputUSDPerMTok == right.OutputUSDPerMTok &&
+		left.CacheHitUSDPerMTok == right.CacheHitUSDPerMTok &&
+		left.CacheMakeUSDPerMTok == right.CacheMakeUSDPerMTok &&
+		left.CacheMake1hUSDPerMTok == right.CacheMake1hUSDPerMTok
 }
 
 func normalizeSortMetric(sortBy SortMetric) SortMetric {

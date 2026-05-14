@@ -11,7 +11,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `AGENTS.md` and `AGENTS.zh-CN.md`: repository mission, coding constraints, validation matrix, privacy boundaries, and handoff rules.
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
-- `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
+- `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-packages`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
 - `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. `make setup` enables the hook for local commits.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - Release decision policy: engineering/process-only changes do not require a software release; feature and bugfix changes require a follow-up release or explicit deferral.
@@ -19,14 +19,16 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 
 ## Feedback Sensors
 
-- `go test ./...`: unit and integration coverage for source adapters, period windows, aggregation, reports, CLI, setup, and TUI smoke rendering.
-- `go test ./harness`: repository-structure sensors for agent docs, Makefile commands, CI gates, PR template, and offline/privacy constraints.
-- `go vet ./...`: static analysis.
-- `go build ./cmd/aitok`: single-binary build check.
-- `go run ./tools/validate-pr-body`: executable PR body metadata gate.
+- `make test`: unit and integration coverage for source adapters, period windows, aggregation, reports, CLI, setup, and TUI smoke rendering.
+- `make test-packages PKGS="./internal/query ./internal/report"`: targeted package tests with the same repository-local Go caches as the full test target.
+- `make test-harness`: repository-structure sensors for agent docs, Makefile commands, CI gates, PR template, and offline/privacy constraints.
+- `make vet`: static analysis.
+- `make build`: single-binary build check.
+- `make validate-pr-body`: executable PR body metadata gate.
 - `make setup`: one-time local setup that runs `git config core.hooksPath .githooks`.
 - `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable commit-message gate, wired through `.githooks/commit-msg` after setup and mirrored by PR CI for the latest PR commit.
 - `.cache/aitok/`: repository-local, git-ignored Go build/module cache used by Makefile targets so agent verification stays bound to this checkout instead of ad hoc `/tmp` paths.
+- Agents should not run raw `go test`, `go vet`, `go build`, or `go run` in sandboxed sessions. Use Makefile targets so Go never falls back to `~/Library/Caches/go-build`.
 
 ## Agent Workflow Contract
 

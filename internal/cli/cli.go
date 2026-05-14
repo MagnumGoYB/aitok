@@ -354,10 +354,10 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 		CWD:       f.cwd,
 	}
 	acc := query.NewAccumulatorWithSort(window, filters, groupBy, sortBy, func(event usage.UsageEvent) query.Cost {
-		return query.Cost{USD: catalog.CostFor(event).USD}
+		return queryCost(catalog.CostFor(event))
 	})
 	threadAcc := query.NewThreadAccumulatorWithSort(window, filters, sortBy, func(event usage.UsageEvent) query.Cost {
-		return query.Cost{USD: catalog.CostFor(event).USD}
+		return queryCost(catalog.CostFor(event))
 	})
 	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
 		acc.Add(event)
@@ -417,7 +417,7 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 	groupBy := query.ParseGroupBy(f.groupBy)
 	filters := query.Filters{Tools: query.SplitCSV(f.tools), Models: query.SplitCSV(f.models), Providers: query.SplitCSV(f.providers), CWD: f.cwd}
 	acc := query.NewAccumulator(window, filters, groupBy, func(event usage.UsageEvent) query.Cost {
-		return query.Cost{USD: catalog.CostFor(event).USD}
+		return queryCost(catalog.CostFor(event))
 	})
 	var unpriced unpricedPricingCount
 	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
@@ -449,6 +449,18 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 		UnpricedTokens: unpriced.Tokens,
 		Results:        results,
 	}, nil
+}
+
+func queryCost(cost pricing.Cost) query.Cost {
+	return query.Cost{
+		USD:                   cost.USD,
+		Source:                cost.Source,
+		InputUSDPerMTok:       cost.InputUSDPerMTok,
+		OutputUSDPerMTok:      cost.OutputUSDPerMTok,
+		CacheHitUSDPerMTok:    cost.CacheHitUSDPerMTok,
+		CacheMakeUSDPerMTok:   cost.CacheMakeUSDPerMTok,
+		CacheMake1hUSDPerMTok: cost.CacheMake1hUSDPerMTok,
+	}
 }
 
 type unpricedPricingCount struct {

@@ -164,6 +164,56 @@ func TestSummaryUsesCustomPricingFile(t *testing.T) {
 	if !strings.Contains(out.String(), `"cost_usd": 44`) {
 		t.Fatalf("custom pricing not applied: %s", out.String())
 	}
+	if !strings.Contains(out.String(), `"source": "custom"`) || !strings.Contains(out.String(), `"input_usd_per_mtok": 2`) || !strings.Contains(out.String(), `"output_usd_per_mtok": 20`) {
+		t.Fatalf("custom pricing details not included: %s", out.String())
+	}
+}
+
+func TestSummaryShowsDifferentPricesForModelProviderPairs(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".aitok", "pricing.json"), `{"models":[{"match":"gpt-5.4","provider":"team-a","input_usd_per_mtok":2,"output_usd_per_mtok":20,"cache_hit_usd_per_mtok":0.2,"cache_make_usd_per_mtok":2}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "team-a.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"team-a","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n")
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "openai.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T02:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary json should be valid: %v\n%s", err, out.String())
+	}
+	if len(payload.Results) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(payload.Results), payload.Results)
+	}
+	byProvider := map[string]struct {
+		source string
+		input  float64
+	}{}
+	for _, result := range payload.Results {
+		if result.Price == nil {
+			t.Fatalf("result missing price details: %+v", result)
+		}
+		byProvider[result.Key["provider"]] = struct {
+			source string
+			input  float64
+		}{source: result.Price.Source, input: result.Price.InputUSDPerMTok}
+	}
+	if byProvider["team-a"].source != "custom" || byProvider["team-a"].input != 2 {
+		t.Fatalf("team-a should use custom pricing: %+v", byProvider)
+	}
+	if byProvider["openai"].source != "official" || byProvider["openai"].input != 2.5 {
+		t.Fatalf("openai should use official pricing: %+v", byProvider)
+	}
 }
 
 func TestTUIRenderCommandPrintsDashboard(t *testing.T) {
@@ -407,23 +457,39 @@ func TestPricingConfigureJSONKeepsPromptsOffStdout(t *testing.T) {
 }
 
 func TestPricingConfigureRejectsRawAPIKeyProvider(t *testing.T) {
-	home := t.TempDir()
-	cmd := New(App{Out: io.Discard, In: strings.NewReader("")})
-	cmd.SetArgs([]string{
-		"--home", home,
-		"pricing", "configure",
-		"--model", "gpt-5.4",
-		"--provider", "sk-test-secret",
-		"--input-usd-per-mtok", "1",
-		"--output-usd-per-mtok", "1",
-		"--cache-hit-usd-per-mtok", "0",
-		"--cache-make-usd-per-mtok", "1",
-		"--cache-make-1h-usd-per-mtok", "1",
-		"--multiplier", "1",
-	})
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "not a raw API key") {
-		t.Fatalf("err = %v, want raw API key rejection", err)
+	tests := []string{
+		"sk-test-secret",
+		"AIzaSyD8Qw9eRtYuIoPaSdFgHjKlZxCvBnMq12",
+	}
+	for _, provider := range tests {
+		t.Run(provider[:12], func(t *testing.T) {
+			home := t.TempDir()
+			var out bytes.Buffer
+			cmd := New(App{Out: &out, In: strings.NewReader("")})
+			cmd.SetArgs([]string{
+				"--home", home,
+				"pricing", "configure",
+				"--model", "gpt-5.4",
+				"--provider", provider,
+				"--input-usd-per-mtok", "1",
+				"--output-usd-per-mtok", "1",
+				"--cache-hit-usd-per-mtok", "0",
+				"--cache-make-usd-per-mtok", "1",
+				"--cache-make-1h-usd-per-mtok", "1",
+				"--multiplier", "1",
+				"--format", "json",
+			})
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), "not a raw API key") {
+				t.Fatalf("err = %v, want raw API key rejection", err)
+			}
+			if out.Len() != 0 || strings.Contains(out.String(), provider) {
+				t.Fatalf("raw API key must not be echoed to JSON stdout: %s", out.String())
+			}
+			if _, statErr := os.Stat(filepath.Join(home, ".aitok", "pricing.json")); !os.IsNotExist(statErr) {
+				t.Fatalf("raw API key rejection must not write pricing config, stat err=%v", statErr)
+			}
+		})
 	}
 }
 

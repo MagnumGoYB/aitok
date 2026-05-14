@@ -51,6 +51,55 @@ func TestAggregateIncludesRequestsAndCost(t *testing.T) {
 	}
 }
 
+func TestAggregateCarriesPriceDetails(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "team-a", Usage: usage.TokenUsage{Input: 1_000_000}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 1_000_000}},
+	}
+	results := AggregateWithCosts(events, window, Filters{}, GroupBy{"model", "provider"}, func(event usage.UsageEvent) Cost {
+		if event.Provider == "team-a" {
+			return Cost{USD: 2, Source: "user", InputUSDPerMTok: 2, OutputUSDPerMTok: 20, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2}
+		}
+		return Cost{USD: 1, Source: "default", InputUSDPerMTok: 1, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.1, CacheMakeUSDPerMTok: 1}
+	})
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	byProvider := map[string]Result{}
+	for _, result := range results {
+		byProvider[result.Key["provider"]] = result
+	}
+	if got := byProvider["team-a"].Price; got == nil || got.Source != "custom" || got.InputUSDPerMTok != 2 {
+		t.Fatalf("custom price not carried: %+v", byProvider["team-a"])
+	}
+	if got := byProvider["openai"].Price; got == nil || got.Source != "official" || got.InputUSDPerMTok != 1 {
+		t.Fatalf("official price not carried: %+v", byProvider["openai"])
+	}
+}
+
+func TestAggregateMarksMixedPricesWhenGroupCombinesSources(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "team-a", Usage: usage.TokenUsage{Input: 1}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 1}},
+	}
+	results := AggregateWithCosts(events, window, Filters{}, GroupBy{"model"}, func(event usage.UsageEvent) Cost {
+		if event.Provider == "team-a" {
+			return Cost{USD: 2, Source: "user", InputUSDPerMTok: 2}
+		}
+		return Cost{USD: 1, Source: "default", InputUSDPerMTok: 1}
+	})
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].PriceSource != "mixed" || results[0].Price == nil || results[0].Price.Source != "mixed" {
+		t.Fatalf("combined group should mark mixed pricing: %+v", results[0])
+	}
+}
+
 func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}

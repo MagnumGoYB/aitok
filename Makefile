@@ -4,7 +4,7 @@ GOCACHE ?= $(AITOK_CACHE_DIR)/go-build
 GOMODCACHE ?= $(AITOK_CACHE_DIR)/go-mod
 COMMIT_MSG_FILE ?= .git/COMMIT_EDITMSG
 
-.PHONY: setup check test test-harness vet build run validate validate-pr-body commitlint
+.PHONY: setup check test test-packages test-harness vet build run validate validate-pr-body commitlint
 
 setup:
 	git config core.hooksPath .githooks
@@ -15,6 +15,10 @@ check:
 
 test:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) test ./...
+
+test-packages:
+	@test -n "$(PKGS)" || (echo 'PKGS is required, for example: make test-packages PKGS="./internal/query ./internal/report"' >&2; exit 2)
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) test $(PKGS)
 
 test-harness:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) test ./harness

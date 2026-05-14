@@ -30,6 +30,7 @@ func TestRenderSmoke(t *testing.T) {
 		"Model Usage",
 		"Search:",
 		"[Tokens]",
+		"Price",
 		"s sort",
 		"/ search",
 		"l language",
@@ -64,6 +65,7 @@ func TestRenderChinese(t *testing.T) {
 		"模型用量",
 		"搜索:",
 		"[按 Tokens]",
+		"价格",
 		"s 排序",
 		"模型",
 		"请求",
@@ -141,17 +143,19 @@ func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
 				Requests: 1909,
 				Usage:    usage.TokenUsage{Input: 256_100_000, Output: 652_300},
 				CostUSD:  195.7068,
+				Price:    &query.Price{Source: "official", InputUSDPerMTok: 5, OutputUSDPerMTok: 30},
 			},
 			{
 				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openrouter"},
 				Requests: 307,
 				Usage:    usage.TokenUsage{Input: 35_500_000, Output: 166_100},
 				CostUSD:  30.6730,
+				Price:    &query.Price{Source: "custom", InputUSDPerMTok: 2, OutputUSDPerMTok: 20},
 			},
 		},
 	}
 	view := RenderWidth(payload, 140)
-	for _, expected := range []string{"gpt-5.5 (openai)", "gpt-5.5 (openrouter)"} {
+	for _, expected := range []string{"gpt-5.5 (openai)", "gpt-5.5 (openrouter)", "official in=$5/M out=$30/M", "custom in=$2/M out=$20/M"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("view missing provider-qualified model label %q: %s", expected, view)
 		}
@@ -161,6 +165,40 @@ func TestModelUsageLabelsIncludeProviderAndKeepColumnGap(t *testing.T) {
 			gap := strings.SplitN(line, "gpt-5.5 (openai)", 2)[1]
 			if !strings.HasPrefix(gap, "  ") || !strings.Contains(gap, "1909") {
 				t.Fatalf("model table row must keep right padding before requests column: %q", line)
+			}
+		}
+	}
+}
+
+func TestModelUsageTableShowsPriceSourceAndRates(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.4", "provider": "team-a"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 1_000_000},
+				CostUSD:  2,
+				Price:    &query.Price{Source: "custom", InputUSDPerMTok: 2, OutputUSDPerMTok: 20},
+			},
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.4", "provider": "openai"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 1_000_000},
+				CostUSD:  2.5,
+				Price:    &query.Price{Source: "official", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 15},
+			},
+		},
+	}
+	view := RenderWidth(payload, 180)
+	for _, expected := range []string{"Price", "custom in=$2/M out=$20/M", "official in=$2.5/M out=$15/M"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("TUI should show price details %q: %s", expected, view)
+		}
+	}
+	for _, line := range strings.Split(stripANSI(view), "\n") {
+		if strings.Contains(line, "gpt-5.4 (") && !strings.Contains(line, "Cached") && !strings.Contains(line, "│") {
+			if !strings.Contains(line, "custom") && !strings.Contains(line, "official") {
+				t.Fatalf("model usage row should keep price on the same line: %q\n%s", line, view)
 			}
 		}
 	}
@@ -326,10 +364,10 @@ func TestModelUsageTableOutputDoesNotIncludeReasoning(t *testing.T) {
 		}},
 	}
 	view := RenderWidth(payload, 140)
-	if !strings.Contains(view, "gpt-5.5 (bcb)") || !strings.Contains(view, "         200") {
+	if !strings.Contains(view, "gpt-5.5 (bcb)") || !strings.Contains(view, "    200") {
 		t.Fatalf("model usage table output must match summary output tokens without reasoning: %s", view)
 	}
-	if strings.Contains(view, "         250") {
+	if strings.Contains(view, "    250") {
 		t.Fatalf("model usage table output must not add reasoning tokens into output: %s", view)
 	}
 }

@@ -21,21 +21,49 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 			Requests: 1,
 			Usage:    usage.TokenUsage{Input: 5, Output: 7},
 			CostUSD:  0.0123,
+			Price:    &query.Price{Source: "official", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 15, CacheHitUSDPerMTok: 0.25, CacheMakeUSDPerMTok: 2.5},
 		}},
 	}
 	var jsonOut bytes.Buffer
 	if err := Write(&jsonOut, "json", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(jsonOut.String(), `"generated_at"`) || !strings.Contains(jsonOut.String(), `"requests": 1`) || !strings.Contains(jsonOut.String(), `"cost_usd": 0.0123`) {
+	if !strings.Contains(jsonOut.String(), `"generated_at"`) || !strings.Contains(jsonOut.String(), `"requests": 1`) || !strings.Contains(jsonOut.String(), `"cost_usd": 0.0123`) || !strings.Contains(jsonOut.String(), `"source": "official"`) {
 		t.Fatalf("json output missing stable fields: %s", jsonOut.String())
 	}
 	var mdOut bytes.Buffer
 	if err := Write(&mdOut, "markdown", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mdOut.String(), "| Group | Req | Cost USD | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | 12 |") {
+	if !strings.Contains(mdOut.String(), "| Group | Req | Cost USD | Price | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M | 12 |") {
 		t.Fatalf("markdown output unexpected: %s", mdOut.String())
+	}
+}
+
+func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{
+		{
+			Key:      map[string]string{"model": "gpt-5.4", "provider": "team-a"},
+			Requests: 1,
+			Usage:    usage.TokenUsage{Input: 1_000_000},
+			CostUSD:  2,
+			Price:    &query.Price{Source: "custom", InputUSDPerMTok: 2, OutputUSDPerMTok: 20, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2},
+		},
+		{
+			Key:      map[string]string{"model": "gpt-5.4", "provider": "openai"},
+			Requests: 1,
+			Usage:    usage.TokenUsage{Input: 1_000_000},
+			CostUSD:  2.5,
+			Price:    &query.Price{Source: "official", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 15, CacheHitUSDPerMTok: 0.25, CacheMakeUSDPerMTok: 2.5},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "PRICE") || !strings.Contains(got, "custom in=$2/M out=$20/M cache=$0.2/M make=$2/M") || !strings.Contains(got, "official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M") {
+		t.Fatalf("table missing price details: %s", got)
 	}
 }
 
@@ -47,12 +75,13 @@ func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 		Events:   3,
 		Usage:    usage.TokenUsage{Input: 100, Output: 20},
 		CostUSD:  1.2345,
+		Price:    &query.Price{Source: "official", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 15, CacheHitUSDPerMTok: 0.25, CacheMakeUSDPerMTok: 2.5},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "$1.2345") {
+	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "PRICE") || !strings.Contains(got, "$1.2345") {
 		t.Fatalf("table missing request/cost fields: %s", got)
 	}
 	if strings.Contains(got, "EVENTS") || strings.Contains(got, "CACHE_CREATE") {

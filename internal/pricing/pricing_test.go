@@ -206,14 +206,101 @@ func TestSaveUserPriceUpsertsProviderSpecificOverride(t *testing.T) {
 	}
 }
 
-func TestSaveUserPriceRejectsRawAPIKeyProvider(t *testing.T) {
-	_, err := SaveUserPrice(t.TempDir(), ModelPrice{
-		Match:           "gpt-5.4",
-		Provider:        "sk-test-secret",
-		InputUSDPerMTok: 1,
+func TestProviderSpecificUserPriceDoesNotFallbackToOtherProviders(t *testing.T) {
+	home := t.TempDir()
+	if _, err := SaveUserPrice(home, ModelPrice{
+		Match:              "gpt-5.5",
+		Provider:           "toska",
+		InputUSDPerMTok:    5,
+		OutputUSDPerMTok:   40,
+		CacheHitUSDPerMTok: 0.5,
+		Multiplier:         1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toska := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.5",
+		Provider: "toska",
+		Usage:    usage.TokenUsage{Output: 1_000_000},
 	})
-	if err == nil {
-		t.Fatal("expected raw API key provider to be rejected")
+	bcb := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.5",
+		Provider: "bcb",
+		Usage:    usage.TokenUsage{Output: 1_000_000},
+	})
+	unknown := catalog.CostFor(usage.UsageEvent{
+		Model: "gpt-5.5",
+		Usage: usage.TokenUsage{Output: 1_000_000},
+	})
+	if toska.Source != "user" || toska.OutputUSDPerMTok != 40 || toska.USD != 40 {
+		t.Fatalf("toska should use provider-specific custom price: %+v", toska)
+	}
+	if bcb.Source != "default" || bcb.OutputUSDPerMTok != 30 || bcb.USD != 30 {
+		t.Fatalf("bcb should fall back to official default price, not toska custom price: %+v", bcb)
+	}
+	if unknown.Source != "default" || unknown.OutputUSDPerMTok != 30 || unknown.USD != 30 {
+		t.Fatalf("unknown provider should fall back to official default price, not provider-specific custom price: %+v", unknown)
+	}
+}
+
+func TestProviderSpecificPriceTakesPriorityOverGlobalOverride(t *testing.T) {
+	catalog := Catalog{Models: []ModelPrice{
+		{Match: "gpt-5.5", InputUSDPerMTok: 1, OutputUSDPerMTok: 10, Source: "user"},
+		{Match: "gpt-5.5", Provider: "toska", InputUSDPerMTok: 5, OutputUSDPerMTok: 40, Source: "user"},
+		{Match: "gpt-5.5", Provider: "openai", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, Source: "default"},
+	}}
+	toska := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.5",
+		Provider: "toska",
+		Usage:    usage.TokenUsage{Output: 1_000_000},
+	})
+	bcb := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.5",
+		Provider: "bcb",
+		Usage:    usage.TokenUsage{Output: 1_000_000},
+	})
+	openai := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.5",
+		Provider: "openai",
+		Usage:    usage.TokenUsage{Output: 1_000_000},
+	})
+	if toska.OutputUSDPerMTok != 40 {
+		t.Fatalf("provider-specific custom price should win for toska: %+v", toska)
+	}
+	if bcb.OutputUSDPerMTok != 10 {
+		t.Fatalf("global custom price should win for providers without provider-specific custom price: %+v", bcb)
+	}
+	if openai.OutputUSDPerMTok != 30 {
+		t.Fatalf("provider-specific default price should win for matching official provider: %+v", openai)
+	}
+}
+
+func TestSaveUserPriceRejectsRawAPIKeyProvider(t *testing.T) {
+	tests := []string{
+		"sk-test-secret",
+		"AIzaSyD8Qw9eRtYuIoPaSdFgHjKlZxCvBnMq12",
+		"Bearer=secret-token-value",
+		"github_pat_1234567890abcdef1234567890abcdef",
+	}
+	for _, provider := range tests {
+		t.Run(provider[:min(len(provider), 12)], func(t *testing.T) {
+			home := t.TempDir()
+			_, err := SaveUserPrice(home, ModelPrice{
+				Match:           "gpt-5.4",
+				Provider:        provider,
+				InputUSDPerMTok: 1,
+			})
+			if err == nil {
+				t.Fatal("expected raw API key provider to be rejected")
+			}
+			if _, statErr := os.Stat(UserConfigPath(home)); !os.IsNotExist(statErr) {
+				t.Fatalf("raw key rejection must not write pricing config, stat err=%v", statErr)
+			}
+		})
 	}
 }
 
@@ -235,6 +322,13 @@ func containsAll(value string, needles ...string) bool {
 		}
 	}
 	return true
+}
+
+func min(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func TestDefaultCatalogCoversCodexAutoReview(t *testing.T) {

@@ -7,8 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var rawAPIKeyProviderPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bsk-[a-z0-9_-]{8,}`),
+	regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{16,}`),
+	regexp.MustCompile(`(?i)\b(?:bearer|x-api-key|api[_-]?key|token|pat)[=:]\S+`),
+	regexp.MustCompile(`(?i)\b(?:ghp|github_pat|glpat)-?[0-9A-Za-z_]{16,}`),
+}
 
 func UserConfigPath(home string) string {
 	return filepath.Join(home, userConfigPath)
@@ -51,7 +59,7 @@ func ValidateUserPrice(price ModelPrice) error {
 	if strings.TrimSpace(price.Match) == "" {
 		return fmt.Errorf("model match is required")
 	}
-	if strings.Contains(strings.ToLower(price.Provider), "sk-") {
+	if containsRawAPIKey(price.Provider) {
 		return fmt.Errorf("provider must be a local provider/auth label, not a raw API key")
 	}
 	if price.InputUSDPerMTok < 0 || price.OutputUSDPerMTok < 0 || price.CacheHitUSDPerMTok < 0 || price.CacheMakeUSDPerMTok < 0 || price.CacheMake1hUSDPerMTok < 0 {
@@ -67,6 +75,15 @@ func ValidateUserPrice(price ModelPrice) error {
 		return fmt.Errorf("prompt threshold must be greater than or equal to 0")
 	}
 	return nil
+}
+
+func containsRawAPIKey(value string) bool {
+	for _, pattern := range rawAPIKeyProviderPatterns {
+		if pattern.MatchString(value) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeUserConfig(path string, catalog Catalog) error {

@@ -70,9 +70,9 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 	if len(opts) > 0 {
 		option = opts[0]
 	}
-	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "COST_USD", "TOTAL"}
+	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "COST_USD", "PRICE", "TOTAL"}
 	if option.Full {
-		headers = []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "EVENTS", "COST_USD", "TOTAL"}
+		headers = []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "EVENTS", "COST_USD", "PRICE", "TOTAL"}
 	}
 	rows := make([][]string, 0, len(threads))
 	for _, thread := range threads {
@@ -84,6 +84,7 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
 			FormatUSD(thread.CostUSD),
+			formatPrice(thread.Price, thread.PriceSource),
 			fmt.Sprint(thread.Usage.NormalizedTotal()),
 		}
 		if option.Full {
@@ -96,6 +97,7 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 				fmt.Sprint(thread.Requests),
 				fmt.Sprint(thread.Events),
 				FormatUSD(thread.CostUSD),
+				formatPrice(thread.Price, thread.PriceSource),
 				fmt.Sprint(thread.Usage.NormalizedTotal()),
 			}
 		}
@@ -109,9 +111,9 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 	if len(opts) > 0 {
 		option = opts[0]
 	}
-	headers := []string{"GROUP", "REQ", "COST_USD", "TOTAL"}
+	headers := []string{"GROUP", "REQ", "COST_USD", "PRICE", "TOTAL"}
 	if option.Full {
-		headers = []string{"GROUP", "REQ", "EVENTS", "COST_USD", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+		headers = []string{"GROUP", "REQ", "EVENTS", "COST_USD", "PRICE", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
 	}
 	rows := make([][]string, 0, len(results))
 	for _, result := range results {
@@ -119,6 +121,7 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 			formatKey(result.Key),
 			fmt.Sprint(result.Requests),
 			FormatUSD(result.CostUSD),
+			formatPrice(result.Price, result.PriceSource),
 			fmt.Sprint(result.Usage.NormalizedTotal()),
 		}
 		if option.Full {
@@ -127,6 +130,7 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 				fmt.Sprint(result.Requests),
 				fmt.Sprint(result.Events),
 				FormatUSD(result.CostUSD),
+				formatPrice(result.Price, result.PriceSource),
 				fmt.Sprint(result.Usage.Input),
 				fmt.Sprint(result.Usage.Output),
 				fmt.Sprint(result.Usage.CachedInput),
@@ -206,18 +210,19 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		option = opts[0]
 	}
 	if option.Full {
-		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost USD | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost USD | Price | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
 			return err
 		}
 		for _, result := range results {
-			if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+			if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 				escapeMarkdown(formatKey(result.Key)),
 				result.Requests,
 				result.Events,
 				FormatUSD(result.CostUSD),
+				escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 				result.Usage.Input,
 				result.Usage.Output,
 				result.Usage.CachedInput,
@@ -231,17 +236,18 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "| Group | Req | Cost USD | Total |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| Group | Req | Cost USD | Price | Total |"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | --- | ---: |"); err != nil {
 		return err
 	}
 	for _, result := range results {
-		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %s | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
 			result.Requests,
 			FormatUSD(result.CostUSD),
+			escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 			result.Usage.NormalizedTotal(),
 		); err != nil {
 			return err
@@ -256,14 +262,14 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 		option = opts[0]
 	}
 	if option.Full {
-		if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Events | Cost USD | Total |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Events | Cost USD | Price | Total |"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |"); err != nil {
 			return err
 		}
 		for _, thread := range threads {
-			if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %d | %s | %d |\n",
+			if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %d | %s | %s | %d |\n",
 				escapeMarkdown(thread.ID),
 				escapeMarkdown(thread.Name),
 				escapeMarkdown(thread.Tool),
@@ -272,6 +278,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 				thread.Requests,
 				thread.Events,
 				FormatUSD(thread.CostUSD),
+				escapeMarkdown(formatPrice(thread.Price, thread.PriceSource)),
 				thread.Usage.NormalizedTotal(),
 			); err != nil {
 				return err
@@ -279,14 +286,14 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Cost USD | Total |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Cost USD | Price | Total |"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | --- | ---: |"); err != nil {
 		return err
 	}
 	for _, thread := range threads {
-		if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %s | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %d | %s | %s | %d |\n",
 			escapeMarkdown(thread.ID),
 			escapeMarkdown(thread.Name),
 			escapeMarkdown(thread.Tool),
@@ -294,6 +301,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 			escapeMarkdown(thread.Provider),
 			thread.Requests,
 			FormatUSD(thread.CostUSD),
+			escapeMarkdown(formatPrice(thread.Price, thread.PriceSource)),
 			thread.Usage.NormalizedTotal(),
 		); err != nil {
 			return err
@@ -304,6 +312,33 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 
 func FormatUSD(value float64) string {
 	return fmt.Sprintf("$%.4f", value)
+}
+
+func formatPrice(price *query.Price, source string) string {
+	if price == nil {
+		return displayPriceSource(source)
+	}
+	if price.Source == "mixed" || price.Source == "unpriced" {
+		return price.Source
+	}
+	return fmt.Sprintf("%s in=%s out=%s cache=%s make=%s",
+		displayPriceSource(price.Source),
+		formatRate(price.InputUSDPerMTok),
+		formatRate(price.OutputUSDPerMTok),
+		formatRate(price.CacheHitUSDPerMTok),
+		formatRate(price.CacheMakeUSDPerMTok),
+	)
+}
+
+func displayPriceSource(source string) string {
+	if source == "" {
+		return "unknown"
+	}
+	return source
+}
+
+func formatRate(value float64) string {
+	return fmt.Sprintf("$%.4g/M", value)
 }
 
 func formatKey(key map[string]string) string {

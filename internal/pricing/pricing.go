@@ -31,10 +31,15 @@ type Catalog struct {
 }
 
 type Cost struct {
-	USD        float64 `json:"usd"`
-	Currency   string  `json:"currency"`
-	Multiplier float64 `json:"multiplier"`
-	Source     string  `json:"source"`
+	USD                   float64 `json:"usd"`
+	Currency              string  `json:"currency"`
+	Multiplier            float64 `json:"multiplier"`
+	Source                string  `json:"source"`
+	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`
+	OutputUSDPerMTok      float64 `json:"output_usd_per_mtok,omitempty"`
+	CacheHitUSDPerMTok    float64 `json:"cache_hit_usd_per_mtok,omitempty"`
+	CacheMakeUSDPerMTok   float64 `json:"cache_make_usd_per_mtok,omitempty"`
+	CacheMake1hUSDPerMTok float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
 }
 
 func Load(home string) (Catalog, error) {
@@ -94,7 +99,17 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 		perMillion(event.Usage.CachedInput, price.CacheHitUSDPerMTok) +
 		perMillion(cacheCreation5m+cacheCreationOther, cacheMake) +
 		perMillion(cacheCreation1h, cacheMake1h)
-	return Cost{USD: usd * multiplier, Currency: "USD", Multiplier: multiplier, Source: price.Source}
+	return Cost{
+		USD:                   usd * multiplier,
+		Currency:              "USD",
+		Multiplier:            multiplier,
+		Source:                price.Source,
+		InputUSDPerMTok:       price.InputUSDPerMTok,
+		OutputUSDPerMTok:      price.OutputUSDPerMTok,
+		CacheHitUSDPerMTok:    price.CacheHitUSDPerMTok,
+		CacheMakeUSDPerMTok:   cacheMake,
+		CacheMake1hUSDPerMTok: cacheMake1h,
+	}
 }
 
 func (c Catalog) Covers(event usage.UsageEvent) bool {
@@ -116,7 +131,7 @@ func (c Catalog) match(event usage.UsageEvent) (ModelPrice, bool) {
 	provider := strings.ToLower(event.Provider)
 	models := c.sortedModels()
 	for _, price := range models {
-		if price.Provider != "" && provider != "" && !strings.Contains(provider, strings.ToLower(price.Provider)) {
+		if price.Provider == "" || provider == "" || !strings.Contains(provider, strings.ToLower(price.Provider)) {
 			continue
 		}
 		if strings.Contains(model, strings.ToLower(price.Match)) {
@@ -127,6 +142,20 @@ func (c Catalog) match(event usage.UsageEvent) (ModelPrice, bool) {
 		}
 	}
 	for _, price := range models {
+		if price.Provider != "" {
+			continue
+		}
+		if strings.Contains(model, strings.ToLower(price.Match)) {
+			if price.Source == "" {
+				price.Source = "configured"
+			}
+			return price, true
+		}
+	}
+	for _, price := range models {
+		if price.Provider == "" || price.Source != "default" {
+			continue
+		}
 		if strings.Contains(model, strings.ToLower(price.Match)) {
 			if price.Source == "" {
 				price.Source = "configured"
