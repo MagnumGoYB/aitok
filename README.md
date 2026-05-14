@@ -19,6 +19,19 @@ brew install --cask aitok
 
 The tap step keeps the install command short and avoids the less readable fully qualified cask name.
 
+Shell installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | sh
+```
+
+The installer downloads the matching macOS or Linux GitHub Release archive, verifies it with `checksums.txt`, and installs `aitok` to `/usr/local/bin`. Override the target directory or version when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | AITOK_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | AITOK_VERSION=v0.1.30 sh
+```
+
 Go:
 
 ```bash

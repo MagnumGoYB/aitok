@@ -52,6 +52,7 @@
 - Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew tap MagnumGoYB/aitok` 后执行 `brew install --cask aitok` 安装；文档刻意不使用完整 cask 名称，避免重复出现 `aitok`。
 - Cask 只从 macOS archive 集合生成。Linux 和 Windows archive 仍会作为 GitHub Release 产物发布，但不会进入 Homebrew cask DSL。
 - 生成的 cask 会在 macOS post-install 阶段对已安装的 `aitok` 二进制运行 `xattr` hook，避免未签名 CLI archive 在 Homebrew 安装后仍保留 quarantine 状态。
+- `scripts/install.sh` 是文档公开的 `curl | sh` 安装路径，支持 macOS 和 Linux。它会下载匹配的 GoReleaser `tar.gz` 产物，通过发布的 `checksums.txt` 校验后，把二进制安装到 `AITOK_INSTALL_DIR` 或 `/usr/local/bin`。
 - GitHub Release 使用 `GITHUB_TOKEN`；发布 tap 需要仓库 secret `HOMEBREW_TAP_GITHUB_TOKEN`，因为默认 workflow token 不能写入独立的 `homebrew-aitok` 仓库。
 - Release workflow 固定使用 GoReleaser v2，不使用 `latest`。
 - Release 自动化不新增外部 telemetry 或 usage 上传。

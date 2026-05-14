@@ -470,6 +470,62 @@ func TestReleasePublishesHomebrewCask(t *testing.T) {
 	}
 }
 
+func TestCurlInstallScriptIsDocumentedAndVerifiesReleaseChecksums(t *testing.T) {
+	script := read(t, "scripts", "install.sh")
+	readme := read(t, "README.md")
+	readmeZH := read(t, "README.zh-CN.md")
+	goreleaser := read(t, ".goreleaser.yml")
+
+	for _, expected := range []string{
+		"#!/bin/sh",
+		"MagnumGoYB/aitok",
+		"AITOK_INSTALL_DIR",
+		"AITOK_VERSION",
+		"https://api.github.com/repos/${repo}/releases/latest",
+		"checksums.txt",
+		"sha256sum",
+		"shasum -a 256",
+		"aitok_${version}_${os}_${arch}.tar.gz",
+		"darwin",
+		"linux",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("scripts/install.sh must contain %s", expected)
+		}
+	}
+	for _, forbidden := range []string{
+		"eval ",
+		"source ",
+		"bash",
+		"API key",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("install script must not contain %s", forbidden)
+		}
+	}
+	for _, expected := range []string{
+		"curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | sh",
+		"AITOK_INSTALL_DIR",
+		"AITOK_VERSION",
+		"checksums.txt",
+	} {
+		if !strings.Contains(readme, expected) {
+			t.Fatalf("README.md must document curl install with %s", expected)
+		}
+		if !strings.Contains(readmeZH, expected) {
+			t.Fatalf("README.zh-CN.md must document curl install with %s", expected)
+		}
+	}
+	for _, expected := range []string{
+		"formats: [tar.gz]",
+		"name_template: checksums.txt",
+	} {
+		if !strings.Contains(goreleaser, expected) {
+			t.Fatalf(".goreleaser.yml must keep install script release asset contract with %s", expected)
+		}
+	}
+}
+
 func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	makefile := read(t, "Makefile")
 	ci := read(t, ".github", "workflows", "ci.yml")

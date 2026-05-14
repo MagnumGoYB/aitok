@@ -22,6 +22,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `make test`: unit and integration coverage for source adapters, period windows, aggregation, reports, CLI, setup, and TUI smoke rendering.
 - `make test-packages PKGS="./internal/query ./internal/report"`: targeted package tests with the same repository-local Go caches as the full test target.
 - `make test-harness`: repository-structure sensors for agent docs, Makefile commands, CI gates, PR template, and offline/privacy constraints.
+- Curl installer sensor: `harness/architecture_test.go` keeps `scripts/install.sh`, README install docs, and the GoReleaser archive/checksum contract aligned.
 - `make vet`: static analysis.
 - `make build`: single-binary build check.
 - `make validate-pr-body`: executable PR body metadata gate.
@@ -72,5 +73,5 @@ When changing release decision rules, update `tools/validate-pr-body`, `.github/
 - `.github/CODEOWNERS` routes high-risk areas to maintainers without requiring paid AI review automation.
 - `.github/workflows/dependabot-auto-merge.yml` enables GitHub auto-merge only for non-major Dependabot updates.
 - `.github/workflows/build.yml` uploads cross-platform build artifacts.
-- `.github/workflows/release.yml` publishes tag releases through GoReleaser.
+- `.github/workflows/release.yml` publishes tag releases through GoReleaser, including archives and `checksums.txt` consumed by `scripts/install.sh`.
 - `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/CODEOWNERS`, and `.github/dependabot.yml` keep open-source maintenance paths explicit.
