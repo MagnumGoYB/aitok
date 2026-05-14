@@ -43,10 +43,11 @@
 - Harness-only 测试：`make test-harness`
 - Vet：`make vet`
 - 构建：`make build`
+- 使用项目本地 Go cache 运行 CLI：`make run ARGS="summary --period today"`
 - 完整本地验证：`make validate`
 - PR 元数据校验：`make validate-pr-body`
 - 提交消息检查：`make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
-- 直接运行 CLI：`go run ./cmd/aitok summary --period today`
+- 沙箱内 agent session 避免直接使用 `go run`；使用 `make run ARGS="..."`，让 Go build/cache 输出固定落在 `.cache/aitok`。
 
 ## 3) 迭代前自我约束流程
 
@@ -108,7 +109,7 @@
 - 文档或 Harness only：`make check`、`make test-harness`，PR 规则变化时加 `make validate-pr-body`。
 - Source adapter：`make test`，并覆盖正常、空目录、损坏 JSONL、缺字段、重复事件。
 - Query/report：`make test`，并覆盖时间窗口、过滤、分组、JSON/Markdown 稳定输出。
-- CLI/TUI：`make test`、`make build`，必要时跑 `go run ./cmd/aitok doctor` 或 `summary` smoke。
+- CLI/TUI：`make test`、`make build`，必要时跑 `make run ARGS="doctor"` 或 `make run ARGS="summary --period today"` smoke。
 - 依赖、CI、发布配置：`make validate`，并说明体积/离线/供应链影响。
 
 ## 7) CI 和提交流程

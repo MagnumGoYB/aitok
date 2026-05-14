@@ -118,12 +118,31 @@ Validation:
 
 ## Tooling And Cache Decision
 
+## 2026-05-14 Interactive Pricing Configuration
+
+Follow-up feature: local pricing overrides can now be created from the terminal with `aitok pricing configure`.
+
+Key contract:
+
+- The command writes `~/.aitok/pricing.json` using `0600` permissions and supports both numbered terminal Q/A prompts and scripted flag-only setup.
+- Matching remains `model match + provider/auth label`; raw API keys must not be entered, stored, displayed, hashed, or fingerprinted.
+- Use provider/auth labels already present in local tool logs, for example Codex `model_provider` or Gemini `auth_type`, when a user wants different prices for different account or API-key-backed routes.
+- JSON mode keeps prompts on stderr and returns the final machine-readable payload on stdout.
+
+Validation for this slice:
+
+- `make check`
+- `make test`
+- `make build`
+- CLI smoke with `make run ARGS="--home /private/tmp/aitok-pricing-smoke --no-version-check pricing configure --format json"`
+
 Earlier validation used `/tmp` or `/private/tmp` for Go caches only because the sandbox denied Go default cache writes under `~/Library/Caches`.
 
 The durable project-local direction is:
 
 - keep validation caches under `.cache/aitok`
 - use Makefile targets instead of ad-hoc temp commands
+- use `make run ARGS="..."` for CLI smoke from a checkout instead of raw `go run`
 - run `make setup` once per checkout to enable `.githooks/commit-msg`
 - run commit message validation through `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
 - let PR CI validate the latest PR commit message so contributors who did not run local setup are still covered

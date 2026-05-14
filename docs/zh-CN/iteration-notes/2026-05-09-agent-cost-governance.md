@@ -118,12 +118,31 @@
 
 ## 工具和缓存决策
 
+## 2026-05-14 交互式价格配置
+
+后续功能：现在可以通过 `aitok pricing configure` 在终端里创建本地价格覆盖。
+
+关键合同：
+
+- 命令写入 `~/.aitok/pricing.json`，文件权限为 `0600`，同时支持终端编号 Q/A 问答和可脚本化的纯 flag 配置方式。
+- 匹配维度仍然是 `model match + provider/auth label`；不能输入、存储、展示、哈希或指纹化真实 API Key。
+- 用户想为不同账号或 API-key 路由设置不同价格时，只能使用本地工具日志中已有的 provider/auth 标签，例如 Codex `model_provider` 或 Gemini `auth_type`。
+- JSON 模式下交互提示走 stderr，stdout 只输出最终机器可读 payload。
+
+本切片验证：
+
+- `make check`
+- `make test`
+- `make build`
+- 使用 `make run ARGS="--home /private/tmp/aitok-pricing-smoke --no-version-check pricing configure --format json"` 做 CLI smoke
+
 早期验证使用 `/tmp` 或 `/private/tmp` 存 Go cache，只是因为沙箱拒绝写入 Go 默认的 `~/Library/Caches`。
 
 长期项目内约定是：
 
 - 验证缓存放在 `.cache/aitok`
 - 优先使用 Makefile 目标，不使用临时拼接命令作为项目工具
+- checkout 内 CLI smoke 使用 `make run ARGS="..."`，不要直接裸跑 `go run`
 - 每个 checkout 运行一次 `make setup`，启用 `.githooks/commit-msg`
 - 提交信息校验使用 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
 - PR CI 校验 PR 最新提交消息，所以没有运行本地 setup 的贡献者也会被覆盖

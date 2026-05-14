@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 type App struct {
 	Out          io.Writer
 	Err          io.Writer
+	In           io.Reader
 	Now          func() time.Time
 	VersionCheck func(context.Context, VersionCheckOptions) error
 	Update       func(context.Context, UpdateOptions) error
@@ -73,6 +76,9 @@ func New(app App) *cobra.Command {
 	}
 	if app.Err == nil {
 		app.Err = io.Discard
+	}
+	if app.In == nil {
+		app.In = os.Stdin
 	}
 	if app.Now == nil {
 		app.Now = time.Now
@@ -137,6 +143,41 @@ func New(app App) *cobra.Command {
 		Use:   "pricing",
 		Short: "Inspect offline pricing coverage",
 	}
+	var priceInput pricingConfigInput
+	pricingConfigure := &cobra.Command{
+		Use:   "configure",
+		Short: "Configure local offline pricing overrides",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			promptOut := app.Out
+			if f.format == "json" {
+				promptOut = app.Err
+			}
+			configured, path, err := configurePricing(app.In, promptOut, resolveHome(f.home), priceInput)
+			if err != nil {
+				return err
+			}
+			if f.format == "json" {
+				encoder := json.NewEncoder(app.Out)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(map[string]any{
+					"path":  path,
+					"price": configured,
+				})
+			}
+			fmt.Fprintf(app.Out, "Pricing override saved: %s\n", path)
+			fmt.Fprintf(app.Out, "Model match: %s\nProvider/auth label: %s\n", configured.Match, usage.Unknown(configured.Provider))
+			return nil
+		},
+	}
+	pricingConfigure.Flags().StringVar(&priceInput.Match, "model", "", "model match substring, for example gpt-5.4")
+	pricingConfigure.Flags().StringVar(&priceInput.Provider, "provider", "", "provider/auth label from local logs; do not enter a raw API key")
+	pricingConfigure.Flags().Float64Var(&priceInput.InputUSDPerMTok, "input-usd-per-mtok", -1, "input price in USD per 1M tokens")
+	pricingConfigure.Flags().Float64Var(&priceInput.OutputUSDPerMTok, "output-usd-per-mtok", -1, "output price in USD per 1M tokens")
+	pricingConfigure.Flags().Float64Var(&priceInput.CacheHitUSDPerMTok, "cache-hit-usd-per-mtok", -1, "cache read price in USD per 1M tokens")
+	pricingConfigure.Flags().Float64Var(&priceInput.CacheMakeUSDPerMTok, "cache-make-usd-per-mtok", -1, "cache write price in USD per 1M tokens")
+	pricingConfigure.Flags().Float64Var(&priceInput.CacheMake1hUSDPerMTok, "cache-make-1h-usd-per-mtok", -1, "one-hour cache write price in USD per 1M tokens")
+	pricingConfigure.Flags().Float64Var(&priceInput.Multiplier, "multiplier", -1, "local multiplier; defaults to 1")
+	pricingConfigure.Flags().StringVar(&f.format, "format", "table", "format: table or json")
 	pricingAudit := &cobra.Command{
 		Use:   "audit",
 		Short: "Report local usage events without matching prices",
@@ -149,7 +190,7 @@ func New(app App) *cobra.Command {
 		},
 	}
 	addQueryFlags(pricingAudit, f)
-	pricingCmd.AddCommand(pricingAudit)
+	pricingCmd.AddCommand(pricingConfigure, pricingAudit)
 
 	budgetCmd := &cobra.Command{
 		Use:   "budget",
@@ -480,6 +521,147 @@ func pricingSkeleton(items []report.PricingAuditResult) string {
 	}
 	b.WriteString("\n  ]\n}\n")
 	return b.String()
+}
+
+type pricingConfigInput struct {
+	Match                 string
+	Provider              string
+	InputUSDPerMTok       float64
+	OutputUSDPerMTok      float64
+	CacheHitUSDPerMTok    float64
+	CacheMakeUSDPerMTok   float64
+	CacheMake1hUSDPerMTok float64
+	Multiplier            float64
+}
+
+func configurePricing(in io.Reader, out io.Writer, home string, input pricingConfigInput) (pricing.ModelPrice, string, error) {
+	reader := bufio.NewReader(in)
+	interactive := pricingInputNeedsPrompt(input)
+	var err error
+	question := 1
+	input.Match, err = promptString(reader, out, interactive && strings.TrimSpace(input.Match) == "", &question, "Which model should this price match?", "Example: gpt-5.4 or claude-sonnet-4.", input.Match)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.Provider, err = promptString(reader, out, interactive && strings.TrimSpace(input.Provider) == "", &question, "Which provider/auth label should this apply to?", "Use a local label from logs, not a raw API key. Example: openai, bcb, team-a, oauth.", input.Provider)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.InputUSDPerMTok, err = promptFloat(reader, out, interactive && input.InputUSDPerMTok < 0, &question, "What is the input price in USD per 1M tokens?", "Enter 0 if this price does not apply.", input.InputUSDPerMTok)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.OutputUSDPerMTok, err = promptFloat(reader, out, interactive && input.OutputUSDPerMTok < 0, &question, "What is the output price in USD per 1M tokens?", "Enter 0 if this price does not apply.", input.OutputUSDPerMTok)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.CacheHitUSDPerMTok, err = promptFloat(reader, out, interactive && input.CacheHitUSDPerMTok < 0, &question, "What is the cache read price in USD per 1M tokens?", "Enter 0 if this price does not apply.", input.CacheHitUSDPerMTok)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.CacheMakeUSDPerMTok, err = promptFloat(reader, out, interactive && input.CacheMakeUSDPerMTok < 0, &question, "What is the cache write price in USD per 1M tokens?", "Blank uses 0; enter the input price if cache writes are billed like input tokens.", input.CacheMakeUSDPerMTok)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.CacheMake1hUSDPerMTok, err = promptFloat(reader, out, interactive && input.CacheMake1hUSDPerMTok < 0, &question, "What is the one-hour cache write price in USD per 1M tokens?", "Blank uses the default cache write price.", input.CacheMake1hUSDPerMTok)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	input.Multiplier, err = promptFloat(reader, out, interactive && input.Multiplier < 0, &question, "What multiplier should be applied?", "Blank uses 1. Use this for local markup/discount adjustments.", input.Multiplier)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	price := pricing.ModelPrice{
+		Match:                 strings.TrimSpace(input.Match),
+		Provider:              strings.TrimSpace(input.Provider),
+		InputUSDPerMTok:       zeroIfUnset(input.InputUSDPerMTok),
+		OutputUSDPerMTok:      zeroIfUnset(input.OutputUSDPerMTok),
+		CacheHitUSDPerMTok:    zeroIfUnset(input.CacheHitUSDPerMTok),
+		CacheMakeUSDPerMTok:   zeroIfUnset(input.CacheMakeUSDPerMTok),
+		CacheMake1hUSDPerMTok: zeroIfUnset(input.CacheMake1hUSDPerMTok),
+		Multiplier:            input.Multiplier,
+	}
+	if price.Multiplier < 0 {
+		price.Multiplier = 1
+	}
+	path, err := pricing.SaveUserPrice(home, price)
+	if err != nil {
+		return pricing.ModelPrice{}, "", err
+	}
+	return price, path, nil
+}
+
+func pricingInputNeedsPrompt(input pricingConfigInput) bool {
+	return strings.TrimSpace(input.Match) == "" ||
+		strings.TrimSpace(input.Provider) == "" ||
+		input.InputUSDPerMTok < 0 ||
+		input.OutputUSDPerMTok < 0 ||
+		input.CacheHitUSDPerMTok < 0 ||
+		input.CacheMakeUSDPerMTok < 0 ||
+		input.CacheMake1hUSDPerMTok < 0 ||
+		input.Multiplier < 0
+}
+
+func promptString(reader *bufio.Reader, out io.Writer, shouldPrompt bool, question *int, label string, hint string, value string) (string, error) {
+	if !shouldPrompt {
+		return value, nil
+	}
+	if err := writeQuestion(out, question, label, hint); err != nil {
+		return "", err
+	}
+	value, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func promptFloat(reader *bufio.Reader, out io.Writer, shouldPrompt bool, question *int, label string, hint string, value float64) (float64, error) {
+	if !shouldPrompt {
+		return value, nil
+	}
+	if err := writeQuestion(out, question, label, hint); err != nil {
+		return 0, err
+	}
+	raw, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return 0, err
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		if strings.Contains(strings.ToLower(label), "multiplier") {
+			return 1, nil
+		}
+		return 0, nil
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a number", label)
+	}
+	return parsed, nil
+}
+
+func writeQuestion(out io.Writer, question *int, label string, hint string) error {
+	if _, err := fmt.Fprintf(out, "Q%d: %s\n", *question, label); err != nil {
+		return err
+	}
+	if hint != "" {
+		if _, err := fmt.Fprintf(out, "   %s\n", hint); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(out, "A: "); err != nil {
+		return err
+	}
+	*question = *question + 1
+	return nil
+}
+
+func zeroIfUnset(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func buildDoctor(ctx context.Context, f *flags, now time.Time) (report.DoctorPayload, error) {

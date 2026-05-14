@@ -313,6 +313,120 @@ func TestSetupGeminiDryRunCommand(t *testing.T) {
 	}
 }
 
+func TestPricingConfigureCommandWritesInteractiveOverride(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	cmd := New(App{
+		Out: &out,
+		In:  strings.NewReader("gpt-5.4\nteam-a\n2\n20\n0.2\n2.5\n\n1.25\n"),
+	})
+	cmd.SetArgs([]string{"--home", home, "pricing", "configure"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Q1: Which model should this price match?") || !strings.Contains(out.String(), "A: ") || !strings.Contains(out.String(), "Pricing override saved") || !strings.Contains(out.String(), "Provider/auth label: team-a") {
+		t.Fatalf("interactive configure output missing save summary: %s", out.String())
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".aitok", "pricing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); !strings.Contains(got, `"match": "gpt-5.4"`) || !strings.Contains(got, `"provider": "team-a"`) || !strings.Contains(got, `"multiplier": 1.25`) {
+		t.Fatalf("pricing config not written correctly: %s", got)
+	}
+}
+
+func TestPricingConfigureCommandSupportsFlagOnlyJSON(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, In: strings.NewReader("")})
+	cmd.SetArgs([]string{
+		"--home", home,
+		"pricing", "configure",
+		"--model", "gpt-5.4",
+		"--provider", "team-b",
+		"--input-usd-per-mtok", "7",
+		"--output-usd-per-mtok", "70",
+		"--cache-hit-usd-per-mtok", "0.7",
+		"--cache-make-usd-per-mtok", "7",
+		"--cache-make-1h-usd-per-mtok", "8",
+		"--multiplier", "1",
+		"--format", "json",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Q1:") {
+		t.Fatalf("flag-only json configure should not print prompts: %s", out.String())
+	}
+	var payload struct {
+		Path  string `json:"path"`
+		Price struct {
+			Match    string `json:"match"`
+			Provider string `json:"provider"`
+		} `json:"price"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("configure json should be valid: %v\n%s", err, out.String())
+	}
+	if payload.Path == "" || payload.Price.Match != "gpt-5.4" || payload.Price.Provider != "team-b" {
+		t.Fatalf("unexpected configure payload: %+v", payload)
+	}
+}
+
+func TestPricingConfigureJSONKeepsPromptsOffStdout(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := New(App{
+		Out: &out,
+		Err: &stderr,
+		In:  strings.NewReader("gpt-5.4\nteam-json\n2\n20\n0.2\n2.5\n\n1\n"),
+	})
+	cmd.SetArgs([]string{"--home", home, "pricing", "configure", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Q1:") {
+		t.Fatalf("json stdout should not contain prompts: %s", out.String())
+	}
+	if !strings.Contains(stderr.String(), "Q1: Which model should this price match?") {
+		t.Fatalf("interactive prompts should be written to stderr for json mode: %s", stderr.String())
+	}
+	var payload struct {
+		Price struct {
+			Provider string `json:"provider"`
+		} `json:"price"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json stdout should remain machine-readable: %v\n%s", err, out.String())
+	}
+	if payload.Price.Provider != "team-json" {
+		t.Fatalf("unexpected json payload: %s", out.String())
+	}
+}
+
+func TestPricingConfigureRejectsRawAPIKeyProvider(t *testing.T) {
+	home := t.TempDir()
+	cmd := New(App{Out: io.Discard, In: strings.NewReader("")})
+	cmd.SetArgs([]string{
+		"--home", home,
+		"pricing", "configure",
+		"--model", "gpt-5.4",
+		"--provider", "sk-test-secret",
+		"--input-usd-per-mtok", "1",
+		"--output-usd-per-mtok", "1",
+		"--cache-hit-usd-per-mtok", "0",
+		"--cache-make-usd-per-mtok", "1",
+		"--cache-make-1h-usd-per-mtok", "1",
+		"--multiplier", "1",
+	})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a raw API key") {
+		t.Fatalf("err = %v, want raw API key rejection", err)
+	}
+}
+
 func TestPricingAuditReportsUnpricedModels(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),

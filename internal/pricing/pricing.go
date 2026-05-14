@@ -1,10 +1,6 @@
 package pricing
 
 import (
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,16 +39,8 @@ type Cost struct {
 
 func Load(home string) (Catalog, error) {
 	catalog := DefaultCatalog()
-	path := filepath.Join(home, userConfigPath)
-	data, err := os.ReadFile(path)
+	user, err := LoadUserConfig(home)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return catalog, nil
-		}
-		return Catalog{}, err
-	}
-	var user Catalog
-	if err := json.Unmarshal(data, &user); err != nil {
 		return Catalog{}, err
 	}
 	for _, price := range user.Models {
