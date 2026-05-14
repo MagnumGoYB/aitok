@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
@@ -154,6 +155,68 @@ func TestLoadCatalogMergesUserConfigOverDefaults(t *testing.T) {
 	}
 }
 
+func TestSaveUserPriceUpsertsProviderSpecificOverride(t *testing.T) {
+	home := t.TempDir()
+	if _, err := SaveUserPrice(home, ModelPrice{
+		Match:            "gpt-5.4",
+		Provider:         "team-a",
+		InputUSDPerMTok:  2,
+		OutputUSDPerMTok: 20,
+		Multiplier:       1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveUserPrice(home, ModelPrice{
+		Match:            "gpt-5.4",
+		Provider:         "team-b",
+		InputUSDPerMTok:  8,
+		OutputUSDPerMTok: 80,
+		Multiplier:       1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	teamA := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.4",
+		Provider: "team-a",
+		Usage:    usage.TokenUsage{Input: 1_000_000},
+	})
+	teamB := catalog.CostFor(usage.UsageEvent{
+		Model:    "gpt-5.4",
+		Provider: "team-b",
+		Usage:    usage.TokenUsage{Input: 1_000_000},
+	})
+	if teamA.USD != 2 || teamB.USD != 8 {
+		t.Fatalf("provider-specific overrides not applied: team-a=%+v team-b=%+v", teamA, teamB)
+	}
+	data, err := os.ReadFile(UserConfigPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(UserConfigPath(home)); err != nil {
+		t.Fatal(err)
+	} else if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("pricing config mode = %o, want 600", mode)
+	}
+	if got := string(data); !containsAll(got, `"provider": "team-a"`, `"provider": "team-b"`) {
+		t.Fatalf("pricing config missing provider overrides: %s", got)
+	}
+}
+
+func TestSaveUserPriceRejectsRawAPIKeyProvider(t *testing.T) {
+	_, err := SaveUserPrice(t.TempDir(), ModelPrice{
+		Match:           "gpt-5.4",
+		Provider:        "sk-test-secret",
+		InputUSDPerMTok: 1,
+	})
+	if err == nil {
+		t.Fatal("expected raw API key provider to be rejected")
+	}
+}
+
 func TestLoadIgnoresMissingUserConfig(t *testing.T) {
 	catalog, err := Load(t.TempDir())
 	if err != nil {
@@ -163,6 +226,15 @@ func TestLoadIgnoresMissingUserConfig(t *testing.T) {
 	if cost.USD <= 0 {
 		t.Fatalf("default catalog did not price known model: %+v", cost)
 	}
+}
+
+func containsAll(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if !strings.Contains(value, needle) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestDefaultCatalogCoversCodexAutoReview(t *testing.T) {

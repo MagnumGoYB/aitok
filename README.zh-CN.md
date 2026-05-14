@@ -31,6 +31,12 @@ go install github.com/MagnumGoYB/aitok/cmd/aitok@latest
 go install ./cmd/aitok
 ```
 
+如果要在 checkout 中直接运行 CLI，并避免 Go build cache 写到 `~/Library/Caches`，使用仓库 Makefile 包装：
+
+```bash
+make run ARGS="summary --period today"
+```
+
 `aitok` 会在命令执行前最多每 24 小时检查一次 GitHub release 元数据。如果发现新版本，会根据检测到的安装方式把升级提示输出到 stderr。该检查不会上传用量数据，不会读取日志，也可以通过 `--no-version-check` 或 `AITOK_NO_VERSION_CHECK=1` 跳过。
 
 ## 使用
@@ -122,7 +128,27 @@ Thread 行包含 ID、名称、tool、model、provider、Token 用量、requests
 aitok summary --pricing ./pricing.json --format json
 ```
 
-价格单位是 USD / 1M tokens。`cache_hit_usd_per_mtok` 表示 cache read 价格。`cache_make_usd_per_mtok` 表示默认 cache write 价格；当数据源能区分一小时缓存写入时，可用 `cache_make_1h_usd_per_mtok` 单独覆盖。存在 provider prompt 分层价的模型还可以配置 `prompt_threshold_tokens` 和 `above_threshold_*_usd_per_mtok` 字段。Reasoning tokens 按 output tokens 计费。`multiplier` 默认是 `1`。
+也可以直接用终端 Q/A 问答创建或更新本地覆盖：
+
+```bash
+aitok pricing configure
+```
+
+该命令会写入 `~/.aitok/pricing.json`，并通过编号问题依次询问 model match、provider/auth label、input/output/cache 价格和 multiplier。脚本化配置时也可以直接传参：
+
+```bash
+aitok pricing configure \
+  --model gpt-5.4 \
+  --provider team-a \
+  --input-usd-per-mtok 2 \
+  --output-usd-per-mtok 20 \
+  --cache-hit-usd-per-mtok 0.2 \
+  --cache-make-usd-per-mtok 2.5 \
+  --cache-make-1h-usd-per-mtok 0 \
+  --multiplier 1
+```
+
+价格单位是 USD / 1M tokens。`provider` 是工具日志里的本地 provider/auth 标签，例如 Codex `model_provider` 或 Gemini `auth_type`；这里不能填写真实 API Key。如果上游工具日志能暴露不同账号或 API-key 路由对应的本地标签，就用这些标签区分不同价格。`cache_hit_usd_per_mtok` 表示 cache read 价格。`cache_make_usd_per_mtok` 表示默认 cache write 价格；当数据源能区分一小时缓存写入时，可用 `cache_make_1h_usd_per_mtok` 单独覆盖。存在 provider prompt 分层价的模型还可以配置 `prompt_threshold_tokens` 和 `above_threshold_*_usd_per_mtok` 字段。Reasoning tokens 单独统计，离线估算不会把它当作 billable output 计费。`multiplier` 默认是 `1`。
 
 如需检查本地用量中是否存在离线价格表或本地覆盖文件无法匹配的模型：
 

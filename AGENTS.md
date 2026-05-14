@@ -43,10 +43,11 @@ Out of scope unless explicitly requested:
 - Harness-only tests: `make test-harness`
 - Vet: `make vet`
 - Build: `make build`
+- Run CLI with project-local Go cache: `make run ARGS="summary --period today"`
 - Full local validation: `make validate`
 - PR metadata check: `make validate-pr-body`
 - Commit message check: `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
-- Run CLI directly: `go run ./cmd/aitok summary --period today`
+- Avoid raw `go run` in sandboxed agent sessions; use `make run ARGS="..."` so Go build/cache output stays under `.cache/aitok`.
 
 ## 3) Iteration Self-Constraint Protocol
 
@@ -108,7 +109,7 @@ Before every product or harness iteration, do a short internal review:
 - Documentation or harness only: `make check`, `make test-harness`, and `make validate-pr-body` when PR rules changed.
 - Source adapter: `make test`, including normal, empty directory, malformed JSONL, missing field, and duplicate event cases.
 - Query/report: `make test`, covering period windows, filters, grouping, and stable JSON/Markdown output.
-- CLI/TUI: `make test`, `make build`, and when useful `go run ./cmd/aitok doctor` or `summary` smoke.
+- CLI/TUI: `make test`, `make build`, and when useful `make run ARGS="doctor"` or `make run ARGS="summary --period today"` smoke.
 - Dependencies, CI, or release config: `make validate`, with binary-size/offline/supply-chain impact noted.
 
 ## 7) CI and Submission Protocol

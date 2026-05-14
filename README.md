@@ -31,6 +31,12 @@ For local development:
 go install ./cmd/aitok
 ```
 
+To run the CLI from a checkout without writing Go build cache into `~/Library/Caches`, use the project Makefile wrapper:
+
+```bash
+make run ARGS="summary --period today"
+```
+
 `aitok` checks GitHub release metadata at most once every 24 hours before a command runs. If a newer version exists, it prints an upgrade prompt to stderr based on the detected install method. The check does not upload usage data, does not read logs, and can be skipped with `--no-version-check` or `AITOK_NO_VERSION_CHECK=1`.
 
 ## Usage
@@ -122,7 +128,27 @@ Save this as `~/.aitok/pricing.json`, or pass a file explicitly:
 aitok summary --pricing ./pricing.json --format json
 ```
 
-Prices are USD per 1M tokens. `cache_hit_usd_per_mtok` is cache read pricing. `cache_make_usd_per_mtok` is the default cache write price, and `cache_make_1h_usd_per_mtok` can override one-hour cache write pricing when a source reports that split. Models with provider prompt tiers can also set `prompt_threshold_tokens` plus `above_threshold_*_usd_per_mtok` fields. Reasoning tokens are charged as output tokens. `multiplier` defaults to `1`.
+You can also create or update the local override from a terminal Q/A flow:
+
+```bash
+aitok pricing configure
+```
+
+The command writes `~/.aitok/pricing.json` and asks numbered questions for a model match, provider/auth label, input/output/cache pricing, and multiplier. For scripted setup, pass the values directly:
+
+```bash
+aitok pricing configure \
+  --model gpt-5.4 \
+  --provider team-a \
+  --input-usd-per-mtok 2 \
+  --output-usd-per-mtok 20 \
+  --cache-hit-usd-per-mtok 0.2 \
+  --cache-make-usd-per-mtok 2.5 \
+  --cache-make-1h-usd-per-mtok 0 \
+  --multiplier 1
+```
+
+Prices are USD per 1M tokens. `provider` is a local provider/auth label from tool logs, such as Codex `model_provider` or Gemini `auth_type`; it must not be a raw API key. Use different local labels for different accounts or API-key-backed routes when the upstream tool logs expose those labels. `cache_hit_usd_per_mtok` is cache read pricing. `cache_make_usd_per_mtok` is the default cache write price, and `cache_make_1h_usd_per_mtok` can override one-hour cache write pricing when a source reports that split. Models with provider prompt tiers can also set `prompt_threshold_tokens` plus `above_threshold_*_usd_per_mtok` fields. Reasoning tokens are reported separately and are not charged as billable output by the offline estimate. `multiplier` defaults to `1`.
 
 To check whether local usage contains models that are not covered by the offline catalog or your override file:
 
