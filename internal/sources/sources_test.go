@@ -146,6 +146,177 @@ func TestCodexUsesProviderFromModelPrefixWithinSession(t *testing.T) {
 	}
 }
 
+func TestCodexBareTurnAfterProviderQualifiedModelFallsBackToSessionProvider(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"team-b/gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "team-b" || events[1].Provider != "team-a" {
+		t.Fatalf("bare turn should not inherit previous provider-qualified model: %+v", events)
+	}
+}
+
+func TestCodexUsesRequestHostProviderWhenModelIsBare(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://team-a.example/v1"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://team-b.example"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000001.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-a model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-a.example/v1/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-08T01:01:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-b model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-b.example/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "team-a" || events[1].Provider != "team-b" {
+		t.Fatalf("request host providers not applied: %+v", events)
+	}
+}
+
+func TestCodexRequestHostDoesNotBleedAcrossTurns(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://team-a.example/v1"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://team-b.example"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000001.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-a model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-b.example/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-08T01:01:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-b model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://rotated-team-b.example/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "team-b" || events[1].Provider != "team-a" {
+		t.Fatalf("known host must apply only to its turn and unknown rotated host must fall back: %+v", events)
+	}
+}
+
+func TestCodexProviderQualifiedModelOverridesRequestHost(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://team-a.example"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://team-b.example"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"team-b/gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000001.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-a model=team-b/gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-a.example/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Provider != "team-b" || events[0].Model != "gpt-5.5" {
+		t.Fatalf("provider-qualified model should override request host: %+v", events)
+	}
+}
+
+func TestCodexIgnoresUnknownOrAmbiguousRequestHosts(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://shared.example/v1"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://shared.example"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000001.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-a model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://shared.example/v1/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-08T01:01:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-b model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://rotated.example/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "team-a" || events[1].Provider != "team-a" {
+		t.Fatalf("ambiguous or unknown hosts should not override session provider: %+v", events)
+	}
+}
+
 func TestCodexFallsBackToLastTokenUsageWhenTotalMissing(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
@@ -206,7 +377,7 @@ func TestCodexThreadTitlePriorityAndMetadata(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
 	path := filepath.Join(dir, "rollout-2026-05-08T01-00-00-019e0000-0000-7000-8000-000000000001.jsonl")
-	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"thread-a","model_provider":"openai","cwd":"/repo"}}` + "\n" +
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"openai","cwd":"/repo"}}` + "\n" +
 		`{"type":"response_item","timestamp":"2026-05-08T01:00:01Z","payload":{"type":"message","role":"user","content":"First real user message"}}` + "\n" +
 		`{"type":"response_item","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"message","role":"assistant","content":"AI summary title"}}` + "\n" +
 		`{"type":"custom-title","timestamp":"2026-05-08T01:00:03Z","customTitle":"Custom title"}` + "\n" +
@@ -221,7 +392,7 @@ func TestCodexThreadTitlePriorityAndMetadata(t *testing.T) {
 		t.Fatalf("len(events) = %d, want 1", len(events))
 	}
 	event := events[0]
-	if event.ThreadID != "thread-a" || event.ThreadName != "Custom title" || event.ThreadSource != path || event.ThreadCreatedAt.IsZero() || event.ThreadLastActiveAt.IsZero() {
+	if event.ThreadID != "019e0000-0000-7000-8000-000000000001" || event.ThreadName != "Custom title" || event.ThreadSource != path || event.ThreadCreatedAt.IsZero() || event.ThreadLastActiveAt.IsZero() {
 		t.Fatalf("unexpected thread metadata: %+v", event)
 	}
 }

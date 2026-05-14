@@ -12,7 +12,8 @@ import (
 )
 
 type Codex struct {
-	Home string
+	Home             string
+	providerTimeline codexProviderTimeline
 }
 
 func NewCodex(opts Options) Codex {
@@ -33,6 +34,7 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 }
 
 func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
+	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home)
 	roots := []string{
 		filepath.Join(c.Home, ".codex", "sessions"),
 		filepath.Join(c.Home, ".codex", "archived_sessions"),
@@ -183,13 +185,15 @@ func allDigits(value string) bool {
 }
 
 type codexState struct {
-	provider   string
-	model      string
-	cwd        string
-	turnID     string
-	eventIndex int
-	prevTotal  *codexCumulativeUsage
-	thread     threadMeta
+	provider          string
+	sessionProvider   string
+	providerFromModel bool
+	model             string
+	cwd               string
+	turnID            string
+	eventIndex        int
+	prevTotal         *codexCumulativeUsage
+	thread            threadMeta
 }
 
 func (s *codexState) update(obj map[string]any) {
@@ -201,6 +205,8 @@ func (s *codexState) update(obj map[string]any) {
 	case "session_meta":
 		if provider := stringValue(payload["model_provider"]); provider != "" {
 			s.provider = provider
+			s.sessionProvider = provider
+			s.providerFromModel = false
 		}
 		if cwd := stringValue(payload["cwd"]); cwd != "" {
 			s.cwd = cwd
@@ -208,7 +214,7 @@ func (s *codexState) update(obj map[string]any) {
 	case "turn_context":
 		s.turnID = codexTurnID(obj, payload)
 		if model := stringValue(payload["model"]); model != "" {
-			s.updateModel(model)
+			s.updateModel(model, true)
 		}
 		if cwd := stringValue(payload["cwd"]); cwd != "" {
 			s.cwd = cwd
@@ -216,11 +222,17 @@ func (s *codexState) update(obj map[string]any) {
 	}
 }
 
-func (s *codexState) updateModel(raw string) {
+func (s *codexState) updateModel(raw string, clearProviderWhenBare bool) {
 	model, provider := parseCodexModel(raw)
 	s.model = model
 	if provider != "" {
 		s.provider = provider
+		s.providerFromModel = true
+	} else if clearProviderWhenBare {
+		if s.sessionProvider != "" {
+			s.provider = s.sessionProvider
+		}
+		s.providerFromModel = false
 	}
 }
 
@@ -234,9 +246,9 @@ func (c Codex) parseEvent(path string, obj map[string]any, state *codexState) (u
 		return usage.UsageEvent{}, false
 	}
 	if model := firstNonEmptyString(info, "model", "model_name"); model != "" {
-		state.updateModel(model)
+		state.updateModel(model, false)
 	} else if model := stringValue(payload["model"]); model != "" {
-		state.updateModel(model)
+		state.updateModel(model, false)
 	}
 	ts, err := time.Parse(time.RFC3339Nano, stringValue(obj["timestamp"]))
 	if err != nil {
@@ -257,7 +269,7 @@ func (c Codex) parseEvent(path string, obj map[string]any, state *codexState) (u
 		Timestamp:          ts,
 		Tool:               usage.ToolCodex,
 		Model:              normalizeCodexModel(state.model),
-		Provider:           usage.Unknown(state.provider),
+		Provider:           usage.Unknown(c.providerForEvent(state, ts)),
 		CWD:                state.cwd,
 		Source:             path,
 		ThreadID:           state.thread.ID,
@@ -267,6 +279,18 @@ func (c Codex) parseEvent(path string, obj map[string]any, state *codexState) (u
 		ThreadLastActiveAt: state.thread.LastActiveAt,
 		Usage:              tokens,
 	}, true
+}
+
+func (c Codex) providerForEvent(state *codexState, ts time.Time) string {
+	if state.providerFromModel {
+		return state.provider
+	}
+	if c.providerTimeline != nil {
+		if provider := c.providerTimeline.providerForTurn(state.thread.ID, state.turnID, ts); provider != "" {
+			return provider
+		}
+	}
+	return state.provider
 }
 
 func (s *codexState) codexTokenDelta(info map[string]any) (usage.TokenUsage, bool) {

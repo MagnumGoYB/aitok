@@ -163,17 +163,22 @@ Bugfix 目标：`v0.1.29` 之后的下一个 patch release。
 
 - Codex 解析把 `state.provider` 保持为 `session_meta.model_provider`。
 - 后续 turn 已经带有 `team-b/gpt-5.4` 这类 provider-qualified model 字符串，但 `aitok` 只在模型归一化时剥掉前缀，没有把该前缀同步成事件 provider。
+- 部分 Codex turn 只有 `gpt-5.5` 这类裸模型名；这类行只有在本地 Codex 日志里存在请求 URL，并且 URL host 能唯一匹配到某个已配置 provider 时，才能恢复单次请求 provider。
 - provider-specific pricing 因此可能把后续请求继续合并到 session 初始 provider 的 bucket 里。
 
 修复：
 
 - Codex model 解析现在同时返回归一化模型名和可选 provider 前缀。
 - `turn_context.payload.model`、token-count `info.model`、token-count `info.model_name`、token-count `payload.model` 在模型带 provider 前缀时都会更新当前事件 provider。
+- 对裸 Codex 模型名，aitok 也会读取本地 Codex 请求日志证据，并在请求 host 能唯一映射到 `~/.codex/config.toml` 的 `[model_providers.*].base_url` 时归属 provider。host 证据只作用于同一个 `turn.id`，不会按时间继续外推到后续 turn。
 - 没有 provider-qualified model 的旧日志继续 fallback 到 `session_meta.model_provider`，保持兼容。
+- 未知 host、多个 provider 共享同一 host、缺少请求 URL 证据，以及 provider URL 变化后当前本地 config 不再包含旧 host 的情况，都不会猜测归属。
 
 验收：
 
 - 单个 Codex session 中先出现 `team-a/gpt-5.4`、后出现 `team-b/gpt-5.4` 时，会输出独立的 provider bucket。
+- 单个 Codex session 中裸模型名也可以在同一 turn 有唯一请求 host 证据时拆分 provider。
+- 同 provider 请求 URL 变化时，不会把前一个 host 归属泄漏到后续 turn；未知的新 URL 会回退到 session/model 元数据。
 - provider-specific pricing 会分别使用 `team-a` 与 `team-b` 的价格，不再把两次请求都算到初始 provider。
 - 行为仍然是 offline-only，不读取 API Key。
 

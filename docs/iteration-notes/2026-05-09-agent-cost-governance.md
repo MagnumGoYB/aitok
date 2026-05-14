@@ -163,17 +163,22 @@ Root cause:
 
 - Codex parsing kept `state.provider` from `session_meta.model_provider`.
 - Later turns already carried provider-qualified model strings such as `team-b/gpt-5.4`, but `aitok` only stripped that prefix while normalizing the model name. It did not reuse the prefix as the event provider.
+- Some Codex turns only carried a bare model name such as `gpt-5.5`; for those rows, the per-request provider can only be recovered when local Codex logs contain a request URL that maps to exactly one configured provider host.
 - Provider-specific pricing therefore could merge a later request into the session's original provider bucket.
 
 Fix:
 
 - Codex model parsing now returns both normalized model and optional provider prefix.
 - `turn_context.payload.model`, token-count `info.model`, token-count `info.model_name`, and token-count `payload.model` update the active event provider when the model string is provider-qualified.
+- For bare Codex model names, aitok also reads local Codex request-log evidence and maps request hosts back to `[model_providers.*].base_url` in `~/.codex/config.toml` when the host is unique. Host evidence is scoped to the same `turn.id`; it is not carried forward by time.
 - Logs without a provider-qualified model still fall back to `session_meta.model_provider`, preserving old-session compatibility.
+- Unknown hosts, ambiguous shared hosts, missing request URL evidence, and provider URL rotations that are no longer represented in the current local config are intentionally not inferred.
 
 Acceptance:
 
 - A single Codex session with `team-a/gpt-5.4` followed by `team-b/gpt-5.4` emits separate provider buckets.
+- A single Codex session with bare model names can split providers when the matching turn has unique request-host evidence.
+- Same-provider URL changes do not bleed the previous host attribution into later turns; unknown rotated URLs fall back to session/model metadata.
 - Provider-specific pricing applies `team-a` and `team-b` rates independently instead of charging both requests under the original provider.
 - The behavior remains offline-only and does not inspect API keys.
 
