@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
@@ -118,6 +119,37 @@ func TestCodexUsesTotalTokenUsageDeltasWithinTurn(t *testing.T) {
 	}
 	if got := events[1].Timestamp.Format("15:04:05"); got != "01:00:03" {
 		t.Fatalf("timestamp = %s, want first duplicate token_count timestamp", got)
+	}
+}
+
+func TestCodexSkipsSessionFilesBeforeWindow(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	oldPath := filepath.Join(dir, "old.jsonl")
+	currentPath := filepath.Join(dir, "current.jsonl")
+	oldBody := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"old-thread","model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-old","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	currentBody := `{"type":"session_meta","timestamp":"2026-05-09T01:00:00Z","payload":{"id":"current-thread","model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-09T01:00:01Z","payload":{"id":"turn-current","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-09T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"total_tokens":20}}}}` + "\n"
+	mustWrite(t, oldPath, oldBody)
+	mustWrite(t, currentPath, currentBody)
+	windowStart := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(oldPath, windowStart.Add(-time.Hour), windowStart.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(currentPath, windowStart.Add(time.Hour), windowStart.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := NewCodex(Options{Home: home, WindowStart: windowStart, WindowEnd: windowStart.AddDate(0, 0, 1)}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ThreadID != "current-thread" {
+		t.Fatalf("window prefilter should skip stale session files, got %+v", events)
 	}
 }
 

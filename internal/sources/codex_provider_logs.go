@@ -28,6 +28,10 @@ type codexProviderHost struct {
 	Provider string
 }
 
+type codexProviderTargets struct {
+	threads map[string]struct{}
+}
+
 var (
 	codexThreadIDPattern       = regexp.MustCompile(`thread_id=([0-9a-fA-F-]{36})`)
 	codexTurnIDPattern         = regexp.MustCompile(`turn\.id=([^}\s]+)`)
@@ -49,7 +53,42 @@ var (
 	}
 )
 
-func readCodexProviderTimeline(ctx context.Context, home string) codexProviderTimeline {
+func newCodexProviderTargets() codexProviderTargets {
+	return codexProviderTargets{threads: map[string]struct{}{}}
+}
+
+func (t *codexProviderTargets) addThread(threadID string) {
+	if threadID == "" {
+		return
+	}
+	if t.threads == nil {
+		t.threads = map[string]struct{}{}
+	}
+	t.threads[threadID] = struct{}{}
+}
+
+func (t codexProviderTargets) empty() bool {
+	return len(t.threads) == 0
+}
+
+func (t codexProviderTargets) hasThread(threadID string) bool {
+	_, ok := t.threads[threadID]
+	return ok
+}
+
+func (t codexProviderTargets) threadIDs() []string {
+	ids := make([]string, 0, len(t.threads))
+	for id := range t.threads {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func readCodexProviderTimeline(ctx context.Context, home string, targets codexProviderTargets) codexProviderTimeline {
+	if targets.empty() {
+		return nil
+	}
 	hosts := readCodexProviderHosts(filepath.Join(home, ".codex", "config.toml"))
 	if len(hosts) == 0 {
 		return nil
@@ -59,8 +98,8 @@ func readCodexProviderTimeline(ctx context.Context, home string) codexProviderTi
 		return nil
 	}
 	timeline := codexProviderTimeline{}
-	timeline.merge(readCodexTextLogProviderTimeline(ctx, filepath.Join(home, ".codex", "log", "codex-tui.log"), hostProviders))
-	timeline.merge(readCodexSQLiteProviderTimeline(ctx, filepath.Join(home, ".codex", "logs_2.sqlite"), hostProviders))
+	timeline.merge(readCodexTextLogProviderTimeline(ctx, filepath.Join(home, ".codex", "log", "codex-tui.log"), hostProviders, targets))
+	timeline.merge(readCodexSQLiteProviderTimeline(ctx, filepath.Join(home, ".codex", "logs_2.sqlite"), hostProviders, targets))
 	for threadID := range timeline {
 		sort.SliceStable(timeline[threadID], func(i, j int) bool {
 			return timeline[threadID][i].At.Before(timeline[threadID][j].At)
@@ -217,7 +256,7 @@ func hostFromURL(raw string) string {
 	return strings.ToLower(parsed.Hostname())
 }
 
-func readCodexTextLogProviderTimeline(ctx context.Context, path string, hostProviders map[string]string) codexProviderTimeline {
+func readCodexTextLogProviderTimeline(ctx context.Context, path string, hostProviders map[string]string, targets codexProviderTargets) codexProviderTimeline {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -231,12 +270,12 @@ func readCodexTextLogProviderTimeline(ctx context.Context, path string, hostProv
 		if err := ctx.Err(); err != nil {
 			return timeline
 		}
-		addCodexProviderPointFromLogLine(timeline, scanner.Text(), hostProviders)
+		addCodexProviderPointFromLogLine(timeline, scanner.Text(), hostProviders, targets)
 	}
 	return timeline
 }
 
-func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProviders map[string]string) codexProviderTimeline {
+func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProviders map[string]string, targets codexProviderTargets) codexProviderTimeline {
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
@@ -245,7 +284,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 		return nil
 	}
 	timeline := codexProviderTimeline{}
-	query := codexSQLiteProviderQuery(hostProviders)
+	query := codexSQLiteProviderQuery(hostProviders, targets)
 	if query == "" {
 		return nil
 	}
@@ -270,6 +309,9 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 			continue
 		}
 		turnID := codexLogTurnID(row.Body)
+		if turnID == "" {
+			continue
+		}
 		timeline[row.ThreadID] = append(timeline[row.ThreadID], codexProviderPoint{
 			At:       time.Unix(row.TS, 0).UTC(),
 			TurnID:   turnID,
@@ -279,7 +321,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 	return timeline
 }
 
-func codexSQLiteProviderQuery(hostProviders map[string]string) string {
+func codexSQLiteProviderQuery(hostProviders map[string]string, targets codexProviderTargets) string {
 	var hostFilters []string
 	for host := range hostProviders {
 		escaped := strings.ReplaceAll(host, "'", "''")
@@ -288,10 +330,20 @@ func codexSQLiteProviderQuery(hostProviders map[string]string) string {
 	if len(hostFilters) == 0 {
 		return ""
 	}
+	threadIDs := targets.threadIDs()
+	if len(threadIDs) == 0 {
+		return ""
+	}
+	threadFilters := make([]string, 0, len(threadIDs))
+	for _, threadID := range threadIDs {
+		escaped := strings.ReplaceAll(threadID, "'", "''")
+		threadFilters = append(threadFilters, "'"+escaped+"'")
+	}
 	sort.Strings(hostFilters)
 	return `select ts, thread_id, feedback_log_body as body
 from logs
 where thread_id is not null
+  and thread_id in (` + strings.Join(threadFilters, ",") + `)
   and (` + strings.Join(hostFilters, " or ") + `)
   and feedback_log_body not like '%ToolCall:%'
   and (
@@ -308,7 +360,7 @@ where thread_id is not null
 order by ts;`
 }
 
-func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line string, hostProviders map[string]string) {
+func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line string, hostProviders map[string]string, targets codexProviderTargets) {
 	if !isCodexRequestEvidenceLine(line) {
 		return
 	}
@@ -316,7 +368,11 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 		return
 	}
 	threadID := codexThreadID(line)
-	if threadID == "" {
+	if threadID == "" || !targets.hasThread(threadID) {
+		return
+	}
+	turnID := codexLogTurnID(line)
+	if turnID == "" {
 		return
 	}
 	ts, err := parseCodexLogTimestamp(line)
@@ -329,7 +385,7 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	}
 	timeline[threadID] = append(timeline[threadID], codexProviderPoint{
 		At:       ts,
-		TurnID:   codexLogTurnID(line),
+		TurnID:   turnID,
 		Provider: provider,
 	})
 }

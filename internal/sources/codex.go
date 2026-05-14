@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,11 +14,13 @@ import (
 
 type Codex struct {
 	Home             string
+	WindowStart      time.Time
+	WindowEnd        time.Time
 	providerTimeline codexProviderTimeline
 }
 
 func NewCodex(opts Options) Codex {
-	return Codex{Home: cleanHome(opts.Home)}
+	return Codex{Home: cleanHome(opts.Home), WindowStart: opts.WindowStart, WindowEnd: opts.WindowEnd}
 }
 
 func (c Codex) Name() usage.Tool {
@@ -34,16 +37,20 @@ func (c Codex) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 }
 
 func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
-	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home)
 	roots := []string{
 		filepath.Join(c.Home, ".codex", "sessions"),
 		filepath.Join(c.Home, ".codex", "archived_sessions"),
 	}
+	targets := c.collectProviderThreads(ctx, roots)
+	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home, targets)
 	index := readCodexSessionIndex(filepath.Join(c.Home, ".codex", "session_index.jsonl"))
 	seen := map[string]struct{}{}
 	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
+				return nil
+			}
+			if !c.fileMayOverlapWindow(path) {
 				return nil
 			}
 			meta := parseCodexThreadMeta(path)
@@ -72,6 +79,38 @@ func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) er
 		}
 	}
 	return nil
+}
+
+func (c Codex) collectProviderThreads(ctx context.Context, roots []string) codexProviderTargets {
+	targets := newCodexProviderTargets()
+	for _, root := range roots {
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
+				return nil
+			}
+			if !c.fileMayOverlapWindow(path) {
+				return nil
+			}
+			meta := parseCodexThreadMeta(path)
+			targets.addThread(meta.ID)
+			return nil
+		})
+	}
+	return targets
+}
+
+func (c Codex) fileMayOverlapWindow(path string) bool {
+	if c.WindowStart.IsZero() {
+		return true
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return true
+	}
+	return !info.ModTime().Before(c.WindowStart)
 }
 
 type codexCumulativeUsage struct {

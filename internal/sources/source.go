@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
@@ -16,7 +17,9 @@ type Source interface {
 }
 
 type Options struct {
-	Home string
+	Home        string
+	WindowStart time.Time
+	WindowEnd   time.Time
 }
 
 func DefaultOptions() Options {

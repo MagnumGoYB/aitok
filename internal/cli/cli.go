@@ -337,7 +337,7 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 		return report.Payload{}, err
 	}
 	window := query.WindowFor(period, now, time.Local)
-	opts := sources.Options{Home: resolveHome(f.home)}
+	opts := sources.Options{Home: resolveHome(f.home), WindowStart: window.Start, WindowEnd: window.End}
 	catalog, err := loadPricing(f, opts.Home)
 	if err != nil {
 		return report.Payload{}, err
