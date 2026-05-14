@@ -588,7 +588,7 @@ func tuiThreadCost(thread query.ThreadResult) string {
 
 func tuiThreadCostSplit(thread query.ThreadResult) string {
 	if len(thread.CostBreakdown) == 0 {
-		return ""
+		return "-"
 	}
 	providers := make([]string, 0, len(thread.CostBreakdown))
 	for _, item := range thread.CostBreakdown {
@@ -659,7 +659,7 @@ func copyFor(language Language) localizedCopy {
 			cost:           "总成本",
 			totalTokens:    "总 Token 数",
 			cachedTokens:   "缓存 Token",
-			modelUsage:     "模型用量",
+			modelUsage:     "模型用量 [全部会话成本]",
 			threads:        "会话",
 			empty:          "当前查询没有找到用量事件。",
 			help:           "1 全部  2 Claude Code  3 Codex  4 Gemini  s 排序  j/k 移动  c 复制ID  / 搜索  esc 清空  l 语言  q 退出",
@@ -690,7 +690,7 @@ func copyFor(language Language) localizedCopy {
 		cost:           "Estimated Cost",
 		totalTokens:    "Total Tokens",
 		cachedTokens:   "Cached Tokens",
-		modelUsage:     "Model Usage",
+		modelUsage:     "Model Usage [All Threads Cost]",
 		threads:        "Threads",
 		empty:          "No usage events found for this query.",
 		help:           "1 All  2 Claude Code  3 Codex  4 Gemini  s sort  j/k move  c copy ID  / search  esc clear  l language  q quit",
@@ -964,7 +964,7 @@ func threadRow(id, name, tool, modelName, provider, req, cost, split, tokens str
 		{value: split, width: 10, align: alignLeft},
 		{value: tokens, width: 9, align: alignRight},
 	}
-	gaps := []int{1, 1, 1, 1, 1, 2, 1, 1}
+	gaps := []int{1, 1, 1, 1, 1, 3, 2, 1}
 	return tableRow(columns, gaps)
 }
 

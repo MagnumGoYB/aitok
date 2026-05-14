@@ -24,8 +24,14 @@ type codexProviderPoint struct {
 type codexProviderTimeline map[string][]codexProviderPoint
 
 type codexProviderHost struct {
+	BaseURL  string
 	Host     string
 	Provider string
+}
+
+type codexProviderMatcher struct {
+	endpoints     []codexProviderHost
+	hostProviders map[string]string
 }
 
 type codexProviderTargets struct {
@@ -89,23 +95,63 @@ func readCodexProviderTimeline(ctx context.Context, home string, targets codexPr
 	if targets.empty() {
 		return nil
 	}
-	hosts := readCodexProviderHosts(filepath.Join(home, ".codex", "config.toml"))
-	if len(hosts) == 0 {
-		return nil
-	}
-	hostProviders := uniqueCodexHostProviders(hosts)
-	if len(hostProviders) == 0 {
+	matcher := newCodexProviderMatcher(readCodexProviderHosts(filepath.Join(home, ".codex", "config.toml")))
+	if matcher.empty() {
 		return nil
 	}
 	timeline := codexProviderTimeline{}
-	timeline.merge(readCodexTextLogProviderTimeline(ctx, filepath.Join(home, ".codex", "log", "codex-tui.log"), hostProviders, targets))
-	timeline.merge(readCodexSQLiteProviderTimeline(ctx, filepath.Join(home, ".codex", "logs_2.sqlite"), hostProviders, targets))
+	timeline.merge(readCodexTextLogProviderTimeline(ctx, filepath.Join(home, ".codex", "log", "codex-tui.log"), matcher, targets))
+	timeline.merge(readCodexSQLiteProviderTimeline(ctx, filepath.Join(home, ".codex", "logs_2.sqlite"), matcher, targets))
 	for threadID := range timeline {
 		sort.SliceStable(timeline[threadID], func(i, j int) bool {
 			return timeline[threadID][i].At.Before(timeline[threadID][j].At)
 		})
 	}
 	return timeline
+}
+
+func newCodexProviderMatcher(hosts []codexProviderHost) codexProviderMatcher {
+	matcher := codexProviderMatcher{
+		hostProviders: uniqueCodexHostProviders(hosts),
+	}
+	for _, host := range hosts {
+		if host.BaseURL == "" || host.Provider == "" {
+			continue
+		}
+		matcher.endpoints = append(matcher.endpoints, host)
+	}
+	sort.Slice(matcher.endpoints, func(i, j int) bool {
+		if len(matcher.endpoints[i].BaseURL) != len(matcher.endpoints[j].BaseURL) {
+			return len(matcher.endpoints[i].BaseURL) > len(matcher.endpoints[j].BaseURL)
+		}
+		if matcher.endpoints[i].BaseURL == matcher.endpoints[j].BaseURL {
+			return matcher.endpoints[i].Provider < matcher.endpoints[j].Provider
+		}
+		return matcher.endpoints[i].BaseURL < matcher.endpoints[j].BaseURL
+	})
+	return matcher
+}
+
+func (m codexProviderMatcher) empty() bool {
+	return len(m.endpoints) == 0 && len(m.hostProviders) == 0
+}
+
+func (m codexProviderMatcher) hosts() []string {
+	seen := map[string]struct{}{}
+	for host := range m.hostProviders {
+		seen[host] = struct{}{}
+	}
+	for _, endpoint := range m.endpoints {
+		if endpoint.Host != "" {
+			seen[endpoint.Host] = struct{}{}
+		}
+	}
+	hosts := make([]string, 0, len(seen))
+	for host := range seen {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+	return hosts
 }
 
 func uniqueCodexHostProviders(hosts []codexProviderHost) map[string]string {
@@ -203,18 +249,21 @@ func readCodexProviderHosts(path string) []codexProviderHost {
 		if name == "" {
 			name = provider.section
 		}
-		host := hostFromURL(provider.baseURL)
+		baseURL, host := normalizeCodexProviderBaseURL(provider.baseURL)
 		if name == "" || host == "" {
 			continue
 		}
-		key := host + "|" + name
+		key := baseURL + "|" + host + "|" + name
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		hosts = append(hosts, codexProviderHost{Host: host, Provider: name})
+		hosts = append(hosts, codexProviderHost{BaseURL: baseURL, Host: host, Provider: name})
 	}
 	sort.Slice(hosts, func(i, j int) bool {
+		if hosts[i].BaseURL != hosts[j].BaseURL {
+			return hosts[i].BaseURL < hosts[j].BaseURL
+		}
 		if hosts[i].Host == hosts[j].Host {
 			return hosts[i].Provider < hosts[j].Provider
 		}
@@ -244,19 +293,30 @@ func parseTomlStringAssignment(line string) (string, string, bool) {
 	return key, raw[1 : 1+end], true
 }
 
-func hostFromURL(raw string) string {
+func normalizeCodexProviderBaseURL(raw string) (string, string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return ""
+		return "", ""
 	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Hostname() == "" {
-		return ""
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", ""
 	}
-	return strings.ToLower(parsed.Hostname())
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.RawPath = ""
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), strings.ToLower(parsed.Hostname())
 }
 
-func readCodexTextLogProviderTimeline(ctx context.Context, path string, hostProviders map[string]string, targets codexProviderTargets) codexProviderTimeline {
+func normalizeCodexRequestURL(raw string) (string, string) {
+	normalized, host := normalizeCodexProviderBaseURL(raw)
+	return normalized, host
+}
+
+func readCodexTextLogProviderTimeline(ctx context.Context, path string, matcher codexProviderMatcher, targets codexProviderTargets) codexProviderTimeline {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -270,12 +330,12 @@ func readCodexTextLogProviderTimeline(ctx context.Context, path string, hostProv
 		if err := ctx.Err(); err != nil {
 			return timeline
 		}
-		addCodexProviderPointFromLogLine(timeline, scanner.Text(), hostProviders, targets)
+		addCodexProviderPointFromLogLine(timeline, scanner.Text(), matcher, targets)
 	}
 	return timeline
 }
 
-func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProviders map[string]string, targets codexProviderTargets) codexProviderTimeline {
+func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher codexProviderMatcher, targets codexProviderTargets) codexProviderTimeline {
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
@@ -284,7 +344,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 		return nil
 	}
 	timeline := codexProviderTimeline{}
-	query := codexSQLiteProviderQuery(hostProviders, targets)
+	query := codexSQLiteProviderQuery(matcher, targets)
 	if query == "" {
 		return nil
 	}
@@ -304,7 +364,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 		if row.ThreadID == "" || row.TS <= 0 {
 			continue
 		}
-		provider := providerFromCodexRequestEvidence(row.Body, hostProviders)
+		provider := providerFromCodexRequestEvidence(row.Body, matcher)
 		if provider == "" {
 			continue
 		}
@@ -321,9 +381,9 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, hostProvi
 	return timeline
 }
 
-func codexSQLiteProviderQuery(hostProviders map[string]string, targets codexProviderTargets) string {
+func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProviderTargets) string {
 	var hostFilters []string
-	for host := range hostProviders {
+	for _, host := range matcher.hosts() {
 		escaped := strings.ReplaceAll(host, "'", "''")
 		hostFilters = append(hostFilters, "feedback_log_body like '%"+escaped+"%'")
 	}
@@ -360,7 +420,7 @@ where thread_id is not null
 order by ts;`
 }
 
-func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line string, hostProviders map[string]string, targets codexProviderTargets) {
+func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line string, matcher codexProviderMatcher, targets codexProviderTargets) {
 	if !isCodexRequestEvidenceLine(line) {
 		return
 	}
@@ -379,7 +439,7 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	if err != nil {
 		return
 	}
-	provider := providerFromCodexRequestEvidence(line, hostProviders)
+	provider := providerFromCodexRequestEvidence(line, matcher)
 	if provider == "" {
 		return
 	}
@@ -390,33 +450,68 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	})
 }
 
-func providerFromCodexRequestEvidence(line string, hostProviders map[string]string) string {
-	host := extractCodexRequestHost(line)
+func providerFromCodexRequestEvidence(line string, matcher codexProviderMatcher) string {
+	rawURL, host := extractCodexRequestURLAndHost(line)
+	if rawURL != "" {
+		if provider := matcher.providerForURL(rawURL); provider != "" {
+			return provider
+		}
+	}
 	if host == "" {
 		return ""
 	}
-	return hostProviders[host]
+	return matcher.hostProviders[host]
 }
 
-func extractCodexRequestHost(line string) string {
+func (m codexProviderMatcher) providerForURL(rawURL string) string {
+	requestURL, host := normalizeCodexRequestURL(rawURL)
+	if requestURL == "" {
+		return ""
+	}
+	var provider string
+	var matchedLen int
+	for _, endpoint := range m.endpoints {
+		if endpoint.Host != host || !codexURLHasBase(requestURL, endpoint.BaseURL) {
+			continue
+		}
+		if len(endpoint.BaseURL) < matchedLen {
+			continue
+		}
+		if len(endpoint.BaseURL) == matchedLen && provider != "" && provider != endpoint.Provider {
+			return ""
+		}
+		provider = endpoint.Provider
+		matchedLen = len(endpoint.BaseURL)
+	}
+	if provider != "" {
+		return provider
+	}
+	return m.hostProviders[host]
+}
+
+func codexURLHasBase(rawURL, baseURL string) bool {
+	return rawURL == baseURL || strings.HasPrefix(rawURL, baseURL+"/")
+}
+
+func extractCodexRequestURLAndHost(line string) (string, string) {
 	for _, pattern := range []*regexp.Regexp{
 		codexHTTPURLPattern,
 		codexURLFieldPattern,
 		codexConnectURLPattern,
 	} {
 		if match := pattern.FindStringSubmatch(line); len(match) == 2 {
-			if host := hostFromURL(match[1]); host != "" {
-				return host
+			if _, host := normalizeCodexRequestURL(match[1]); host != "" {
+				return match[1], host
 			}
 		}
 	}
 	if match := codexHostSomePattern.FindStringSubmatch(line); len(match) == 2 {
-		return strings.ToLower(strings.TrimSpace(match[1]))
+		return "", strings.ToLower(strings.TrimSpace(match[1]))
 	}
 	if match := codexPoolHostPattern.FindStringSubmatch(line); len(match) == 2 {
-		return strings.ToLower(strings.TrimSpace(match[1]))
+		return "", strings.ToLower(strings.TrimSpace(match[1]))
 	}
-	return ""
+	return "", ""
 }
 
 func isCodexRequestEvidenceLine(line string) bool {

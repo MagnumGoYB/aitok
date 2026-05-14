@@ -238,6 +238,44 @@ base_url = "https://team-b.example"
 	}
 }
 
+func TestCodexUsesConfigBaseURLWhenProvidersShareHost(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://shared.example/team-a"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://shared.example/team-b"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000001","model_provider":"team-a","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000001.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-a model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: Request completed method=POST url=https://shared.example/team-b/responses status=200 OK`+"\n"+
+			`2026-05-08T01:01:01.500000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000001}:turn{turn.id=turn-b model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: Http::connect; scheme=Some("https"), host=Some("shared.example"), port=None`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "team-b" || events[1].Provider != "team-a" {
+		t.Fatalf("base_url path should disambiguate shared hosts and host-only evidence should stay ambiguous: %+v", events)
+	}
+}
+
 func TestCodexRequestHostDoesNotBleedAcrossTurns(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `

@@ -27,7 +27,7 @@ func TestRenderSmoke(t *testing.T) {
 		"Estimated Cost",
 		"Total Tokens",
 		"Cached Tokens",
-		"Model Usage",
+		"Model Usage [All Threads Cost]",
 		"Search:",
 		"[Tokens]",
 		"Price",
@@ -62,7 +62,7 @@ func TestRenderChinese(t *testing.T) {
 		"总成本",
 		"总 Token 数",
 		"缓存 Token",
-		"模型用量",
+		"模型用量 [全部会话成本]",
 		"搜索:",
 		"[按 Tokens]",
 		"价格",
@@ -534,8 +534,8 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 		"Tool    Model",
 		"Model           Provider",
 		"Provider   Req",
-		"Req            Cost",
-		"Cost Split",
+		"Req             Cost",
+		"Cost  Split",
 	} {
 		if !strings.Contains(header, expected) {
 			t.Fatalf("header should keep left-aligned gap %q:\n%s", expected, header)
@@ -546,14 +546,14 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 		"codex   gpt-5.5",
 		"gpt-5.5         bcb",
 		"bcb        261",
-		"$31.3324 toska/bcb",
+		"$31.3324  toska/bcb",
 	} {
 		if !strings.Contains(row, expected) {
 			t.Fatalf("row should keep left-aligned gap %q:\n%s", expected, row)
 		}
 	}
 	for _, expected := range []string{
-		"261        $31.3324",
+		"261         $31.3324",
 		"toska/bcb      41.4m",
 	} {
 		if !strings.Contains(row, expected) {
@@ -591,6 +591,21 @@ func TestThreadsBoxShowsProviderListAndCostBreakdown(t *testing.T) {
 	}
 	if strings.Contains(box, "$301.1100+") {
 		t.Fatalf("threads box should keep Cost numeric and use Split instead of plus marker:\n%s", box)
+	}
+}
+
+func TestThreadsBoxUsesSplitPlaceholderWhenCostIsNotSplit(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "Single provider", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, expected := range []string{"Cost", "Split", "$22.0954", "  -"} {
+		if !strings.Contains(box, expected) {
+			t.Fatalf("threads box should show stable split placeholder %q:\n%s", expected, box)
+		}
 	}
 }
 
