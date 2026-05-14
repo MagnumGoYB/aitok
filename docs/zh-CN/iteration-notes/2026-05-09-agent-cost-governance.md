@@ -120,6 +120,8 @@
 
 ## 2026-05-14 交互式价格配置
 
+发布目标：`v0.1.29`。
+
 后续功能：现在可以通过 `aitok pricing configure` 在终端里创建本地价格覆盖。
 
 关键合同：
@@ -133,8 +135,10 @@
 
 - `make check`
 - `make test`
+- `make test-harness`
 - `make build`
 - 使用 `make run ARGS="--home /private/tmp/aitok-pricing-smoke --no-version-check pricing configure --format json"` 做 CLI smoke
+- 本地 `toska` provider 价格验证：summary 成本与配置的 input/output/cache-hit 费率手算一致，且 `pricing audit --provider toska` 在该周期内没有未定价行。
 
 早期验证使用 `/tmp` 或 `/private/tmp` 存 Go cache，只是因为沙箱拒绝写入 Go 默认的 `~/Library/Caches`。
 

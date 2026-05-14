@@ -120,6 +120,8 @@ Validation:
 
 ## 2026-05-14 Interactive Pricing Configuration
 
+Release target: `v0.1.29`.
+
 Follow-up feature: local pricing overrides can now be created from the terminal with `aitok pricing configure`.
 
 Key contract:
@@ -133,8 +135,10 @@ Validation for this slice:
 
 - `make check`
 - `make test`
+- `make test-harness`
 - `make build`
 - CLI smoke with `make run ARGS="--home /private/tmp/aitok-pricing-smoke --no-version-check pricing configure --format json"`
+- Local `toska` provider pricing verification: summary cost matched the configured input/output/cache-hit rates and `pricing audit --provider toska` returned no unpriced rows for the period.
 
 Earlier validation used `/tmp` or `/private/tmp` for Go caches only because the sandbox denied Go default cache writes under `~/Library/Caches`.
 
