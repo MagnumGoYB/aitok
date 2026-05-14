@@ -121,6 +121,31 @@ func TestCodexUsesTotalTokenUsageDeltasWithinTurn(t *testing.T) {
 	}
 }
 
+func TestCodexUsesProviderFromModelPrefixWithinSession(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, dir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"bcb","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"bcb/gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:01Z","payload":{"id":"turn-b","model":"openai/gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"total_tokens":10}}}}` + "\n"
+	mustWrite(t, filepath.Join(dir, "rollout.jsonl"), body)
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "bcb" || events[0].Model != "gpt-5.5" {
+		t.Fatalf("first event should keep initial provider/model: %+v", events[0])
+	}
+	if events[1].Provider != "openai" || events[1].Model != "gpt-5.4" {
+		t.Fatalf("second event should use provider/model from switched turn: %+v", events[1])
+	}
+}
+
 func TestCodexFallsBackToLastTokenUsageWhenTotalMissing(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")

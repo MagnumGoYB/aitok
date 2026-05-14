@@ -153,6 +153,34 @@ The durable project-local direction is:
 
 Temporary files like `/tmp/aitok-commit-msg` are not project tooling. They were only ephemeral command inputs.
 
+## 2026-05-14 Codex Provider Switch Cost Attribution
+
+Bugfix target: next patch release after `v0.1.29`.
+
+The user reported that when a single Codex conversation switches provider, final estimated costs can stay under the provider that created the session instead of the provider active for each request.
+
+Root cause:
+
+- Codex parsing kept `state.provider` from `session_meta.model_provider`.
+- Later turns already carried provider-qualified model strings such as `team-b/gpt-5.4`, but `aitok` only stripped that prefix while normalizing the model name. It did not reuse the prefix as the event provider.
+- Provider-specific pricing therefore could merge a later request into the session's original provider bucket.
+
+Fix:
+
+- Codex model parsing now returns both normalized model and optional provider prefix.
+- `turn_context.payload.model`, token-count `info.model`, token-count `info.model_name`, and token-count `payload.model` update the active event provider when the model string is provider-qualified.
+- Logs without a provider-qualified model still fall back to `session_meta.model_provider`, preserving old-session compatibility.
+
+Acceptance:
+
+- A single Codex session with `team-a/gpt-5.4` followed by `team-b/gpt-5.4` emits separate provider buckets.
+- Provider-specific pricing applies `team-a` and `team-b` rates independently instead of charging both requests under the original provider.
+- The behavior remains offline-only and does not inspect API keys.
+
+Validation for this slice:
+
+- `make test-packages PKGS="./internal/sources ./internal/cli"`
+
 ## Process Automation Updates
 
 CodeRabbit:

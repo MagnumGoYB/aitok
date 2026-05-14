@@ -153,6 +153,34 @@
 
 类似 `/tmp/aitok-commit-msg` 的文件不是项目工具，只是一次性命令输入。
 
+## 2026-05-14 Codex Provider 切换成本归属
+
+Bugfix 目标：`v0.1.29` 之后的下一个 patch release。
+
+用户反馈：同一个 Codex 会话里切换 provider 后，最终估算成本可能仍归到创建 session 时的 provider，而不是每次请求实际使用的 provider。
+
+根因：
+
+- Codex 解析把 `state.provider` 保持为 `session_meta.model_provider`。
+- 后续 turn 已经带有 `team-b/gpt-5.4` 这类 provider-qualified model 字符串，但 `aitok` 只在模型归一化时剥掉前缀，没有把该前缀同步成事件 provider。
+- provider-specific pricing 因此可能把后续请求继续合并到 session 初始 provider 的 bucket 里。
+
+修复：
+
+- Codex model 解析现在同时返回归一化模型名和可选 provider 前缀。
+- `turn_context.payload.model`、token-count `info.model`、token-count `info.model_name`、token-count `payload.model` 在模型带 provider 前缀时都会更新当前事件 provider。
+- 没有 provider-qualified model 的旧日志继续 fallback 到 `session_meta.model_provider`，保持兼容。
+
+验收：
+
+- 单个 Codex session 中先出现 `team-a/gpt-5.4`、后出现 `team-b/gpt-5.4` 时，会输出独立的 provider bucket。
+- provider-specific pricing 会分别使用 `team-a` 与 `team-b` 的价格，不再把两次请求都算到初始 provider。
+- 行为仍然是 offline-only，不读取 API Key。
+
+本切片验证：
+
+- `make test-packages PKGS="./internal/sources ./internal/cli"`
+
 ## 流程自动化更新
 
 CodeRabbit：

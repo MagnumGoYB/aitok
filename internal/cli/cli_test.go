@@ -216,6 +216,36 @@ func TestSummaryShowsDifferentPricesForModelProviderPairs(t *testing.T) {
 	}
 }
 
+func TestSummaryPricesProviderSwitchesWithinSameCodexSession(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".aitok", "pricing.json"), `{"models":[{"match":"gpt-5.4","provider":"team-a","input_usd_per_mtok":2},{"match":"gpt-5.4","provider":"team-b","input_usd_per_mtok":8}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "mixed-provider.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"team-a","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"team-a/gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"id":"turn-b","model":"team-b/gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary json should be valid: %v\n%s", err, out.String())
+	}
+	byProvider := map[string]float64{}
+	for _, result := range payload.Results {
+		byProvider[result.Key["provider"]] = result.CostUSD
+	}
+	if len(byProvider) != 2 || byProvider["team-a"] != 2 || byProvider["team-b"] != 8 {
+		t.Fatalf("provider-switched session should price each event by its active provider: %+v\n%s", byProvider, out.String())
+	}
+}
+
 func TestTUIRenderCommandPrintsDashboard(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),

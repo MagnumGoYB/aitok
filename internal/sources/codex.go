@@ -139,9 +139,10 @@ func firstIntValue(obj map[string]any, keys ...string) int64 {
 	return 0
 }
 
-func normalizeCodexModel(raw string) string {
+func parseCodexModel(raw string) (model string, provider string) {
 	name := strings.ToLower(strings.TrimSpace(raw))
 	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		provider = strings.TrimSpace(name[:idx])
 		name = name[idx+1:]
 	}
 	if len(name) > 11 {
@@ -159,9 +160,14 @@ func normalizeCodexModel(raw string) string {
 		name = name[:idx]
 	}
 	if name == "" {
-		return "unknown"
+		name = "unknown"
 	}
-	return name
+	return name, provider
+}
+
+func normalizeCodexModel(raw string) string {
+	model, _ := parseCodexModel(raw)
+	return model
 }
 
 func allDigits(value string) bool {
@@ -202,11 +208,19 @@ func (s *codexState) update(obj map[string]any) {
 	case "turn_context":
 		s.turnID = codexTurnID(obj, payload)
 		if model := stringValue(payload["model"]); model != "" {
-			s.model = normalizeCodexModel(model)
+			s.updateModel(model)
 		}
 		if cwd := stringValue(payload["cwd"]); cwd != "" {
 			s.cwd = cwd
 		}
+	}
+}
+
+func (s *codexState) updateModel(raw string) {
+	model, provider := parseCodexModel(raw)
+	s.model = model
+	if provider != "" {
+		s.provider = provider
 	}
 }
 
@@ -220,9 +234,9 @@ func (c Codex) parseEvent(path string, obj map[string]any, state *codexState) (u
 		return usage.UsageEvent{}, false
 	}
 	if model := firstNonEmptyString(info, "model", "model_name"); model != "" {
-		state.model = normalizeCodexModel(model)
+		state.updateModel(model)
 	} else if model := stringValue(payload["model"]); model != "" {
-		state.model = normalizeCodexModel(model)
+		state.updateModel(model)
 	}
 	ts, err := time.Parse(time.RFC3339Nano, stringValue(obj["timestamp"]))
 	if err != nil {
