@@ -232,7 +232,7 @@ func TestThreadAccumulatorGroupsUsageAndCostByThread(t *testing.T) {
 	}
 }
 
-func TestThreadAccumulatorFormatsModelListAndMarksMixedProviderWithinSameThread(t *testing.T) {
+func TestThreadAccumulatorFormatsModelAndProviderListsWithinSameThread(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
 	events := []usage.UsageEvent{
@@ -284,7 +284,51 @@ func TestThreadAccumulatorFormatsModelListAndMarksMixedProviderWithinSameThread(
 	if len(got) != 1 {
 		t.Fatalf("len(threads) = %d, want 1", len(got))
 	}
-	if got[0].ID != "thread-a" || got[0].Model != "gpt-5.3,gpt-5.4,..." || got[0].Provider != "mixed" || got[0].Usage.NormalizedTotal() != 111 {
-		t.Fatalf("mixed thread row = %+v, want id=thread-a model=gpt-5.3,gpt-5.4,... provider=mixed total=111", got[0])
+	if got[0].ID != "thread-a" || got[0].Model != "gpt-5.3,gpt-5.4,..." || got[0].Provider != "bcb,openai" || got[0].Usage.NormalizedTotal() != 111 {
+		t.Fatalf("thread row = %+v, want id=thread-a model=gpt-5.3,gpt-5.4,... provider=bcb,openai total=111", got[0])
+	}
+}
+
+func TestThreadAccumulatorIncludesProviderCostBreakdown(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:        "a",
+			Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:      usage.ToolCodex,
+			Model:     "gpt-5.5",
+			Provider:  "bcb",
+			ThreadID:  "thread-a",
+			Usage:     usage.TokenUsage{Input: 100},
+		},
+		{
+			ID:        "b",
+			Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Tool:      usage.ToolCodex,
+			Model:     "gpt-5.5",
+			Provider:  "toska",
+			ThreadID:  "thread-a",
+			Usage:     usage.TokenUsage{Input: 10},
+		},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		if event.Provider == "bcb" {
+			return Cost{USD: 1}
+		}
+		return Cost{USD: 10}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 1 {
+		t.Fatalf("len(threads) = %d, want 1", len(got))
+	}
+	if got[0].Provider != "bcb,toska" || got[0].CostUSD != 11 {
+		t.Fatalf("thread should summarize provider list and total cost: %+v", got[0])
+	}
+	if len(got[0].CostBreakdown) != 2 || got[0].CostBreakdown[0].Provider != "toska" || got[0].CostBreakdown[0].USD != 10 || got[0].CostBreakdown[1].Provider != "bcb" || got[0].CostBreakdown[1].USD != 1 {
+		t.Fatalf("unexpected cost breakdown: %+v", got[0].CostBreakdown)
 	}
 }

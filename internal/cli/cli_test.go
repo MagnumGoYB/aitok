@@ -296,7 +296,7 @@ func TestTUIRenderThreadsRespectPeriodWindow(t *testing.T) {
 	}
 }
 
-func TestSummaryThreadsKeepSingleRowForSameThreadWithModelListAndMixedProvider(t *testing.T) {
+func TestSummaryThreadsKeepSingleRowForSameThreadWithModelAndProviderLists(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "mixed.jsonl"),
 		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"thread-a","model_provider":"bcb","cwd":"/repo"}}`+"\n"+
@@ -322,7 +322,7 @@ func TestSummaryThreadsKeepSingleRowForSameThreadWithModelListAndMixedProvider(t
 		t.Fatalf("summary --threads should keep a single row per thread id: %+v", payload.Threads)
 	}
 	thread := payload.Threads[0]
-	if thread.ID != "thread-a" || thread.Model != "gpt-5.4,gpt-5.5" || thread.Provider != "mixed" || thread.Usage.NormalizedTotal() != 110 {
+	if thread.ID != "thread-a" || thread.Model != "gpt-5.4,gpt-5.5" || thread.Provider != "bcb,openai" || thread.Usage.NormalizedTotal() != 110 {
 		t.Fatalf("summary --threads should keep one row and summarize models/providers: %+v", thread)
 	}
 }

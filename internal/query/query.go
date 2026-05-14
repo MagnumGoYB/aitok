@@ -56,20 +56,26 @@ type Result struct {
 }
 
 type ThreadResult struct {
-	ID           string           `json:"id"`
-	Name         string           `json:"name"`
-	Tool         string           `json:"tool"`
-	Model        string           `json:"model"`
-	Provider     string           `json:"provider"`
-	Source       string           `json:"source,omitempty"`
-	CreatedAt    time.Time        `json:"created_at,omitempty"`
-	LastActiveAt time.Time        `json:"last_active_at,omitempty"`
-	Events       int              `json:"events"`
-	Requests     int              `json:"requests"`
-	CostUSD      float64          `json:"cost_usd"`
-	PriceSource  string           `json:"price_source,omitempty"`
-	Price        *Price           `json:"price,omitempty"`
-	Usage        usage.TokenUsage `json:"usage"`
+	ID            string           `json:"id"`
+	Name          string           `json:"name"`
+	Tool          string           `json:"tool"`
+	Model         string           `json:"model"`
+	Provider      string           `json:"provider"`
+	Source        string           `json:"source,omitempty"`
+	CreatedAt     time.Time        `json:"created_at,omitempty"`
+	LastActiveAt  time.Time        `json:"last_active_at,omitempty"`
+	Events        int              `json:"events"`
+	Requests      int              `json:"requests"`
+	CostUSD       float64          `json:"cost_usd"`
+	CostBreakdown []ThreadCost     `json:"cost_breakdown,omitempty"`
+	PriceSource   string           `json:"price_source,omitempty"`
+	Price         *Price           `json:"price,omitempty"`
+	Usage         usage.TokenUsage `json:"usage"`
+}
+
+type ThreadCost struct {
+	Provider string  `json:"provider"`
+	USD      float64 `json:"usd"`
 }
 
 type Accumulator struct {
@@ -90,11 +96,12 @@ type ThreadAccumulator struct {
 }
 
 type threadBucket struct {
-	result       ThreadResult
-	models       map[string]struct{}
-	providers    map[string]struct{}
-	priceSources map[string]struct{}
-	price        *Price
+	result         ThreadResult
+	models         map[string]struct{}
+	providers      map[string]struct{}
+	costByProvider map[string]float64
+	priceSources   map[string]struct{}
+	price          *Price
 }
 
 func DefaultGroupBy() GroupBy {
@@ -223,9 +230,10 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 				CreatedAt:    event.ThreadCreatedAt,
 				LastActiveAt: event.ThreadLastActiveAt,
 			},
-			models:       map[string]struct{}{},
-			providers:    map[string]struct{}{},
-			priceSources: map[string]struct{}{},
+			models:         map[string]struct{}{},
+			providers:      map[string]struct{}{},
+			costByProvider: map[string]float64{},
+			priceSources:   map[string]struct{}{},
 		}
 		a.buckets[string(event.Tool)+"|"+id] = bucket
 	}
@@ -235,6 +243,7 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	if a.costFor != nil {
 		cost := a.costFor(event)
 		bucket.result.CostUSD += cost.USD
+		bucket.costByProvider[provider] += cost.USD
 		if source := priceSourceLabel(cost.Source); source != "" {
 			bucket.priceSources[source] = struct{}{}
 		}
@@ -265,7 +274,8 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 	for _, result := range a.buckets {
 		thread := result.result
 		thread.Model = summarizeValues(result.models, "unknown")
-		thread.Provider = summarizeProvider(result.providers, thread.Provider)
+		thread.Provider = summarizeValues(result.providers, thread.Provider)
+		thread.CostBreakdown = summarizeThreadCosts(result.costByProvider)
 		thread.PriceSource = summarizeValues(result.priceSources, "")
 		thread.Price = result.price
 		results = append(results, thread)
@@ -436,18 +446,6 @@ func summarizeValues(values map[string]struct{}, fallback string) string {
 	return strings.Join(items[:2], ",") + ",..."
 }
 
-func summarizeProvider(values map[string]struct{}, fallback string) string {
-	if len(values) == 0 {
-		return fallback
-	}
-	if len(values) == 1 {
-		for value := range values {
-			return value
-		}
-	}
-	return "mixed"
-}
-
 func matches(event usage.UsageEvent, filters Filters) bool {
 	if len(filters.Tools) > 0 && !contains(filters.Tools, string(event.Tool)) {
 		return false
@@ -462,6 +460,29 @@ func matches(event usage.UsageEvent, filters Filters) bool {
 		return false
 	}
 	return true
+}
+
+func summarizeThreadCosts(costs map[string]float64) []ThreadCost {
+	if len(costs) <= 1 {
+		return nil
+	}
+	items := make([]ThreadCost, 0, len(costs))
+	for provider, usd := range costs {
+		if provider == "" || provider == "unknown" {
+			continue
+		}
+		items = append(items, ThreadCost{Provider: provider, USD: usd})
+	}
+	if len(items) <= 1 {
+		return nil
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].USD != items[j].USD {
+			return items[i].USD > items[j].USD
+		}
+		return items[i].Provider < items[j].Provider
+	})
+	return items
 }
 
 func contains(values []string, target string) bool {

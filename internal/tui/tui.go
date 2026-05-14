@@ -474,7 +474,7 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 			thread.Model,
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
-			report.FormatUSD(thread.CostUSD),
+			tuiThreadCost(thread),
 			compact(thread.Usage.NormalizedTotal()),
 		)
 		line = threadLine(line, i-m.threadOffset, m.threadOffset, height, len(threads), overflow)
@@ -579,6 +579,13 @@ func resultLabel(result query.Result) string {
 		return tool
 	}
 	return formatKey(result.Key)
+}
+
+func tuiThreadCost(thread query.ThreadResult) string {
+	if len(thread.CostBreakdown) == 0 {
+		return report.FormatUSD(thread.CostUSD)
+	}
+	return report.FormatUSD(thread.CostUSD) + "+"
 }
 
 func formatKey(key map[string]string) string {

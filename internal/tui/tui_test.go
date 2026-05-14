@@ -558,6 +558,35 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 	}
 }
 
+func TestThreadsBoxShowsProviderListAndCostBreakdown(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{
+			ID:       "019e2491-5335-7420-91bc-d555ae79337e",
+			Name:     "Provider switch",
+			Tool:     "codex",
+			Model:    "gpt-5.5",
+			Provider: "bcb,toska",
+			Requests: 472,
+			Events:   472,
+			Usage:    usage.TokenUsage{Input: 66_636_577},
+			CostUSD:  301.11,
+			CostBreakdown: []query.ThreadCost{
+				{Provider: "toska", USD: 299.7687},
+				{Provider: "bcb", USD: 1.3412},
+			},
+		},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, expected := range []string{"bcb,toska", "$301.1100+", "66.6m"} {
+		if !strings.Contains(box, expected) {
+			t.Fatalf("threads box should show provider list and cost breakdown marker %q:\n%s", expected, box)
+		}
+	}
+}
+
 func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
@@ -576,6 +605,9 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 		if start < 0 {
 			cost = "$6.7136"
 			start = strings.Index(line, cost)
+		}
+		if start < 0 {
+			t.Fatalf("cost text not found in threads row:\n%s\nfull box:\n%s", line, box)
 		}
 		ends = append(ends, runewidth.StringWidth(line[:start])+runewidth.StringWidth(cost))
 	}
