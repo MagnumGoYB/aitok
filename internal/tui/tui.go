@@ -461,7 +461,7 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 		end = len(threads)
 	}
 	overflow := len(threads) > height
-	header := mutedStyle.Render(threadLine(threadRow(copy.headerID, copy.headerName, copy.headerTool, copy.headerModel, copy.headerProvider, copy.headerReq, copy.headerCost, copy.headerTokens), -1, m.threadOffset, height, len(threads), overflow))
+	header := mutedStyle.Render(threadLine(threadRow(copy.headerID, copy.headerName, copy.headerTool, copy.headerModel, copy.headerProvider, copy.headerReq, copy.headerCost, copy.headerSplit, copy.headerTokens), -1, m.threadOffset, height, len(threads), overflow))
 	var lines []string
 	lines = append(lines, sectionStyle.Render(copy.threads+" "+copy.sortBadge(m.sortBy)))
 	lines = append(lines, header)
@@ -475,6 +475,7 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
 			tuiThreadCost(thread),
+			tuiThreadCostSplit(thread),
 			compact(thread.Usage.NormalizedTotal()),
 		)
 		line = threadLine(line, i-m.threadOffset, m.threadOffset, height, len(threads), overflow)
@@ -582,10 +583,21 @@ func resultLabel(result query.Result) string {
 }
 
 func tuiThreadCost(thread query.ThreadResult) string {
+	return report.FormatUSD(thread.CostUSD)
+}
+
+func tuiThreadCostSplit(thread query.ThreadResult) string {
 	if len(thread.CostBreakdown) == 0 {
-		return report.FormatUSD(thread.CostUSD)
+		return ""
 	}
-	return report.FormatUSD(thread.CostUSD) + "+"
+	providers := make([]string, 0, len(thread.CostBreakdown))
+	for _, item := range thread.CostBreakdown {
+		if item.Provider == "" {
+			continue
+		}
+		providers = append(providers, item.Provider)
+	}
+	return strings.Join(providers, "/")
 }
 
 func formatKey(key map[string]string) string {
@@ -620,6 +632,7 @@ type localizedCopy struct {
 	headerProvider string
 	headerReq      string
 	headerCost     string
+	headerSplit    string
 	headerPrice    string
 	headerTokens   string
 	headerInput    string
@@ -659,6 +672,7 @@ func copyFor(language Language) localizedCopy {
 			headerProvider: "服务商",
 			headerReq:      "请求",
 			headerCost:     "成本",
+			headerSplit:    "拆分",
 			headerPrice:    "价格",
 			headerTokens:   "Tokens",
 			headerInput:    "输入",
@@ -689,6 +703,7 @@ func copyFor(language Language) localizedCopy {
 		headerProvider: "Provider",
 		headerReq:      "Req",
 		headerCost:     "Cost",
+		headerSplit:    "Split",
 		headerPrice:    "Price",
 		headerTokens:   "Tokens",
 		headerInput:    "Input",
@@ -937,18 +952,19 @@ func rateLabel(value float64) string {
 	return fmt.Sprintf("$%.4g/M", value)
 }
 
-func threadRow(id, name, tool, modelName, provider, req, cost, tokens string) string {
+func threadRow(id, name, tool, modelName, provider, req, cost, split, tokens string) string {
 	columns := []tableColumn{
 		{value: id, width: 14, align: alignLeft},
-		{value: name, width: 28, align: alignLeft},
-		{value: tool, width: 8, align: alignLeft},
-		{value: modelName, width: 18, align: alignLeft},
+		{value: name, width: 26, align: alignLeft},
+		{value: tool, width: 7, align: alignLeft},
+		{value: modelName, width: 15, align: alignLeft},
 		{value: provider, width: 10, align: alignLeft},
 		{value: req, width: 6, align: alignLeft},
 		{value: cost, width: 11, align: alignRight},
+		{value: split, width: 10, align: alignLeft},
 		{value: tokens, width: 9, align: alignRight},
 	}
-	gaps := []int{1, 1, 1, 1, 1, 2, 1}
+	gaps := []int{1, 1, 1, 1, 1, 2, 1, 1}
 	return tableRow(columns, gaps)
 }
 
