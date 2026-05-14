@@ -22,6 +22,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `make test`：覆盖 source adapter、时间窗口、聚合、报告、CLI、setup 和 TUI smoke。
 - `make test-packages PKGS="./internal/query ./internal/report"`：指定包测试，并复用与全量测试一致的仓库本地 Go cache。
 - `make test-harness`：仓库结构传感器，检查 agent docs、Makefile 命令、CI 门禁、PR 模板和离线/隐私约束。
+- Curl 安装脚本传感器：`harness/architecture_test.go` 保持 `scripts/install.sh`、README 安装文档和 GoReleaser archive/checksum 契约一致。
 - `make vet`：静态分析。
 - `make build`：单二进制构建检查。
 - `make validate-pr-body`：可执行 PR body 元数据门禁。
@@ -72,5 +73,5 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `.github/CODEOWNERS` 将高风险区域路由给维护者，不强制依赖付费 AI review 自动化。
 - `.github/workflows/dependabot-auto-merge.yml` 只为非 major Dependabot 更新启用 GitHub auto-merge。
 - `.github/workflows/build.yml` 上传跨平台构建产物。
-- `.github/workflows/release.yml` 通过 GoReleaser 发布 tag release。
+- `.github/workflows/release.yml` 通过 GoReleaser 发布 tag release，包括供 `scripts/install.sh` 使用的 archive 和 `checksums.txt`。
 - `.github/ISSUE_TEMPLATE/bug_report.yml`、`.github/CODEOWNERS` 和 `.github/dependabot.yml` 明确开源维护路径。

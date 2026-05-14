@@ -52,6 +52,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - The Homebrew cask is published to the `MagnumGoYB/homebrew-aitok` tap and installs with `brew tap MagnumGoYB/aitok` followed by `brew install --cask aitok`; docs intentionally avoid the fully qualified cask name because it repeats `aitok`.
 - The cask is generated from the macOS archive set only. Linux and Windows archives are still published as GitHub Release assets, but they are not included in the Homebrew cask DSL.
 - The generated cask runs a post-install macOS `xattr` hook for the installed `aitok` binary so unsigned CLI archives do not remain quarantined after Homebrew installation.
+- `scripts/install.sh` is the documented `curl | sh` path for macOS and Linux. It downloads the matching GoReleaser `tar.gz` asset, verifies it with the published `checksums.txt`, and installs the binary into `AITOK_INSTALL_DIR` or `/usr/local/bin`.
 - GitHub Releases use `GITHUB_TOKEN`; publishing the tap requires the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`, because the default workflow token cannot write to the separate `homebrew-aitok` repository.
 - The release workflow pins GoReleaser v2 instead of using `latest`.
 - Release automation does not add external network telemetry or usage upload.

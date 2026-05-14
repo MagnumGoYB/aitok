@@ -19,6 +19,19 @@ brew install --cask aitok
 
 先执行 tap 可以保持安装命令简洁，避免使用较不规范的完整 cask 名称。
 
+Shell 安装脚本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | sh
+```
+
+安装脚本会下载匹配当前 macOS 或 Linux 平台的 GitHub Release archive，通过 `checksums.txt` 校验后把 `aitok` 安装到 `/usr/local/bin`。如需指定安装目录或版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | AITOK_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/MagnumGoYB/aitok/main/scripts/install.sh | AITOK_VERSION=v0.1.30 sh
+```
+
 Go：
 
 ```bash
