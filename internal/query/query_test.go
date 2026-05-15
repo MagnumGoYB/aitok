@@ -103,6 +103,33 @@ func TestAggregateMarksMixedPricesWhenGroupCombinesSources(t *testing.T) {
 	}
 }
 
+func TestMergeAggregatedPricePreservesComponentsFromMultipleMixedPrices(t *testing.T) {
+	existing := &Price{Source: "mixed", Components: []Price{
+		{Source: "custom", InputUSDPerMTok: 2, OutputUSDPerMTok: 20},
+		{Source: "official", InputUSDPerMTok: 5, OutputUSDPerMTok: 30},
+	}}
+	next := &Price{Source: "mixed", Components: []Price{
+		{Source: "custom", InputUSDPerMTok: 2, OutputUSDPerMTok: 20},
+		{Source: "official", InputUSDPerMTok: 7, OutputUSDPerMTok: 40},
+	}}
+	got := mergeAggregatedPrice(existing, next)
+	if got == nil || got.Source != "mixed" {
+		t.Fatalf("merge should keep mixed price: %+v", got)
+	}
+	if len(got.Components) != 3 {
+		t.Fatalf("merge should preserve unique mixed components, got %+v", got.Components)
+	}
+	wantInputs := []float64{2, 5, 7}
+	for i, want := range wantInputs {
+		if got.Components[i].InputUSDPerMTok != want {
+			t.Fatalf("component[%d].input = %.4g, want %.4g: %+v", i, got.Components[i].InputUSDPerMTok, want, got.Components)
+		}
+	}
+	if len(existing.Components) != 2 || len(next.Components) != 2 {
+		t.Fatalf("merge should not mutate inputs: existing=%+v next=%+v", existing.Components, next.Components)
+	}
+}
+
 func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}

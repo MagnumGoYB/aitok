@@ -746,7 +746,7 @@ func mergeAggregatedPrice(existing, next *Price) *Price {
 	if existing == nil {
 		return clonePrice(next)
 	}
-	if pricesEqual(*existing, *next) {
+	if pricesEqual(*existing, *next) && !hasPriceComponents(existing) && !hasPriceComponents(next) {
 		return existing
 	}
 	components := mergePriceComponents(existing, next)
@@ -754,6 +754,10 @@ func mergeAggregatedPrice(existing, next *Price) *Price {
 		return clonePrice(&components[0])
 	}
 	return &Price{Source: "mixed", Components: components}
+}
+
+func hasPriceComponents(price *Price) bool {
+	return price != nil && len(price.Components) > 0
 }
 
 func mergePriceComponents(prices ...*Price) []Price {
