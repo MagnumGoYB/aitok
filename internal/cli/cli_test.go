@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/buildinfo"
+	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
 )
 
@@ -184,7 +185,7 @@ func TestSummaryShowsDifferentPricesForModelProviderPairs(t *testing.T) {
 	cmd := New(App{Out: &out, Now: func() time.Time {
 		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	}})
-	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json", "--group-by", "model,provider,day"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +230,7 @@ func TestSummaryPricesProviderSwitchesWithinSameCodexSession(t *testing.T) {
 	cmd := New(App{Out: &out, Now: func() time.Time {
 		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	}})
-	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json"})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json", "--group-by", "model,provider,day"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -243,6 +244,70 @@ func TestSummaryPricesProviderSwitchesWithinSameCodexSession(t *testing.T) {
 	}
 	if len(byProvider) != 2 || byProvider["team-a"] != 2 || byProvider["team-b"] != 8 {
 		t.Fatalf("provider-switched session should price each event by its active provider: %+v\n%s", byProvider, out.String())
+	}
+}
+
+func TestSummaryModelUsageUsesThreadBaselineForMixedProviderThreads(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".aitok", "pricing.json"), `{"models":[{"match":"gpt-5.4","provider":"team-a","input_usd_per_mtok":10},{"match":"gpt-5.4","provider":"team-b","input_usd_per_mtok":100}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "mixed-provider-thread.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"thread-a","model_provider":"team-a","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"team-a/gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"id":"turn-b","model":"team-b/gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100000,"total_tokens":100000}}}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "summary", "--period", "today", "--format", "json", "--threads"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary json should be valid: %v\n%s", err, out.String())
+	}
+	if len(payload.Threads) != 1 {
+		t.Fatalf("len(threads) = %d, want 1: %+v", len(payload.Threads), payload.Threads)
+	}
+	thread := payload.Threads[0]
+	if thread.Provider != "team-a,team-b" || thread.Usage.NormalizedTotal() != 1_100_000 || thread.CostUSD != 20 {
+		t.Fatalf("thread baseline mismatch: %+v", thread)
+	}
+	if len(thread.CostBreakdown) != 2 || thread.CostBreakdown[0].Provider != "team-a" || thread.CostBreakdown[0].USD != 10 || thread.CostBreakdown[1].Provider != "team-b" || thread.CostBreakdown[1].USD != 10 {
+		t.Fatalf("unexpected thread cost breakdown: %+v", thread.CostBreakdown)
+	}
+	if len(thread.AttributionBreakdown) != 2 {
+		t.Fatalf("unexpected thread attribution breakdown: %+v", thread.AttributionBreakdown)
+	}
+	if thread.AttributionBreakdown[0].Provider != "team-a" || len(thread.AttributionBreakdown[0].BySource) != 1 || thread.AttributionBreakdown[0].BySource[0].Source != "model" || thread.AttributionBreakdown[0].BySource[0].USD != 10 {
+		t.Fatalf("unexpected team-a attribution breakdown: %+v", thread.AttributionBreakdown[0])
+	}
+	if thread.AttributionBreakdown[1].Provider != "team-b" || len(thread.AttributionBreakdown[1].BySource) != 1 || thread.AttributionBreakdown[1].BySource[0].Source != "model" || thread.AttributionBreakdown[1].BySource[0].USD != 10 {
+		t.Fatalf("unexpected team-b attribution breakdown: %+v", thread.AttributionBreakdown[1])
+	}
+	if len(thread.Turns) != 2 {
+		t.Fatalf("len(turns) = %d, want 2: %+v", len(thread.Turns), thread.Turns)
+	}
+	if thread.Turns[0].ID != "turn-a" || thread.Turns[0].Provider != "team-a" || thread.Turns[0].ProviderAttribution != "model" || thread.Turns[0].CostUSD != 10 {
+		t.Fatalf("unexpected first turn: %+v", thread.Turns[0])
+	}
+	if thread.Turns[1].ID != "turn-b" || thread.Turns[1].Provider != "team-b" || thread.Turns[1].ProviderAttribution != "model" || thread.Turns[1].CostUSD != 10 {
+		t.Fatalf("unexpected second turn: %+v", thread.Turns[1])
+	}
+	if len(payload.Results) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(payload.Results), payload.Results)
+	}
+	byProviderResult := map[string]query.Result{}
+	for _, result := range payload.Results {
+		byProviderResult[result.Key["provider"]] = result
+	}
+	if byProviderResult["team-a"].Usage.NormalizedTotal() != 1_000_000 || byProviderResult["team-a"].CostUSD != 10 {
+		t.Fatalf("team-a model usage mismatch: %+v\n%s", byProviderResult["team-a"], out.String())
+	}
+	if byProviderResult["team-b"].Usage.NormalizedTotal() != 100_000 || byProviderResult["team-b"].CostUSD != 10 {
+		t.Fatalf("team-b model usage mismatch: %+v\n%s", byProviderResult["team-b"], out.String())
 	}
 }
 

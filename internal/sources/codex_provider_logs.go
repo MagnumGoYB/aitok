@@ -19,6 +19,14 @@ type codexProviderPoint struct {
 	At       time.Time
 	TurnID   string
 	Provider string
+	Strength int
+}
+
+type codexProviderInference struct {
+	Provider string
+	Exact    bool
+	Prev     *codexProviderPoint
+	Next     *codexProviderPoint
 }
 
 type codexProviderTimeline map[string][]codexProviderPoint
@@ -40,6 +48,7 @@ type codexProviderTargets struct {
 
 var (
 	codexThreadIDPattern       = regexp.MustCompile(`thread_id=([0-9a-fA-F-]{36})`)
+	codexBodyThreadIDPattern   = regexp.MustCompile(`thread\.id=([0-9a-fA-F-]{36})`)
 	codexTurnIDPattern         = regexp.MustCompile(`turn\.id=([^}\s]+)`)
 	codexHTTPURLPattern        = regexp.MustCompile(`\b(?:POST|GET) to (https?://[^\s:"]+)`)
 	codexURLFieldPattern       = regexp.MustCompile(`\burl[:=] ?(https?://[^\s,"}]+)`)
@@ -57,6 +66,25 @@ var (
 		"checkout waiting for idle connection",
 		"Turn error:",
 	}
+	codexTrustedSQLiteProviderTargets = map[string]struct{}{
+		"codex_api::sse::responses":                 {},
+		"codex_client::default_client":              {},
+		"codex_client::transport":                   {},
+		"hyper_util::client::legacy::connect::http": {},
+	}
+	codexIgnoredTextLogProviderTargets = map[string]struct{}{
+		"codex_core::stream_events_utils": {},
+		"codex_otel.log_only":             {},
+	}
+	codexIgnoredRequestEvidenceSubstrings = []string{
+		`run_turn:list_models`,
+		`api.path="models"`,
+	}
+)
+
+const (
+	codexProviderStrengthWeak   = 1
+	codexProviderStrengthStrong = 2
 )
 
 func newCodexProviderTargets() codexProviderTargets {
@@ -180,21 +208,101 @@ func (t codexProviderTimeline) merge(other codexProviderTimeline) {
 	}
 }
 
-func (t codexProviderTimeline) providerForTurn(threadID, turnID string, _ time.Time) string {
+func (t codexProviderTimeline) providerForTurn(threadID, turnID string, at time.Time) string {
+	return t.inferenceForTurn(threadID, turnID, at).Provider
+}
+
+func (t codexProviderTimeline) inferenceForTurn(threadID, turnID string, at time.Time) codexProviderInference {
 	if threadID == "" || turnID == "" {
-		return ""
+		return codexProviderInference{}
+	}
+	if provider, exact := t.exactProviderForTurn(threadID, turnID); exact {
+		return codexProviderInference{Provider: provider, Exact: true}
+	}
+	return t.inferredProviderForTime(threadID, at)
+}
+
+func (t codexProviderTimeline) exactProviderForTurn(threadID, turnID string) (string, bool) {
+	if threadID == "" || turnID == "" {
+		return "", false
 	}
 	var provider string
+	var found bool
 	for _, point := range t[threadID] {
 		if point.TurnID != turnID {
 			continue
 		}
+		found = true
 		if provider != "" && provider != point.Provider {
-			return ""
+			return "", true
 		}
 		provider = point.Provider
 	}
-	return provider
+	return provider, found
+}
+
+func (t codexProviderTimeline) inferredProviderForTime(threadID string, at time.Time) codexProviderInference {
+	if threadID == "" || at.IsZero() {
+		return codexProviderInference{}
+	}
+	points := t[threadID]
+	if len(points) == 0 {
+		return codexProviderInference{}
+	}
+	idx := sort.Search(len(points), func(i int) bool {
+		return !points[i].At.Before(at)
+	})
+	var prev *codexProviderPoint
+	if idx > 0 {
+		prev = &points[idx-1]
+	}
+	var next *codexProviderPoint
+	if idx < len(points) {
+		next = &points[idx]
+	}
+	switch {
+	case prev == nil:
+		return codexProviderInference{Prev: prev, Next: next}
+	case next == nil:
+		return codexProviderInference{Prev: prev, Next: next}
+	case prev.Provider == next.Provider:
+		return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
+	}
+	prevGap := at.Sub(prev.At)
+	nextGap := next.At.Sub(at)
+	if prevGap < 0 || nextGap < 0 || prevGap == nextGap {
+		return codexProviderInference{Prev: prev, Next: next}
+	}
+	if weightedPrevGap, weightedNextGap, ok := codexWeightedProviderGaps(prev, prevGap, next, nextGap); ok {
+		switch {
+		case weightedPrevGap < weightedNextGap:
+			return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
+		case weightedNextGap < weightedPrevGap:
+			return codexProviderInference{Provider: next.Provider, Prev: prev, Next: next}
+		default:
+			return codexProviderInference{Prev: prev, Next: next}
+		}
+	}
+	if prevGap < nextGap {
+		return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
+	}
+	return codexProviderInference{Provider: next.Provider, Prev: prev, Next: next}
+}
+
+func codexWeightedProviderGaps(prev *codexProviderPoint, prevGap time.Duration, next *codexProviderPoint, nextGap time.Duration) (time.Duration, time.Duration, bool) {
+	prevStrength := codexProviderStrength(prev)
+	nextStrength := codexProviderStrength(next)
+	if prevStrength == nextStrength {
+		return 0, 0, false
+	}
+	return prevGap / time.Duration(prevStrength), nextGap / time.Duration(nextStrength), true
+}
+
+func codexProviderStrength(point *codexProviderPoint) int {
+	if point == nil || point.Strength <= 0 {
+		return codexProviderStrengthStrong
+	}
+	return point.Strength
 }
 
 func readCodexProviderHosts(path string) []codexProviderHost {
@@ -355,13 +463,21 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 	var rows []struct {
 		TS       int64  `json:"ts"`
 		ThreadID string `json:"thread_id"`
+		Target   string `json:"target"`
 		Body     string `json:"body"`
 	}
 	if err := json.Unmarshal(out, &rows); err != nil {
 		return nil
 	}
 	for _, row := range rows {
-		if row.ThreadID == "" || row.TS <= 0 {
+		threadID := strings.TrimSpace(row.ThreadID)
+		if threadID == "" {
+			threadID = codexBodyThreadID(row.Body)
+		}
+		if threadID == "" || row.TS <= 0 || !isTrustedCodexSQLiteProviderTarget(row.Target) {
+			continue
+		}
+		if shouldIgnoreCodexRequestEvidence(row.Body) {
 			continue
 		}
 		provider := providerFromCodexRequestEvidence(row.Body, matcher)
@@ -372,10 +488,11 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 		if turnID == "" {
 			continue
 		}
-		timeline[row.ThreadID] = append(timeline[row.ThreadID], codexProviderPoint{
+		timeline[threadID] = append(timeline[threadID], codexProviderPoint{
 			At:       time.Unix(row.TS, 0).UTC(),
 			TurnID:   turnID,
 			Provider: provider,
+			Strength: codexProviderStrengthStrong,
 		})
 	}
 	return timeline
@@ -395,15 +512,26 @@ func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProvide
 		return ""
 	}
 	threadFilters := make([]string, 0, len(threadIDs))
+	bodyThreadFilters := make([]string, 0, len(threadIDs))
 	for _, threadID := range threadIDs {
 		escaped := strings.ReplaceAll(threadID, "'", "''")
 		threadFilters = append(threadFilters, "'"+escaped+"'")
+		bodyThreadFilters = append(bodyThreadFilters, "feedback_log_body like '%thread.id="+escaped+"%'")
 	}
 	sort.Strings(hostFilters)
-	return `select ts, thread_id, feedback_log_body as body
+	sort.Strings(bodyThreadFilters)
+	trustedTargets := make([]string, 0, len(codexTrustedSQLiteProviderTargets))
+	for target := range codexTrustedSQLiteProviderTargets {
+		trustedTargets = append(trustedTargets, "'"+strings.ReplaceAll(target, "'", "''")+"'")
+	}
+	sort.Strings(trustedTargets)
+	return `select ts, thread_id, target, feedback_log_body as body
 from logs
-where thread_id is not null
-  and thread_id in (` + strings.Join(threadFilters, ",") + `)
+where (
+    thread_id in (` + strings.Join(threadFilters, ",") + `)
+    or (` + strings.Join(bodyThreadFilters, " or ") + `)
+  )
+  and target in (` + strings.Join(trustedTargets, ",") + `)
   and (` + strings.Join(hostFilters, " or ") + `)
   and feedback_log_body not like '%ToolCall:%'
   and (
@@ -424,7 +552,13 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	if !isCodexRequestEvidenceLine(line) {
 		return
 	}
+	if shouldIgnoreCodexRequestEvidence(line) {
+		return
+	}
 	if strings.Contains(line, "ToolCall:") {
+		return
+	}
+	if shouldIgnoreCodexTextLogProviderLine(line) {
 		return
 	}
 	threadID := codexThreadID(line)
@@ -447,6 +581,7 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 		At:       ts,
 		TurnID:   turnID,
 		Provider: provider,
+		Strength: codexProviderStrengthForLogLine(line),
 	})
 }
 
@@ -523,8 +658,60 @@ func isCodexRequestEvidenceLine(line string) bool {
 	return false
 }
 
+func shouldIgnoreCodexRequestEvidence(line string) bool {
+	for _, token := range codexIgnoredRequestEvidenceSubstrings {
+		if strings.Contains(line, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTrustedCodexSQLiteProviderTarget(target string) bool {
+	_, ok := codexTrustedSQLiteProviderTargets[strings.TrimSpace(target)]
+	return ok
+}
+
+func shouldIgnoreCodexTextLogProviderLine(line string) bool {
+	target := codexTextLogProviderTarget(line)
+	if target == "" {
+		return false
+	}
+	_, ignored := codexIgnoredTextLogProviderTargets[target]
+	return ignored
+}
+
+func codexProviderStrengthForLogLine(line string) int {
+	if strings.Contains(line, "Turn error:") {
+		return codexProviderStrengthWeak
+	}
+	return codexProviderStrengthStrong
+}
+
+func codexTextLogProviderTarget(line string) string {
+	for target := range codexIgnoredTextLogProviderTargets {
+		if strings.Contains(line, ": "+target+":") {
+			return target
+		}
+	}
+	for target := range codexTrustedSQLiteProviderTargets {
+		if strings.Contains(line, ": "+target+":") {
+			return target
+		}
+	}
+	return ""
+}
+
 func codexThreadID(line string) string {
 	match := codexThreadIDPattern.FindStringSubmatch(line)
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func codexBodyThreadID(line string) string {
+	match := codexBodyThreadIDPattern.FindStringSubmatch(line)
 	if len(match) != 2 {
 		return ""
 	}

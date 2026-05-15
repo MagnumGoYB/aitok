@@ -61,20 +61,93 @@ func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) er
 				meta.Name = chooseThreadTitle(title, meta.Name)
 			}
 			state := codexState{provider: "unknown", model: "unknown", thread: meta}
-			return readJSONLines(ctx, path, func(obj map[string]any) error {
+			var pending *codexBufferedTurn
+			var turns []*codexBufferedTurn
+			readErr := readJSONLines(ctx, path, func(obj map[string]any) error {
+				if pending != nil && codexTurnContextBoundaryID(obj) != "" && codexTurnContextBoundaryID(obj) != pending.id {
+					turns = append(turns, pending)
+					pending = nil
+				}
 				state.update(obj)
-				event, ok := c.parseEvent(path, obj, &state)
+				event, ok := c.parseBufferedEvent(obj, &state)
 				if ok {
-					if _, exists := seen[event.ID]; exists {
-						return nil
+					if pending != nil && event.turnID != "" && event.turnID != pending.id {
+						turns = append(turns, pending)
+						pending = nil
 					}
-					seen[event.ID] = struct{}{}
-					return handle(event)
+					pending = appendCodexBufferedTurn(pending, state, event)
 				}
 				return nil
 			})
+			if readErr != nil {
+				return readErr
+			}
+			if pending != nil {
+				turns = append(turns, pending)
+			}
+			resolved := c.resolveBufferedTurnProviders(state.thread.ID, turns)
+			for i, turn := range turns {
+				if err := c.flushBufferedTurn(path, &state, turn, resolved[i], seen, handle); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendCodexBufferedTurn(pending *codexBufferedTurn, state codexState, event codexBufferedEvent) *codexBufferedTurn {
+	if pending == nil || pending.id != event.turnID {
+		startedAt := state.turnStartedAt
+		if startedAt.IsZero() || state.turnID != event.turnID {
+			startedAt = event.at
+		}
+		pending = &codexBufferedTurn{
+			id:                  event.turnID,
+			startedAt:           startedAt,
+			endedAt:             event.at,
+			model:               event.model,
+			provider:            state.provider,
+			providerFromModel:   state.providerFromModel,
+			providerAttribution: providerAttributionFromState(state),
+			cwd:                 event.cwd,
+		}
+	}
+	pending.endedAt = event.at
+	if pending.startedAt.IsZero() {
+		pending.startedAt = event.at
+	}
+	if event.model != "" {
+		pending.model = event.model
+	}
+	if event.cwd != "" {
+		pending.cwd = event.cwd
+	}
+	if state.provider != "" {
+		pending.provider = state.provider
+	}
+	if state.providerFromModel {
+		pending.providerFromModel = true
+		pending.providerAttribution = string(usage.ProviderAttributionModel)
+	} else if pending.providerAttribution == "" {
+		pending.providerAttribution = providerAttributionFromState(state)
+	}
+	pending.events = append(pending.events, event)
+	return pending
+}
+
+func (c Codex) flushBufferedTurn(path string, state *codexState, pending *codexBufferedTurn, resolved codexResolvedProvider, seen map[string]struct{}, handle func(usage.UsageEvent) error) error {
+	for _, event := range pending.events {
+		usageEvent := c.codexUsageEvent(path, state, event.turnID, event.at, event.tokens, event.model, resolved.Provider, resolved.Attribution, event.cwd)
+		if _, exists := seen[usageEvent.ID]; exists {
+			continue
+		}
+		seen[usageEvent.ID] = struct{}{}
+		if err := handle(usageEvent); err != nil {
 			return err
 		}
 	}
@@ -230,9 +303,35 @@ type codexState struct {
 	model             string
 	cwd               string
 	turnID            string
+	turnStartedAt     time.Time
 	eventIndex        int
 	prevTotal         *codexCumulativeUsage
 	thread            threadMeta
+}
+
+type codexBufferedEvent struct {
+	turnID string
+	at     time.Time
+	model  string
+	cwd    string
+	tokens usage.TokenUsage
+}
+
+type codexBufferedTurn struct {
+	id                  string
+	startedAt           time.Time
+	endedAt             time.Time
+	model               string
+	provider            string
+	providerFromModel   bool
+	providerAttribution string
+	cwd                 string
+	events              []codexBufferedEvent
+}
+
+type codexResolvedProvider struct {
+	Provider    string
+	Attribution string
 }
 
 func (s *codexState) update(obj map[string]any) {
@@ -252,6 +351,9 @@ func (s *codexState) update(obj map[string]any) {
 		}
 	case "turn_context":
 		s.turnID = codexTurnID(obj, payload)
+		if ts, ok := codexTimestamp(obj); ok {
+			s.turnStartedAt = ts
+		}
 		if model := stringValue(payload["model"]); model != "" {
 			s.updateModel(model, true)
 		}
@@ -275,61 +377,150 @@ func (s *codexState) updateModel(raw string, clearProviderWhenBare bool) {
 	}
 }
 
-func (c Codex) parseEvent(path string, obj map[string]any, state *codexState) (usage.UsageEvent, bool) {
+func (c Codex) parseBufferedEvent(obj map[string]any, state *codexState) (codexBufferedEvent, bool) {
 	payload := objectValue(obj["payload"])
-	if payload == nil || stringValue(payload["type"]) != "token_count" {
-		return usage.UsageEvent{}, false
+	if payload == nil {
+		return codexBufferedEvent{}, false
 	}
+	ts, ok := codexTimestamp(obj)
+	if !ok {
+		return codexBufferedEvent{}, false
+	}
+
+	payloadType := stringValue(payload["type"])
+	turnID := state.turnID
+	if turnID == "" {
+		turnID = codexTurnID(obj, payload)
+	}
+
+	if payloadType != "token_count" {
+		return codexBufferedEvent{}, false
+	}
+
 	info := objectValue(payload["info"])
 	if info == nil {
-		return usage.UsageEvent{}, false
+		return codexBufferedEvent{}, false
 	}
 	if model := firstNonEmptyString(info, "model", "model_name"); model != "" {
 		state.updateModel(model, false)
 	} else if model := stringValue(payload["model"]); model != "" {
 		state.updateModel(model, false)
 	}
-	ts, err := time.Parse(time.RFC3339Nano, stringValue(obj["timestamp"]))
-	if err != nil {
-		return usage.UsageEvent{}, false
-	}
 	tokens, ok := state.codexTokenDelta(info)
 	if !ok {
-		return usage.UsageEvent{}, false
+		return codexBufferedEvent{}, false
 	}
 	tokens.CachedInput = minInt64(tokens.CachedInput, tokens.Input)
 	if tokens.NormalizedTotal() == 0 && tokens.CachedInput == 0 {
-		return usage.UsageEvent{}, false
+		return codexBufferedEvent{}, false
 	}
-	state.eventIndex++
-	id := codexEventID(state.thread.ID, state.turnID, state.eventIndex, ts, tokens)
-	return usage.UsageEvent{
-		ID:                 id,
-		Timestamp:          ts,
-		Tool:               usage.ToolCodex,
-		Model:              normalizeCodexModel(state.model),
-		Provider:           usage.Unknown(c.providerForEvent(state, ts)),
-		CWD:                state.cwd,
-		Source:             path,
-		ThreadID:           state.thread.ID,
-		ThreadName:         state.thread.Name,
-		ThreadSource:       state.thread.Source,
-		ThreadCreatedAt:    state.thread.CreatedAt,
-		ThreadLastActiveAt: state.thread.LastActiveAt,
-		Usage:              tokens,
+	return codexBufferedEvent{
+		turnID: turnID,
+		at:     ts,
+		model:  normalizeCodexModel(state.model),
+		cwd:    state.cwd,
+		tokens: tokens,
 	}, true
 }
 
-func (c Codex) providerForEvent(state *codexState, ts time.Time) string {
-	if state.providerFromModel {
-		return state.provider
+func (c Codex) providerForBufferedTurn(threadID string, pending *codexBufferedTurn) (string, string) {
+	if pending == nil {
+		return "", ""
+	}
+	if pending.providerFromModel && pending.provider != "" {
+		return pending.provider, string(usage.ProviderAttributionModel)
 	}
 	if c.providerTimeline != nil {
-		if provider := c.providerTimeline.providerForTurn(state.thread.ID, state.turnID, ts); provider != "" {
-			return provider
+		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found && provider != "" {
+			return provider, string(usage.ProviderAttributionExactRequest)
+		}
+		if provider := c.providerTimeline.inferredProviderForTime(threadID, pending.inferenceAt()).Provider; provider != "" {
+			return provider, string(usage.ProviderAttributionInferredTimeline)
 		}
 	}
-	return state.provider
+	attribution := pending.providerAttribution
+	if attribution == "" {
+		attribution = string(usage.ProviderAttributionSessionFallback)
+	}
+	return pending.provider, attribution
+}
+
+func (c Codex) resolveBufferedTurnProviders(threadID string, turns []*codexBufferedTurn) []codexResolvedProvider {
+	resolved := make([]codexResolvedProvider, len(turns))
+	labeled := make([]bool, len(turns))
+	for i, turn := range turns {
+		if turn == nil {
+			continue
+		}
+		if provider, attribution, ok := c.labeledProviderForBufferedTurn(threadID, turn); ok {
+			resolved[i] = codexResolvedProvider{Provider: provider, Attribution: attribution}
+			labeled[i] = true
+		}
+	}
+	for i := 0; i < len(turns); {
+		if labeled[i] {
+			i++
+			continue
+		}
+		j := i
+		for j < len(turns) && !labeled[j] {
+			j++
+		}
+		for k := i; k < j; k++ {
+			provider, attribution := c.providerForBufferedTurn(threadID, turns[k])
+			resolved[k] = codexResolvedProvider{Provider: provider, Attribution: attribution}
+		}
+		i = j
+	}
+	return resolved
+}
+
+func (c Codex) labeledProviderForBufferedTurn(threadID string, pending *codexBufferedTurn) (string, string, bool) {
+	if pending == nil {
+		return "", "", false
+	}
+	if pending.providerFromModel && pending.provider != "" {
+		return pending.provider, string(usage.ProviderAttributionModel), true
+	}
+	if c.providerTimeline != nil {
+		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found && provider != "" {
+			return provider, string(usage.ProviderAttributionExactRequest), true
+		}
+	}
+	return "", "", false
+}
+
+func (c Codex) codexUsageEvent(path string, state *codexState, turnID string, ts time.Time, tokens usage.TokenUsage, model string, provider string, attribution string, cwd string) usage.UsageEvent {
+	tokens.CachedInput = minInt64(tokens.CachedInput, tokens.Input)
+	state.eventIndex++
+	id := codexEventID(state.thread.ID, turnID, state.eventIndex, ts, tokens)
+	return usage.UsageEvent{
+		ID:                  id,
+		TurnID:              turnID,
+		Timestamp:           ts,
+		Tool:                usage.ToolCodex,
+		Model:               normalizeCodexModel(model),
+		Provider:            usage.Unknown(provider),
+		ProviderAttribution: attribution,
+		CWD:                 cwd,
+		Source:              path,
+		ThreadID:            state.thread.ID,
+		ThreadName:          state.thread.Name,
+		ThreadSource:        state.thread.Source,
+		ThreadCreatedAt:     state.thread.CreatedAt,
+		ThreadLastActiveAt:  state.thread.LastActiveAt,
+		Usage:               tokens,
+	}
+}
+
+func providerAttributionFromState(state codexState) string {
+	if state.providerFromModel {
+		return string(usage.ProviderAttributionModel)
+	}
+	if state.sessionProvider != "" {
+		return string(usage.ProviderAttributionSessionFallback)
+	}
+	return ""
 }
 
 func (s *codexState) codexTokenDelta(info map[string]any) (usage.TokenUsage, bool) {
@@ -356,6 +547,35 @@ func minInt64(left, right int64) int64 {
 		return left
 	}
 	return right
+}
+
+func (p *codexBufferedTurn) inferenceAt() time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	if !p.endedAt.IsZero() {
+		return p.endedAt
+	}
+	return p.startedAt
+}
+
+func codexTurnContextBoundaryID(obj map[string]any) string {
+	payload := objectValue(obj["payload"])
+	if payload == nil {
+		return ""
+	}
+	if stringValue(obj["type"]) == "turn_context" {
+		return codexTurnID(obj, payload)
+	}
+	return ""
+}
+
+func codexTimestamp(obj map[string]any) (time.Time, bool) {
+	ts, err := time.Parse(time.RFC3339Nano, stringValue(obj["timestamp"]))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
 }
 
 func codexEventID(threadID, turnID string, eventIndex int, ts time.Time, tokens usage.TokenUsage) string {

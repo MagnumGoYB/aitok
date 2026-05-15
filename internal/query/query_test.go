@@ -332,3 +332,308 @@ func TestThreadAccumulatorIncludesProviderCostBreakdown(t *testing.T) {
 		t.Fatalf("unexpected cost breakdown: %+v", got[0].CostBreakdown)
 	}
 }
+
+func TestThreadAccumulatorIncludesProviderAttributionBreakdown(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                  "a",
+			TurnID:              "turn-a",
+			Timestamp:           time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 100},
+		},
+		{
+			ID:                  "b",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 10},
+		},
+		{
+			ID:                  "c",
+			TurnID:              "turn-c",
+			Timestamp:           time.Date(2026, 5, 8, 3, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "bcb",
+			ProviderAttribution: string(usage.ProviderAttributionModel),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 1},
+		},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		switch event.ID {
+		case "a":
+			return Cost{USD: 100}
+		case "b":
+			return Cost{USD: 10}
+		default:
+			return Cost{USD: 1}
+		}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.Results()
+	if len(got) != 1 {
+		t.Fatalf("len(threads) = %d, want 1", len(got))
+	}
+	thread := got[0]
+	if len(thread.AttributionBreakdown) != 2 {
+		t.Fatalf("len(attribution_breakdown) = %d, want 2: %+v", len(thread.AttributionBreakdown), thread.AttributionBreakdown)
+	}
+	if thread.AttributionBreakdown[0].Provider != "toska" || len(thread.AttributionBreakdown[0].BySource) != 2 {
+		t.Fatalf("unexpected toska attribution breakdown: %+v", thread.AttributionBreakdown)
+	}
+	if thread.AttributionBreakdown[0].BySource[0].Source != string(usage.ProviderAttributionInferredTimeline) || thread.AttributionBreakdown[0].BySource[0].USD != 100 || thread.AttributionBreakdown[0].BySource[0].Requests != 1 || thread.AttributionBreakdown[0].BySource[0].Usage.Input != 100 {
+		t.Fatalf("unexpected inferred attribution item: %+v", thread.AttributionBreakdown[0].BySource[0])
+	}
+	if thread.AttributionBreakdown[0].BySource[1].Source != string(usage.ProviderAttributionExactRequest) || thread.AttributionBreakdown[0].BySource[1].USD != 10 {
+		t.Fatalf("unexpected exact attribution item: %+v", thread.AttributionBreakdown[0].BySource[1])
+	}
+	if thread.AttributionBreakdown[1].Provider != "bcb" || len(thread.AttributionBreakdown[1].BySource) != 1 || thread.AttributionBreakdown[1].BySource[0].Source != string(usage.ProviderAttributionModel) || thread.AttributionBreakdown[1].BySource[0].USD != 1 {
+		t.Fatalf("unexpected bcb attribution breakdown: %+v", thread.AttributionBreakdown[1])
+	}
+	if len(thread.Turns) != 3 {
+		t.Fatalf("len(turns) = %d, want 3: %+v", len(thread.Turns), thread.Turns)
+	}
+	if thread.Turns[0].ID != "turn-a" || thread.Turns[0].EventID != "a" || thread.Turns[0].Provider != "toska" || thread.Turns[0].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) || thread.Turns[0].CostUSD != 100 {
+		t.Fatalf("unexpected first turn breakdown: %+v", thread.Turns[0])
+	}
+	if thread.Turns[2].ID != "turn-c" || thread.Turns[2].Provider != "bcb" || thread.Turns[2].ProviderAttribution != string(usage.ProviderAttributionModel) || thread.Turns[2].CostUSD != 1 {
+		t.Fatalf("unexpected last turn breakdown: %+v", thread.Turns[2])
+	}
+}
+
+func TestThreadAccumulatorGroupResultsUseThreadBaselineForMixedProviderThread(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:        "a",
+			Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:      usage.ToolCodex,
+			Model:     "gpt-5.4",
+			Provider:  "team-a",
+			ThreadID:  "thread-a",
+			Usage:     usage.TokenUsage{Input: 100},
+		},
+		{
+			ID:        "b",
+			Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Tool:      usage.ToolCodex,
+			Model:     "gpt-5.4",
+			Provider:  "team-b",
+			ThreadID:  "thread-a",
+			Usage:     usage.TokenUsage{Input: 10},
+		},
+	}
+	acc := NewThreadAccumulatorWithSort(window, Filters{}, SortByTokens, func(event usage.UsageEvent) Cost {
+		if event.Provider == "team-a" {
+			return Cost{USD: 1, Source: "user", InputUSDPerMTok: 1}
+		}
+		return Cost{USD: 2, Source: "default", InputUSDPerMTok: 2}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.GroupResults(GroupBy{"tool", "model", "provider"})
+	if len(got) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(got), got)
+	}
+	byProvider := map[string]Result{}
+	for _, result := range got {
+		byProvider[result.Key["provider"]] = result
+	}
+	if byProvider["team-a"].Key["tool"] != "codex" || byProvider["team-a"].Key["model"] != "gpt-5.4" {
+		t.Fatalf("team-a key mismatch: %+v", byProvider["team-a"].Key)
+	}
+	if byProvider["team-a"].Usage.NormalizedTotal() != 100 || byProvider["team-a"].CostUSD != 1 {
+		t.Fatalf("team-a totals mismatch: %+v", byProvider["team-a"])
+	}
+	if byProvider["team-a"].PriceSource != "custom" || byProvider["team-a"].Price == nil || byProvider["team-a"].Price.Source != "custom" {
+		t.Fatalf("team-a price mismatch: %+v", byProvider["team-a"])
+	}
+	if byProvider["team-b"].Key["tool"] != "codex" || byProvider["team-b"].Key["model"] != "gpt-5.4" {
+		t.Fatalf("team-b key mismatch: %+v", byProvider["team-b"].Key)
+	}
+	if byProvider["team-b"].Usage.NormalizedTotal() != 10 || byProvider["team-b"].CostUSD != 2 {
+		t.Fatalf("team-b totals mismatch: %+v", byProvider["team-b"])
+	}
+	if byProvider["team-b"].PriceSource != "official" || byProvider["team-b"].Price == nil || byProvider["team-b"].Price.Source != "official" {
+		t.Fatalf("team-b price mismatch: %+v", byProvider["team-b"])
+	}
+}
+
+func TestThreadAccumulatorGroupResultsSplitsSessionFallbackAndExactProvidersWithinThread(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                  "a",
+			Timestamp:           time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "bcb",
+			ProviderAttribution: string(usage.ProviderAttributionSessionFallback),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 100},
+		},
+		{
+			ID:                  "b",
+			Timestamp:           time.Date(2026, 5, 8, 2, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 10},
+		},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		if event.ID == "a" {
+			return Cost{USD: 100}
+		}
+		return Cost{USD: 10}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.GroupResults(GroupBy{"tool", "model", "provider"})
+	if len(got) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(got), got)
+	}
+	byProvider := map[string]Result{}
+	for _, result := range got {
+		byProvider[result.Key["provider"]] = result
+	}
+	if byProvider["bcb"].CostUSD != 100 || byProvider["bcb"].Usage.NormalizedTotal() != 100 {
+		t.Fatalf("bcb totals mismatch: %+v", byProvider["bcb"])
+	}
+	if byProvider["toska"].CostUSD != 10 || byProvider["toska"].Usage.NormalizedTotal() != 10 {
+		t.Fatalf("toska totals mismatch: %+v", byProvider["toska"])
+	}
+}
+
+func TestThreadAccumulatorGroupResultsRebalancesMixedProviderBridgeByTurnBuckets(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                  "exact-a",
+			TurnID:              "turn-a",
+			Timestamp:           time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 1, Total: 1},
+		},
+		{
+			ID:                  "bridge-b1",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 10, Total: 10},
+		},
+		{
+			ID:                  "bridge-b2",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 5, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 20, Total: 20},
+		},
+		{
+			ID:                  "bridge-b3",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 10, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 30, Total: 30},
+		},
+		{
+			ID:                  "bridge-c1",
+			TurnID:              "turn-c",
+			Timestamp:           time.Date(2026, 5, 8, 1, 2, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 40, Total: 40},
+		},
+		{
+			ID:                  "bridge-c2",
+			TurnID:              "turn-c",
+			Timestamp:           time.Date(2026, 5, 8, 1, 2, 5, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 50, Total: 50},
+		},
+		{
+			ID:                  "exact-d",
+			TurnID:              "turn-d",
+			Timestamp:           time.Date(2026, 5, 8, 1, 3, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "bcb",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 60, Total: 60},
+		},
+	}
+	costs := map[string]float64{
+		"exact-a":   1,
+		"bridge-b1": 10,
+		"bridge-b2": 20,
+		"bridge-b3": 30,
+		"bridge-c1": 40,
+		"bridge-c2": 50,
+		"exact-d":   60,
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		return Cost{USD: costs[event.ID]}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.GroupResults(GroupBy{"tool", "model", "provider"})
+	if len(got) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(got), got)
+	}
+	byProvider := map[string]Result{}
+	for _, result := range got {
+		byProvider[result.Key["provider"]] = result
+	}
+	if byProvider["toska"].CostUSD != 19 || byProvider["toska"].Usage.NormalizedTotal() != 19 {
+		t.Fatalf("toska bridge carry mismatch: %+v", byProvider["toska"])
+	}
+	if byProvider["bcb"].CostUSD != 192 || byProvider["bcb"].Usage.NormalizedTotal() != 192 {
+		t.Fatalf("bcb bridge rebalance mismatch: %+v", byProvider["bcb"])
+	}
+}

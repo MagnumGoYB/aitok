@@ -359,9 +359,12 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	threadAcc := query.NewThreadAccumulatorWithSort(window, filters, sortBy, func(event usage.UsageEvent) query.Cost {
 		return queryCost(catalog.CostFor(event))
 	})
+	useThreadBaseline := query.SupportsThreadBaseline(groupBy)
 	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
-		acc.Add(event)
-		if f.threads || f.renderTUI {
+		if !useThreadBaseline {
+			acc.Add(event)
+		}
+		if useThreadBaseline || f.threads || f.renderTUI {
 			threadAcc.Add(event)
 		}
 		return nil
@@ -369,9 +372,17 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 	if err != nil {
 		return report.Payload{}, err
 	}
-	payload := report.Payload{GeneratedAt: now, Period: period, Window: window, GroupBy: groupBy, SortBy: sortBy, Results: acc.Results()}
+	var threads []query.ThreadResult
+	if useThreadBaseline || f.threads || f.renderTUI {
+		threads = threadAcc.Results()
+	}
+	results := acc.Results()
+	if useThreadBaseline {
+		results = threadAcc.GroupResults(groupBy)
+	}
+	payload := report.Payload{GeneratedAt: now, Period: period, Window: window, GroupBy: groupBy, SortBy: sortBy, Results: results}
 	if f.threads || f.renderTUI {
-		payload.Threads = threadAcc.Results()
+		payload.Threads = threads
 	}
 	return payload, nil
 }
