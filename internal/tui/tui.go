@@ -461,7 +461,7 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 		end = len(threads)
 	}
 	overflow := len(threads) > height
-	header := mutedStyle.Render(threadLine(threadRow(copy.headerID, copy.headerName, copy.headerTool, copy.headerModel, copy.headerProvider, copy.headerReq, copy.headerCost, copy.headerTokens), -1, m.threadOffset, height, len(threads), overflow))
+	header := mutedStyle.Render(threadLine(threadRow(copy.headerID, copy.headerName, copy.headerTool, copy.headerModel, copy.headerProvider, copy.headerReq, copy.headerCost, copy.headerSplit, copy.headerTokens), -1, m.threadOffset, height, len(threads), overflow))
 	var lines []string
 	lines = append(lines, sectionStyle.Render(copy.threads+" "+copy.sortBadge(m.sortBy)))
 	lines = append(lines, header)
@@ -474,7 +474,8 @@ func (m model) threadsBox(threads []query.ThreadResult, copy localizedCopy) stri
 			thread.Model,
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
-			report.FormatUSD(thread.CostUSD),
+			tuiThreadCost(thread),
+			tuiThreadCostSplit(thread),
 			compact(thread.Usage.NormalizedTotal()),
 		)
 		line = threadLine(line, i-m.threadOffset, m.threadOffset, height, len(threads), overflow)
@@ -581,6 +582,24 @@ func resultLabel(result query.Result) string {
 	return formatKey(result.Key)
 }
 
+func tuiThreadCost(thread query.ThreadResult) string {
+	return report.FormatUSD(thread.CostUSD)
+}
+
+func tuiThreadCostSplit(thread query.ThreadResult) string {
+	if len(thread.CostBreakdown) == 0 {
+		return "-"
+	}
+	providers := make([]string, 0, len(thread.CostBreakdown))
+	for _, item := range thread.CostBreakdown {
+		if item.Provider == "" {
+			continue
+		}
+		providers = append(providers, item.Provider)
+	}
+	return strings.Join(providers, "/")
+}
+
 func formatKey(key map[string]string) string {
 	parts := make([]string, 0, len(key))
 	for k, v := range key {
@@ -613,6 +632,7 @@ type localizedCopy struct {
 	headerProvider string
 	headerReq      string
 	headerCost     string
+	headerSplit    string
 	headerPrice    string
 	headerTokens   string
 	headerInput    string
@@ -639,7 +659,7 @@ func copyFor(language Language) localizedCopy {
 			cost:           "总成本",
 			totalTokens:    "总 Token 数",
 			cachedTokens:   "缓存 Token",
-			modelUsage:     "模型用量",
+			modelUsage:     "模型用量 [全部会话成本]",
 			threads:        "会话",
 			empty:          "当前查询没有找到用量事件。",
 			help:           "1 全部  2 Claude Code  3 Codex  4 Gemini  s 排序  j/k 移动  c 复制ID  / 搜索  esc 清空  l 语言  q 退出",
@@ -652,6 +672,7 @@ func copyFor(language Language) localizedCopy {
 			headerProvider: "服务商",
 			headerReq:      "请求",
 			headerCost:     "成本",
+			headerSplit:    "拆分",
 			headerPrice:    "价格",
 			headerTokens:   "Tokens",
 			headerInput:    "输入",
@@ -669,7 +690,7 @@ func copyFor(language Language) localizedCopy {
 		cost:           "Estimated Cost",
 		totalTokens:    "Total Tokens",
 		cachedTokens:   "Cached Tokens",
-		modelUsage:     "Model Usage",
+		modelUsage:     "Model Usage [All Threads Cost]",
 		threads:        "Threads",
 		empty:          "No usage events found for this query.",
 		help:           "1 All  2 Claude Code  3 Codex  4 Gemini  s sort  j/k move  c copy ID  / search  esc clear  l language  q quit",
@@ -682,6 +703,7 @@ func copyFor(language Language) localizedCopy {
 		headerProvider: "Provider",
 		headerReq:      "Req",
 		headerCost:     "Cost",
+		headerSplit:    "Split",
 		headerPrice:    "Price",
 		headerTokens:   "Tokens",
 		headerInput:    "Input",
@@ -930,18 +952,19 @@ func rateLabel(value float64) string {
 	return fmt.Sprintf("$%.4g/M", value)
 }
 
-func threadRow(id, name, tool, modelName, provider, req, cost, tokens string) string {
+func threadRow(id, name, tool, modelName, provider, req, cost, split, tokens string) string {
 	columns := []tableColumn{
 		{value: id, width: 14, align: alignLeft},
-		{value: name, width: 28, align: alignLeft},
-		{value: tool, width: 8, align: alignLeft},
-		{value: modelName, width: 18, align: alignLeft},
+		{value: name, width: 26, align: alignLeft},
+		{value: tool, width: 7, align: alignLeft},
+		{value: modelName, width: 15, align: alignLeft},
 		{value: provider, width: 10, align: alignLeft},
 		{value: req, width: 6, align: alignLeft},
 		{value: cost, width: 11, align: alignRight},
+		{value: split, width: 10, align: alignLeft},
 		{value: tokens, width: 9, align: alignRight},
 	}
-	gaps := []int{1, 1, 1, 1, 1, 2, 1}
+	gaps := []int{1, 1, 1, 1, 1, 3, 2, 1}
 	return tableRow(columns, gaps)
 }
 

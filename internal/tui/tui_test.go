@@ -27,7 +27,7 @@ func TestRenderSmoke(t *testing.T) {
 		"Estimated Cost",
 		"Total Tokens",
 		"Cached Tokens",
-		"Model Usage",
+		"Model Usage [All Threads Cost]",
 		"Search:",
 		"[Tokens]",
 		"Price",
@@ -62,7 +62,7 @@ func TestRenderChinese(t *testing.T) {
 		"总成本",
 		"总 Token 数",
 		"缓存 Token",
-		"模型用量",
+		"模型用量 [全部会话成本]",
 		"搜索:",
 		"[按 Tokens]",
 		"价格",
@@ -452,10 +452,10 @@ func TestTUILayoutUsesCompactToolbarAndCards(t *testing.T) {
 }
 
 func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
-	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"))
-	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "$34.9399", "45.5m"))
+	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens"))
+	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "$34.9399", "toska/bcb", "45.5m"))
 
-	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens"} {
+	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens"} {
 		want := runewidth.StringWidth(header[:strings.Index(header, label)])
 		got := runewidth.StringWidth(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
 		if got != want && label != "Cost" && label != "Tokens" {
@@ -483,6 +483,8 @@ func columnValueForLabel(label, row string) string {
 		return "297"
 	case "Cost":
 		return "$34.9399"
+	case "Split":
+		return "toska/bcb"
 	case "Tokens":
 		return "45.5m"
 	default:
@@ -524,36 +526,85 @@ func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 }
 
 func TestThreadRowAlignmentPolicy(t *testing.T) {
-	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Tokens")
-	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "$31.3324", "41.4m")
+	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens")
+	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "$31.3324", "toska/bcb", "41.4m")
 
 	for _, expected := range []string{
-		"Name                         Tool",
-		"Tool     Model",
-		"Model              Provider",
+		"Name                       Tool",
+		"Tool    Model",
+		"Model           Provider",
 		"Provider   Req",
-		"Req            Cost",
+		"Req             Cost",
+		"Cost  Split",
 	} {
 		if !strings.Contains(header, expected) {
 			t.Fatalf("header should keep left-aligned gap %q:\n%s", expected, header)
 		}
 	}
 	for _, expected := range []string{
-		"Fix title                    codex",
-		"codex    gpt-5.5",
-		"gpt-5.5            bcb",
+		"Fix title                  codex",
+		"codex   gpt-5.5",
+		"gpt-5.5         bcb",
 		"bcb        261",
+		"$31.3324  toska/bcb",
 	} {
 		if !strings.Contains(row, expected) {
 			t.Fatalf("row should keep left-aligned gap %q:\n%s", expected, row)
 		}
 	}
 	for _, expected := range []string{
-		"261        $31.3324",
-		"$31.3324     41.4m",
+		"261         $31.3324",
+		"toska/bcb      41.4m",
 	} {
 		if !strings.Contains(row, expected) {
-			t.Fatalf("req/cost/tokens should preserve the numeric alignment %q:\n%s", expected, row)
+			t.Fatalf("req/cost/split/tokens should preserve the numeric alignment %q:\n%s", expected, row)
+		}
+	}
+}
+
+func TestThreadsBoxShowsProviderListAndCostBreakdown(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{
+			ID:       "019e2491-5335-7420-91bc-d555ae79337e",
+			Name:     "Provider switch",
+			Tool:     "codex",
+			Model:    "gpt-5.5",
+			Provider: "bcb,toska",
+			Requests: 472,
+			Events:   472,
+			Usage:    usage.TokenUsage{Input: 66_636_577},
+			CostUSD:  301.11,
+			CostBreakdown: []query.ThreadCost{
+				{Provider: "toska", USD: 299.7687},
+				{Provider: "bcb", USD: 1.3412},
+			},
+		},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, expected := range []string{"bcb,toska", "$301.1100", "toska/bcb", "66.6m"} {
+		if !strings.Contains(box, expected) {
+			t.Fatalf("threads box should show provider list and cost split %q:\n%s", expected, box)
+		}
+	}
+	if strings.Contains(box, "$301.1100+") {
+		t.Fatalf("threads box should keep Cost numeric and use Split instead of plus marker:\n%s", box)
+	}
+}
+
+func TestThreadsBoxUsesSplitPlaceholderWhenCostIsNotSplit(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "Single provider", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, expected := range []string{"Cost", "Split", "$22.0954", "  -"} {
+		if !strings.Contains(box, expected) {
+			t.Fatalf("threads box should show stable split placeholder %q:\n%s", expected, box)
 		}
 	}
 }
@@ -576,6 +627,9 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 		if start < 0 {
 			cost = "$6.7136"
 			start = strings.Index(line, cost)
+		}
+		if start < 0 {
+			t.Fatalf("cost text not found in threads row:\n%s\nfull box:\n%s", line, box)
 		}
 		ends = append(ends, runewidth.StringWidth(line[:start])+runewidth.StringWidth(cost))
 	}

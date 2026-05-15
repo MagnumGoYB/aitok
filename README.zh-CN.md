@@ -109,7 +109,11 @@ TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也
 --group-by tool,model,provider,day,cwd
 ```
 
-报告会返回请求数量、Token 总量、缓存 Token、预估 USD 成本，以及每个 `model/provider` 分组实际匹配到的价格。默认离线价格表来自官方公开价格快照，显示为 `official`；命中 `~/.aitok/pricing.json` 本地覆盖时显示为 `custom`。如果自定义分组合并了多种价格定义，则价格显示为 `mixed`。若需要在 summary payload 中包含匹配的本机会话列表，传入 `--threads`：
+报告会返回请求数量、Token 总量、缓存 Token、预估 USD 成本，以及每个 `model/provider` 分组实际匹配到的价格。默认离线价格表来自官方公开价格快照，显示为 `official`；命中 `~/.aitok/pricing.json` 本地覆盖时显示为 `custom`。如果自定义分组合并了多种价格定义，则价格显示为 `mixed`。
+
+Codex 的 provider 归属只使用本地、非密钥证据。存在 `team-a/gpt-5.4` 这类带 provider 前缀的模型名时优先使用该前缀；模型名不带前缀时，aitok 只在同一个 turn 的本地请求日志 host 能唯一匹配 `~/.codex/config.toml` 中 `[model_providers.*].base_url` 时使用该 host 归属。未知 host、多个 provider 共享同一 host、日志缺少请求 URL，或 provider URL 已变更但当前 config 不再包含旧 host 时，都会回退到 session 日志记录的 provider。
+
+若需要在 summary payload 中包含匹配的本机会话列表，传入 `--threads`：
 
 ```bash
 aitok summary --period today --threads --format json

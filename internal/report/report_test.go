@@ -210,6 +210,32 @@ func TestWriteThreadsTableUsesCompactDefaultColumns(t *testing.T) {
 	}
 }
 
+func TestWriteThreadsTableShowsProviderCostBreakdown(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteThreadsTable(&out, []query.ThreadResult{{
+		ID:       "thread-a",
+		Name:     "Custom title",
+		Tool:     "codex",
+		Model:    "gpt-5.5",
+		Provider: "bcb,toska",
+		Requests: 2,
+		Events:   2,
+		Usage:    usage.TokenUsage{Input: 5},
+		CostUSD:  301.11,
+		CostBreakdown: []query.ThreadCost{
+			{Provider: "toska", USD: 299.7687},
+			{Provider: "bcb", USD: 1.3412},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "bcb,toska") || !strings.Contains(got, "$301.1100 (toska $299.7687, bcb $1.3412)") {
+		t.Fatalf("threads table should show provider list and cost breakdown: %s", got)
+	}
+}
+
 func TestWriteThreadsTableFullShowsEvents(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteThreadsTable(&out, []query.ThreadResult{{

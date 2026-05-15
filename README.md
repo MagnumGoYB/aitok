@@ -111,6 +111,8 @@ Grouping:
 
 Reports include request count, token totals, cache tokens, estimated USD cost, and the matched price used for each `model/provider` group. Cost uses an offline default model price catalog based on an official public pricing snapshot and can be overridden locally. Rows backed by the bundled catalog show `official`; rows matched by `~/.aitok/pricing.json` show `custom`. If a custom grouping combines multiple price definitions, the price is shown as `mixed`.
 
+For Codex, provider attribution uses only local non-secret evidence. Provider-qualified model names like `team-a/gpt-5.4` are preferred when present. When the model name is bare, aitok can use Codex request-host evidence from local logs only if that host maps uniquely to a configured `[model_providers.*].base_url` in `~/.codex/config.toml` for the same turn. Unknown hosts, shared hosts, missing request URLs, or provider URL rotations that are no longer represented in the local config fall back to the provider recorded in the session log.
+
 To include matching local sessions in the summary payload, pass `--threads`:
 
 ```bash

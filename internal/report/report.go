@@ -83,7 +83,7 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 			thread.Model,
 			thread.Provider,
 			fmt.Sprint(thread.Requests),
-			FormatUSD(thread.CostUSD),
+			FormatThreadCost(thread),
 			formatPrice(thread.Price, thread.PriceSource),
 			fmt.Sprint(thread.Usage.NormalizedTotal()),
 		}
@@ -96,7 +96,7 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 				thread.Provider,
 				fmt.Sprint(thread.Requests),
 				fmt.Sprint(thread.Events),
-				FormatUSD(thread.CostUSD),
+				FormatThreadCost(thread),
 				formatPrice(thread.Price, thread.PriceSource),
 				fmt.Sprint(thread.Usage.NormalizedTotal()),
 			}
@@ -277,7 +277,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 				escapeMarkdown(thread.Provider),
 				thread.Requests,
 				thread.Events,
-				FormatUSD(thread.CostUSD),
+				FormatThreadCost(thread),
 				escapeMarkdown(formatPrice(thread.Price, thread.PriceSource)),
 				thread.Usage.NormalizedTotal(),
 			); err != nil {
@@ -300,7 +300,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 			escapeMarkdown(thread.Model),
 			escapeMarkdown(thread.Provider),
 			thread.Requests,
-			FormatUSD(thread.CostUSD),
+			FormatThreadCost(thread),
 			escapeMarkdown(formatPrice(thread.Price, thread.PriceSource)),
 			thread.Usage.NormalizedTotal(),
 		); err != nil {
@@ -312,6 +312,18 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 
 func FormatUSD(value float64) string {
 	return fmt.Sprintf("$%.4f", value)
+}
+
+func FormatThreadCost(thread query.ThreadResult) string {
+	total := FormatUSD(thread.CostUSD)
+	if len(thread.CostBreakdown) == 0 {
+		return total
+	}
+	parts := make([]string, 0, len(thread.CostBreakdown))
+	for _, item := range thread.CostBreakdown {
+		parts = append(parts, item.Provider+" "+FormatUSD(item.USD))
+	}
+	return total + " (" + strings.Join(parts, ", ") + ")"
 }
 
 func formatPrice(price *query.Price, source string) string {

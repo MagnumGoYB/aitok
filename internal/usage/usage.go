@@ -43,21 +43,32 @@ func (u TokenUsage) Add(v TokenUsage) TokenUsage {
 	}
 }
 
+type ProviderAttribution string
+
+const (
+	ProviderAttributionModel            ProviderAttribution = "model"
+	ProviderAttributionExactRequest     ProviderAttribution = "exact_request"
+	ProviderAttributionInferredTimeline ProviderAttribution = "inferred_timeline"
+	ProviderAttributionSessionFallback  ProviderAttribution = "session_fallback"
+)
+
 type UsageEvent struct {
-	ID                 string     `json:"id"`
-	Timestamp          time.Time  `json:"timestamp"`
-	Tool               Tool       `json:"tool"`
-	Model              string     `json:"model"`
-	Provider           string     `json:"provider"`
-	CWD                string     `json:"cwd,omitempty"`
-	Source             string     `json:"source,omitempty"`
-	ThreadID           string     `json:"thread_id,omitempty"`
-	ThreadName         string     `json:"thread_name,omitempty"`
-	ThreadSource       string     `json:"thread_source,omitempty"`
-	ThreadCreatedAt    time.Time  `json:"thread_created_at,omitempty"`
-	ThreadLastActiveAt time.Time  `json:"thread_last_active_at,omitempty"`
-	Complete           bool       `json:"-"`
-	Usage              TokenUsage `json:"usage"`
+	ID                  string     `json:"id"`
+	TurnID              string     `json:"turn_id,omitempty"`
+	Timestamp           time.Time  `json:"timestamp"`
+	Tool                Tool       `json:"tool"`
+	Model               string     `json:"model"`
+	Provider            string     `json:"provider"`
+	ProviderAttribution string     `json:"provider_attribution,omitempty"`
+	CWD                 string     `json:"cwd,omitempty"`
+	Source              string     `json:"source,omitempty"`
+	ThreadID            string     `json:"thread_id,omitempty"`
+	ThreadName          string     `json:"thread_name,omitempty"`
+	ThreadSource        string     `json:"thread_source,omitempty"`
+	ThreadCreatedAt     time.Time  `json:"thread_created_at,omitempty"`
+	ThreadLastActiveAt  time.Time  `json:"thread_last_active_at,omitempty"`
+	Complete            bool       `json:"-"`
+	Usage               TokenUsage `json:"usage"`
 }
 
 func Unknown(value string) string {
