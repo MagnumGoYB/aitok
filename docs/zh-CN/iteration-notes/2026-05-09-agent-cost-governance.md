@@ -170,9 +170,10 @@ Bugfix 目标：`v0.1.29` 之后的下一个 patch release。
 
 - Codex model 解析现在同时返回归一化模型名和可选 provider 前缀。
 - `turn_context.payload.model`、token-count `info.model`、token-count `info.model_name`、token-count `payload.model` 在模型带 provider 前缀时都会更新当前事件 provider。
-- 对裸 Codex 模型名，aitok 也会读取本地 Codex 请求日志证据，并在请求 host 能唯一映射到 `~/.codex/config.toml` 的 `[model_providers.*].base_url` 时归属 provider。host 证据只作用于同一个 `turn.id`，不会按时间继续外推到后续 turn。
+- 对裸 Codex 模型名，aitok 也会读取本地 Codex 请求日志证据，并在请求 host 能唯一映射到 `~/.codex/config.toml` 的 `[model_providers.*].base_url` 时归属 provider。同一个 turn 的请求证据会作用于该 turn 的全部 token-count 行，包括早于 request-completed 日志的 token-count。两个 provider 锚点之间缺少直接证据的裸模型 turn 会保守沿用前一个 provider 段，直到后续切换证据出现。
 - 没有 provider-qualified model 的旧日志继续 fallback 到 `session_meta.model_provider`，保持兼容。
 - 未知 host、多个 provider 共享同一 host、缺少请求 URL 证据，以及 provider URL 变化后当前本地 config 不再包含旧 host 的情况，都不会猜测归属。
+- 查询分组只会为了 Model Usage 展示重分配被 exact request 证据夹住的短 inferred 桥接段；较长的 inferred provider 段仍按事件自身携带的 provider 汇总。
 
 验收：
 

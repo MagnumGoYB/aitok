@@ -17,7 +17,7 @@ This repository uses GitHub-native automation for pull requests, review prompts,
 - The checklist workflow runs with `issues: write` and `pull-requests: write` so `actions/github-script` can create or update the PR issue comment under branch protection.
 - The checklist reminds reviewers to inspect offline/privacy boundaries, source adapter streaming behavior, fixture coverage, CLI output stability, release decision, and release impact.
 - `.github/CODEOWNERS` requests review for core areas such as adapters, query/report code, harness, and GitHub workflows.
-- Paid AI review automation is intentionally not required; maintainers can run one-off local or external AI review only when the risk justifies the cost.
+- Repository review governance is GitHub-native only. Do not add CodeRabbit or other paid AI review automation back into required repository workflows.
 
 ## Bugfix Flow
 

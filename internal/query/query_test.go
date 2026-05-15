@@ -637,3 +637,128 @@ func TestThreadAccumulatorGroupResultsRebalancesMixedProviderBridgeByTurnBuckets
 		t.Fatalf("bcb bridge rebalance mismatch: %+v", byProvider["bcb"])
 	}
 }
+
+func TestThreadAccumulatorGroupResultsDoNotReassignLongInferredTimelineSegment(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                  "exact-a",
+			TurnID:              "turn-a",
+			Timestamp:           time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 1, Total: 1},
+		},
+		{
+			ID:                  "bridge-b",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 10, Total: 10},
+		},
+		{
+			ID:                  "bridge-c",
+			TurnID:              "turn-c",
+			Timestamp:           time.Date(2026, 5, 8, 1, 2, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 20, Total: 20},
+		},
+		{
+			ID:                  "bridge-d",
+			TurnID:              "turn-d",
+			Timestamp:           time.Date(2026, 5, 8, 1, 3, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 30, Total: 30},
+		},
+		{
+			ID:                  "bridge-e",
+			TurnID:              "turn-e",
+			Timestamp:           time.Date(2026, 5, 8, 1, 4, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 40, Total: 40},
+		},
+		{
+			ID:                  "bridge-f",
+			TurnID:              "turn-f",
+			Timestamp:           time.Date(2026, 5, 8, 1, 5, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 50, Total: 50},
+		},
+		{
+			ID:                  "bridge-g",
+			TurnID:              "turn-g",
+			Timestamp:           time.Date(2026, 5, 8, 1, 6, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 60, Total: 60},
+		},
+		{
+			ID:                  "exact-h",
+			TurnID:              "turn-h",
+			Timestamp:           time.Date(2026, 5, 8, 1, 7, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "bcb",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 70, Total: 70},
+		},
+	}
+	costs := map[string]float64{
+		"exact-a":  1,
+		"bridge-b": 10,
+		"bridge-c": 20,
+		"bridge-d": 30,
+		"bridge-e": 40,
+		"bridge-f": 50,
+		"bridge-g": 60,
+		"exact-h":  70,
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		return Cost{USD: costs[event.ID]}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.GroupResults(GroupBy{"tool", "model", "provider"})
+	if len(got) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(got), got)
+	}
+	byProvider := map[string]Result{}
+	for _, result := range got {
+		byProvider[result.Key["provider"]] = result
+	}
+	if byProvider["toska"].CostUSD != 211 || byProvider["toska"].Usage.NormalizedTotal() != 211 {
+		t.Fatalf("long inferred timeline segment should remain on original provider: %+v", byProvider["toska"])
+	}
+	if byProvider["bcb"].CostUSD != 70 || byProvider["bcb"].Usage.NormalizedTotal() != 70 {
+		t.Fatalf("bcb exact totals mismatch: %+v", byProvider["bcb"])
+	}
+}

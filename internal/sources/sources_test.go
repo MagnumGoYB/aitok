@@ -490,7 +490,7 @@ base_url = "https://team-b.example"
 	}
 }
 
-func TestCodexInfersProviderFromNearestTimelineEvidenceWithinMixedThread(t *testing.T) {
+func TestCodexKeepsEarlierTimelineProviderUntilSwitchEvidence(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -534,8 +534,8 @@ base_url = "https://www.aiixiao.shop"
 	if events[0].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
 		t.Fatalf("first sparse turn attribution = %q, want inferred_timeline", events[0].ProviderAttribution)
 	}
-	if events[1].Provider != "bcb" {
-		t.Fatalf("second sparse turn should follow nearer later evidence: %+v", events[1])
+	if events[1].Provider != "toska" {
+		t.Fatalf("second sparse turn before switch evidence should stay on earlier provider segment: %+v", events[1])
 	}
 	if events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
 		t.Fatalf("second sparse turn attribution = %q, want inferred_timeline", events[1].ProviderAttribution)
@@ -548,7 +548,7 @@ base_url = "https://www.aiixiao.shop"
 	}
 }
 
-func TestCodexKeepsSingleProviderAcrossTokenCountsWithinSameBareTurn(t *testing.T) {
+func TestCodexKeepsSameBareTurnTokenCountsOnEarlierTimelineProvider(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -580,8 +580,51 @@ base_url = "https://www.aiixiao.shop"
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Provider != "bcb" || events[1].Provider != "bcb" {
-		t.Fatalf("same turn token_count events should share inferred provider: %+v", events)
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("token_count before provider switch should stay on earlier provider: %+v", events[0])
+	}
+	if events[1].Provider != "toska" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("token_count before future provider switch should stay on earlier provider: %+v", events[1])
+	}
+}
+
+func TestCodexAppliesSameTurnCompletedRequestToAllTokenCounts(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+
+[model_providers.bcb]
+name = "bcb"
+base_url = "https://www.aiixiao.shop"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T07:44:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000007","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T07:48:00Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T07:48:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T07:49:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":50,"total_tokens":50}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T15-44-00-019e0000-0000-7000-8000-000000000007.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T07:47:00.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000007}:turn{turn.id=turn-prev model=gpt-5.5}: codex_core::session::turn: Turn error: unexpected status 403 Forbidden, url: https://api.toskaxy.xyz/v1/responses`+"\n"+
+			`2026-05-08T07:48:30.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000007}:turn{turn.id=turn-b model=gpt-5.5}:run_turn:run_sampling_request: Request completed method=POST url=https://www.aiixiao.shop/responses status=200 OK`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "bcb" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("earlier token_count should use same-turn completed request evidence: %+v", events[0])
+	}
+	if events[1].Provider != "bcb" || events[1].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("later token_count should use completed request evidence: %+v", events[1])
 	}
 }
 
@@ -650,8 +693,8 @@ func TestCodexProviderTimelineInferenceForMixedThread(t *testing.T) {
 	}
 
 	got := timeline.inferenceForTurn(threadID, "turn-mid", time.Date(2026, 5, 8, 7, 48, 10, 0, time.UTC))
-	if got.Provider != "bcb" {
-		t.Fatalf("provider = %q, want bcb", got.Provider)
+	if got.Provider != "toska" {
+		t.Fatalf("provider = %q, want toska", got.Provider)
 	}
 	if got.Exact {
 		t.Fatal("mixed-thread midpoint inference should not be exact")
@@ -661,7 +704,7 @@ func TestCodexProviderTimelineInferenceForMixedThread(t *testing.T) {
 	}
 }
 
-func TestCodexPrefersStrongerLaterProviderEvidenceWithinMixedThread(t *testing.T) {
+func TestCodexDoesNotPreferStrongerFutureProviderEvidenceWithinMixedThread(t *testing.T) {
 	threadID := "thread-2"
 	prev := codexProviderPoint{
 		At:       time.Date(2026, 5, 8, 7, 40, 0, 0, time.UTC),
@@ -680,8 +723,8 @@ func TestCodexPrefersStrongerLaterProviderEvidenceWithinMixedThread(t *testing.T
 	}
 
 	got := timeline.inferenceForTurn(threadID, "turn-mid", time.Date(2026, 5, 8, 7, 47, 0, 0, time.UTC))
-	if got.Provider != "bcb" {
-		t.Fatalf("provider = %q, want bcb", got.Provider)
+	if got.Provider != "toska" {
+		t.Fatalf("provider = %q, want toska", got.Provider)
 	}
 	if got.Prev == nil || got.Prev.Provider != "toska" || got.Next == nil || got.Next.Provider != "bcb" {
 		t.Fatalf("unexpected anchors: %+v", got)
@@ -766,7 +809,7 @@ base_url = "https://www.aiixiao.shop"
 	mustMkdir(t, logDir)
 	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
 		`2026-05-08T07:08:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000006}:turn{turn.id=turn-a model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://api.toskaxy.xyz/v1/responses: {"model":"gpt-5.5"}`+"\n"+
-			`2026-05-08T07:37:41.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000006}:turn{turn.id=turn-e model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://www.aiixiao.shop/responses: {"model":"gpt-5.5"}`+"\n")
+			`2026-05-08T07:37:39.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000006}:turn{turn.id=turn-e model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://www.aiixiao.shop/responses: {"model":"gpt-5.5"}`+"\n")
 
 	events, err := NewCodex(Options{Home: home}).Read(context.Background())
 	if err != nil {

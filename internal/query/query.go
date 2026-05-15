@@ -439,6 +439,9 @@ func mergeGroupedResult(buckets map[string]*Result, groupBy GroupBy, key map[str
 }
 
 func supportsProviderRebalance(groupBy GroupBy) bool {
+	if !SupportsThreadBaseline(groupBy) {
+		return false
+	}
 	for _, group := range groupBy {
 		if group == "provider" {
 			return true
@@ -458,7 +461,10 @@ type rebalancedThreadEvent struct {
 	Price       *Price
 }
 
-const codexMixedProviderBridgeCarryRequests = 1.4
+const (
+	codexMixedProviderBridgeCarryRequests = 1.4
+	codexMixedProviderBridgeMaxTurns      = 5
+)
 
 func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, bool) {
 	if len(turns) == 0 {
@@ -474,7 +480,7 @@ func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, 
 		}
 		prevProvider := usage.Unknown(turns[i-1].Provider)
 		nextProvider, end := bridgeTargetProvider(turns, i)
-		if nextProvider == "" || nextProvider == prevProvider {
+		if nextProvider == "" || nextProvider == prevProvider || !isRebalanceableBridgeSegment(turns, i, end) {
 			items = append(items, threadTurnToRebalancedEvent(turns[i], usage.Unknown(turns[i].Provider), 1))
 			i++
 			continue
@@ -547,6 +553,30 @@ func bridgeTargetProvider(turns []ThreadTurn, start int) (string, int) {
 		return provider, i
 	}
 	return "", len(turns)
+}
+
+func isRebalanceableBridgeSegment(turns []ThreadTurn, start, end int) bool {
+	if start <= 0 || end <= start || end >= len(turns) {
+		return false
+	}
+	if normalizeProviderAttribution(turns[end].ProviderAttribution) != string(usage.ProviderAttributionExactRequest) {
+		return false
+	}
+	seenTurns := map[string]struct{}{}
+	for i := start; i < end; i++ {
+		if normalizeProviderAttribution(turns[i].ProviderAttribution) != string(usage.ProviderAttributionInferredTimeline) {
+			return false
+		}
+		id := strings.TrimSpace(turns[i].ID)
+		if id == "" {
+			id = strings.TrimSpace(turns[i].EventID)
+		}
+		seenTurns[id] = struct{}{}
+		if len(seenTurns) > codexMixedProviderBridgeMaxTurns {
+			return false
+		}
+	}
+	return true
 }
 
 func clonePrice(price *Price) *Price {
