@@ -312,6 +312,8 @@ func TestPullRequestAutomationUsesNativeReviewGatesAndScopedDependabotAutoMerge(
 		".coderabbit.yaml",
 		"CodeRabbit reviews",
 		"CodeRabbit review",
+		"one-off local or external AI review",
+		"一次性本地或外部 AI review",
 	} {
 		if strings.Contains(docs, forbidden) {
 			t.Fatalf("GitHub automation docs must not require paid CodeRabbit review automation: found %s", forbidden)

@@ -327,10 +327,17 @@ func FormatThreadCost(thread query.ThreadResult) string {
 }
 
 func formatPrice(price *query.Price, source string) string {
+	return FormatPrice(price, source)
+}
+
+func FormatPrice(price *query.Price, source string) string {
 	if price == nil {
 		return displayPriceSource(source)
 	}
-	if price.Source == "mixed" || price.Source == "unpriced" {
+	if price.Source == "mixed" {
+		return formatMixedPrice(price, source)
+	}
+	if price.Source == "unpriced" {
 		return price.Source
 	}
 	return fmt.Sprintf("%s in=%s out=%s cache=%s make=%s",
@@ -342,6 +349,97 @@ func formatPrice(price *query.Price, source string) string {
 	)
 }
 
+func FormatPriceCompact(price *query.Price, source string) string {
+	if price == nil {
+		return displayPriceSource(source)
+	}
+	if price.Source == "mixed" {
+		return formatMixedPriceCompact(price, source)
+	}
+	if price.Source == "unpriced" {
+		return price.Source
+	}
+	return fmt.Sprintf("%s in=%s out=%s",
+		displayPriceSource(price.Source),
+		formatRate(price.InputUSDPerMTok),
+		formatRate(price.OutputUSDPerMTok),
+	)
+}
+
+func formatMixedPrice(price *query.Price, source string) string {
+	if len(price.Components) == 0 {
+		return displayPriceSource(coalescePriceSource(price.Source, source))
+	}
+	return fmt.Sprintf("%s %s in=%s out=%s cache=%s make=%s",
+		displayPriceSource(price.Source),
+		mixedPriceSources(price.Components),
+		formatRateRange(price.Components, func(component query.Price) float64 { return component.InputUSDPerMTok }),
+		formatRateRange(price.Components, func(component query.Price) float64 { return component.OutputUSDPerMTok }),
+		formatRateRange(price.Components, func(component query.Price) float64 { return component.CacheHitUSDPerMTok }),
+		formatRateRange(price.Components, func(component query.Price) float64 { return component.CacheMakeUSDPerMTok }),
+	)
+}
+
+func formatMixedPriceCompact(price *query.Price, source string) string {
+	if len(price.Components) == 0 {
+		return displayPriceSource(coalescePriceSource(price.Source, source))
+	}
+	return fmt.Sprintf("%s %s %s/%s",
+		displayPriceSource(price.Source),
+		mixedPriceSources(price.Components),
+		formatRateValueRange(price.Components, func(component query.Price) float64 { return component.InputUSDPerMTok }),
+		strings.TrimPrefix(formatRateRange(price.Components, func(component query.Price) float64 { return component.OutputUSDPerMTok }), "$"),
+	)
+}
+
+func mixedPriceSources(components []query.Price) string {
+	seen := map[string]struct{}{}
+	sources := make([]string, 0, len(components))
+	for _, component := range components {
+		source := displayPriceSource(component.Source)
+		if _, ok := seen[source]; ok {
+			continue
+		}
+		seen[source] = struct{}{}
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	return strings.Join(sources, "+")
+}
+
+func formatRateRange(components []query.Price, valueFor func(query.Price) float64) string {
+	return formatRateValueRange(components, valueFor) + "/M"
+}
+
+func formatRateValueRange(components []query.Price, valueFor func(query.Price) float64) string {
+	if len(components) == 0 {
+		return formatRateValue(0)
+	}
+	var minValue, maxValue float64
+	hasValue := false
+	for _, component := range components {
+		value := valueFor(component)
+		if !hasValue || value < minValue {
+			minValue = value
+		}
+		if !hasValue || value > maxValue {
+			maxValue = value
+		}
+		hasValue = true
+	}
+	if minValue == maxValue {
+		return formatRateValue(minValue)
+	}
+	return fmt.Sprintf("%s..%s", formatRateValue(minValue), strings.TrimPrefix(formatRateValue(maxValue), "$"))
+}
+
+func coalescePriceSource(primary, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return primary
+	}
+	return fallback
+}
+
 func displayPriceSource(source string) string {
 	if source == "" {
 		return "unknown"
@@ -350,7 +448,11 @@ func displayPriceSource(source string) string {
 }
 
 func formatRate(value float64) string {
-	return fmt.Sprintf("$%.4g/M", value)
+	return formatRateValue(value) + "/M"
+}
+
+func formatRateValue(value float64) string {
+	return fmt.Sprintf("$%.4g", value)
 }
 
 func formatKey(key map[string]string) string {

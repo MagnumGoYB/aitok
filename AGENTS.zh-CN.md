@@ -126,4 +126,5 @@
 
 - 每个公开指南或策略文档都需要 zh-CN 对照，例如 `README.md` + `README.zh-CN.md`、`CONTRIBUTING.md` + `CONTRIBUTING.zh-CN.md`。
 - GitHub PR、review、bugfix、build、release workflow 变化必须同步记录到 `docs/github-automation.md` 和 `docs/zh-CN/github-automation.md`。
+- 仓库 review 治理只使用 GitHub 原生机制。除非用户明确要求调整该策略，否则不要把 CodeRabbit 或其他付费 AI review 自动化重新引入必经仓库流程、文档或 harness 规则。
 - 修改 release 自动化时，运行 `make validate`，并确认 `.goreleaser.yml` 与 `.github/workflows/release.yml` 保持一致。

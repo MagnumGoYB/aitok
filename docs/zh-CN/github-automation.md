@@ -17,7 +17,7 @@
 - Checklist workflow 使用 `issues: write` 和 `pull-requests: write`，确保 `actions/github-script` 能在 branch protection 下创建或更新 PR issue comment。
 - Checklist 提醒 reviewer 检查离线/隐私边界、source adapter 流式扫描、fixture 覆盖、CLI 输出稳定性、发版判定和 release 影响。
 - `.github/CODEOWNERS` 为 adapter、query/report、harness 和 GitHub workflows 等核心区域请求 review。
-- 仓库不强制付费 AI review 自动化；维护者可在风险值得成本时再按需运行一次性本地或外部 AI review。
+- 仓库 review 治理只使用 GitHub 原生机制；不要把 CodeRabbit 或其他付费 AI review 自动化重新加入必经仓库流程。
 
 ## Bugfix 流程
 

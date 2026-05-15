@@ -142,7 +142,8 @@ func appendCodexBufferedTurn(pending *codexBufferedTurn, state codexState, event
 
 func (c Codex) flushBufferedTurn(path string, state *codexState, pending *codexBufferedTurn, resolved codexResolvedProvider, seen map[string]struct{}, handle func(usage.UsageEvent) error) error {
 	for _, event := range pending.events {
-		usageEvent := c.codexUsageEvent(path, state, event.turnID, event.at, event.tokens, event.model, resolved.Provider, resolved.Attribution, event.cwd)
+		provider, attribution := c.providerForBufferedEvent(state.thread.ID, pending, event, resolved)
+		usageEvent := c.codexUsageEvent(path, state, event.turnID, event.at, event.tokens, event.model, provider, attribution, event.cwd)
 		if _, exists := seen[usageEvent.ID]; exists {
 			continue
 		}
@@ -152,6 +153,34 @@ func (c Codex) flushBufferedTurn(path string, state *codexState, pending *codexB
 		}
 	}
 	return nil
+}
+
+func (c Codex) providerForBufferedEvent(threadID string, pending *codexBufferedTurn, event codexBufferedEvent, resolved codexResolvedProvider) (string, string) {
+	if pending == nil {
+		return resolved.Provider, resolved.Attribution
+	}
+	if pending.providerFromModel && pending.provider != "" {
+		return pending.provider, string(usage.ProviderAttributionModel)
+	}
+	if c.providerTimeline != nil {
+		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, event.turnID); found {
+			if provider != "" {
+				return provider, string(usage.ProviderAttributionExactRequest)
+			}
+			return "unknown", string(usage.ProviderAttributionSessionFallback)
+		}
+		if provider := c.providerTimeline.inferredProviderForTimeExcludingTurn(threadID, event.turnID, event.at).Provider; provider != "" {
+			return provider, string(usage.ProviderAttributionInferredTimeline)
+		}
+	}
+	if resolved.Provider != "" && resolved.Attribution != string(usage.ProviderAttributionExactRequest) {
+		return resolved.Provider, resolved.Attribution
+	}
+	attribution := pending.providerAttribution
+	if attribution == "" {
+		attribution = string(usage.ProviderAttributionSessionFallback)
+	}
+	return pending.provider, attribution
 }
 
 func (c Codex) collectProviderThreads(ctx context.Context, roots []string) codexProviderTargets {
@@ -431,8 +460,11 @@ func (c Codex) providerForBufferedTurn(threadID string, pending *codexBufferedTu
 		return pending.provider, string(usage.ProviderAttributionModel)
 	}
 	if c.providerTimeline != nil {
-		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found && provider != "" {
-			return provider, string(usage.ProviderAttributionExactRequest)
+		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found {
+			if provider != "" {
+				return provider, string(usage.ProviderAttributionExactRequest)
+			}
+			return "unknown", string(usage.ProviderAttributionSessionFallback)
 		}
 		if provider := c.providerTimeline.inferredProviderForTime(threadID, pending.inferenceAt()).Provider; provider != "" {
 			return provider, string(usage.ProviderAttributionInferredTimeline)

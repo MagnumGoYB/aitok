@@ -242,10 +242,24 @@ func (t codexProviderTimeline) exactProviderForTurn(threadID, turnID string) (st
 }
 
 func (t codexProviderTimeline) inferredProviderForTime(threadID string, at time.Time) codexProviderInference {
+	return t.inferredProviderForTimeExcludingTurn(threadID, "", at)
+}
+
+func (t codexProviderTimeline) inferredProviderForTimeExcludingTurn(threadID, excludedTurnID string, at time.Time) codexProviderInference {
 	if threadID == "" || at.IsZero() {
 		return codexProviderInference{}
 	}
 	points := t[threadID]
+	if excludedTurnID != "" {
+		filtered := make([]codexProviderPoint, 0, len(points))
+		for _, point := range points {
+			if point.TurnID == excludedTurnID {
+				continue
+			}
+			filtered = append(filtered, point)
+		}
+		points = filtered
+	}
 	if len(points) == 0 {
 		return codexProviderInference{}
 	}
@@ -268,41 +282,7 @@ func (t codexProviderTimeline) inferredProviderForTime(threadID string, at time.
 	case prev.Provider == next.Provider:
 		return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
 	}
-	prevGap := at.Sub(prev.At)
-	nextGap := next.At.Sub(at)
-	if prevGap < 0 || nextGap < 0 || prevGap == nextGap {
-		return codexProviderInference{Prev: prev, Next: next}
-	}
-	if weightedPrevGap, weightedNextGap, ok := codexWeightedProviderGaps(prev, prevGap, next, nextGap); ok {
-		switch {
-		case weightedPrevGap < weightedNextGap:
-			return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
-		case weightedNextGap < weightedPrevGap:
-			return codexProviderInference{Provider: next.Provider, Prev: prev, Next: next}
-		default:
-			return codexProviderInference{Prev: prev, Next: next}
-		}
-	}
-	if prevGap < nextGap {
-		return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
-	}
-	return codexProviderInference{Provider: next.Provider, Prev: prev, Next: next}
-}
-
-func codexWeightedProviderGaps(prev *codexProviderPoint, prevGap time.Duration, next *codexProviderPoint, nextGap time.Duration) (time.Duration, time.Duration, bool) {
-	prevStrength := codexProviderStrength(prev)
-	nextStrength := codexProviderStrength(next)
-	if prevStrength == nextStrength {
-		return 0, 0, false
-	}
-	return prevGap / time.Duration(prevStrength), nextGap / time.Duration(nextStrength), true
-}
-
-func codexProviderStrength(point *codexProviderPoint) int {
-	if point == nil || point.Strength <= 0 {
-		return codexProviderStrengthStrong
-	}
-	return point.Strength
+	return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}
 }
 
 func readCodexProviderHosts(path string) []codexProviderHost {
@@ -462,6 +442,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 	}
 	var rows []struct {
 		TS       int64  `json:"ts"`
+		TSNanos  int64  `json:"ts_nanos"`
 		ThreadID string `json:"thread_id"`
 		Target   string `json:"target"`
 		Body     string `json:"body"`
@@ -489,7 +470,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 			continue
 		}
 		timeline[threadID] = append(timeline[threadID], codexProviderPoint{
-			At:       time.Unix(row.TS, 0).UTC(),
+			At:       time.Unix(row.TS, row.TSNanos).UTC(),
 			TurnID:   turnID,
 			Provider: provider,
 			Strength: codexProviderStrengthStrong,
@@ -525,7 +506,7 @@ func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProvide
 		trustedTargets = append(trustedTargets, "'"+strings.ReplaceAll(target, "'", "''")+"'")
 	}
 	sort.Strings(trustedTargets)
-	return `select ts, thread_id, target, feedback_log_body as body
+	return `select ts, ts_nanos, thread_id, target, feedback_log_body as body
 from logs
 where (
     thread_id in (` + strings.Join(threadFilters, ",") + `)

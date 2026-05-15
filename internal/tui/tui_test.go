@@ -204,6 +204,30 @@ func TestModelUsageTableShowsPriceSourceAndRates(t *testing.T) {
 	}
 }
 
+func TestModelUsageTableShowsMixedPriceDetails(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "toska"},
+				Requests: 1410,
+				Usage:    usage.TokenUsage{Input: 199_100_000, Output: 1_100_000, CachedInput: 180_800_000},
+				CostUSD:  947.9961,
+				Price: &query.Price{Source: "mixed", Components: []query.Price{
+					{Source: "custom", InputUSDPerMTok: 5, OutputUSDPerMTok: 40},
+					{Source: "official", InputUSDPerMTok: 5, OutputUSDPerMTok: 30},
+				}},
+			},
+		},
+	}
+	view := stripANSI(RenderWidth(payload, 180))
+	if strings.Contains(view, " mixed ") && !strings.Contains(view, "mixed custom+official $5/30..40/M") {
+		t.Fatalf("TUI should show compact mixed price details, got: %s", view)
+	}
+	if !strings.Contains(view, "mixed custom+official $5/30..40/M") {
+		t.Fatalf("TUI missing mixed price details: %s", view)
+	}
+}
+
 func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	view := RenderWidth(samplePayload(), 140)
 	lines := strings.Split(stripANSI(view), "\n")

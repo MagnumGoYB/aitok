@@ -70,7 +70,7 @@ When changing release decision rules, update `tools/validate-pr-body`, `.github/
 - `docs/github-automation.md` and `docs/zh-CN/github-automation.md` document PR review prompts, bugfix, build, release, and Dependabot auto-merge flows.
 - `.github/workflows/pr.yml` validates real PR metadata.
 - `.github/workflows/pr-review.yml` posts the review checklist with `issues: write` and `pull-requests: write` permissions so it can create or update the PR issue comment.
-- `.github/CODEOWNERS` routes high-risk areas to maintainers without requiring paid AI review automation.
+- `.github/CODEOWNERS` routes high-risk areas to maintainers; required repository review governance stays GitHub-native and excludes CodeRabbit or other paid AI review automation.
 - `.github/workflows/dependabot-auto-merge.yml` enables GitHub auto-merge only for non-major Dependabot updates.
 - `.github/workflows/build.yml` uploads cross-platform build artifacts.
 - `.github/workflows/release.yml` publishes tag releases through GoReleaser, including archives and `checksums.txt` consumed by `scripts/install.sh`.

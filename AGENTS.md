@@ -126,4 +126,5 @@ Before every product or harness iteration, do a short internal review:
 
 - Every public guide or policy document needs a zh-CN counterpart, for example `README.md` + `README.zh-CN.md` and `CONTRIBUTING.md` + `CONTRIBUTING.zh-CN.md`.
 - Keep GitHub PR, review, bugfix, build, and release workflow changes documented in `docs/github-automation.md` and `docs/zh-CN/github-automation.md`.
+- Repository review governance is GitHub-native only. Do not reintroduce CodeRabbit or other paid AI review automation into required repository workflows, docs, or harness rules unless the user explicitly asks for that policy change.
 - When changing release automation, run `make validate` and verify `.goreleaser.yml` remains aligned with `.github/workflows/release.yml`.

@@ -170,9 +170,10 @@ Fix:
 
 - Codex model parsing now returns both normalized model and optional provider prefix.
 - `turn_context.payload.model`, token-count `info.model`, token-count `info.model_name`, and token-count `payload.model` update the active event provider when the model string is provider-qualified.
-- For bare Codex model names, aitok also reads local Codex request-log evidence and maps request hosts back to `[model_providers.*].base_url` in `~/.codex/config.toml` when the host is unique. Host evidence is scoped to the same `turn.id`; it is not carried forward by time.
+- For bare Codex model names, aitok also reads local Codex request-log evidence and maps request hosts back to `[model_providers.*].base_url` in `~/.codex/config.toml` when the host is unique. Same-turn request evidence applies to all token-count rows in that turn, including token counts emitted before the request-completed log line. Sparse bare turns between provider anchors stay on the earlier provider segment until later switch evidence appears.
 - Logs without a provider-qualified model still fall back to `session_meta.model_provider`, preserving old-session compatibility.
 - Unknown hosts, ambiguous shared hosts, missing request URL evidence, and provider URL rotations that are no longer represented in the current local config are intentionally not inferred.
+- Query grouping only reassigns short inferred bridge segments bracketed by exact request evidence for Model Usage display; longer inferred provider segments stay on the provider already attached to each event.
 
 Acceptance:
 
