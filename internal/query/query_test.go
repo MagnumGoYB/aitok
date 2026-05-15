@@ -647,7 +647,7 @@ func TestThreadAccumulatorGroupResultsRebalancesMixedProviderBridgeByTurnBuckets
 	}
 }
 
-func TestThreadAccumulatorGroupResultsRebalancedBridgeRetainsMixedPriceComponents(t *testing.T) {
+func TestThreadAccumulatorGroupResultsRebalancedBridgeRepricesByFinalProvider(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
 	events := []usage.UsageEvent{
@@ -697,10 +697,10 @@ func TestThreadAccumulatorGroupResultsRebalancedBridgeRetainsMixedPriceComponent
 		},
 	}
 	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
-		if event.ID == "exact-d" {
-			return Cost{USD: float64(event.Usage.Input), Source: "default", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5}
+		if event.Provider == "bcb" {
+			return Cost{USD: float64(event.Usage.Input) * 5, Source: "default", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5}
 		}
-		return Cost{USD: float64(event.Usage.Input), Source: "user", InputUSDPerMTok: 2, OutputUSDPerMTok: 20, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2}
+		return Cost{USD: float64(event.Usage.Input) * 2, Source: "user", InputUSDPerMTok: 2, OutputUSDPerMTok: 20, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2}
 	})
 	for _, event := range events {
 		acc.Add(event)
@@ -714,11 +714,14 @@ func TestThreadAccumulatorGroupResultsRebalancedBridgeRetainsMixedPriceComponent
 		byProvider[result.Key["provider"]] = result
 	}
 	bcb := byProvider["bcb"]
-	if bcb.PriceSource != "mixed" || bcb.Price == nil || bcb.Price.Source != "mixed" {
-		t.Fatalf("bcb should keep mixed source after split bridge turn: %+v", bcb)
+	if bcb.PriceSource != "official" || bcb.Price == nil || bcb.Price.Source != "official" {
+		t.Fatalf("bcb should be repriced with the final provider price: %+v", bcb)
 	}
-	if got := bcb.Price.Components; len(got) != 2 || got[0].Source != "custom" || got[0].InputUSDPerMTok != 2 || got[1].Source != "official" || got[1].InputUSDPerMTok != 5 {
-		t.Fatalf("bcb mixed components mismatch: %+v", got)
+	if bcb.Price.InputUSDPerMTok != 5 || bcb.Price.OutputUSDPerMTok != 30 {
+		t.Fatalf("bcb final provider price mismatch: %+v", bcb.Price)
+	}
+	if bcb.CostUSD != 210 {
+		t.Fatalf("bcb cost should be recomputed after rebalance, got %.4f", bcb.CostUSD)
 	}
 }
 

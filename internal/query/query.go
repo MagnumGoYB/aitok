@@ -397,7 +397,7 @@ func (a *ThreadAccumulator) groupBucketsForThread(thread *threadBucket, groupBy 
 	if !supportsProviderRebalance(groupBy) {
 		return thread.groupBuckets
 	}
-	rebalanced, changed := rebalanceMixedProviderThread(thread.result.Turns)
+	rebalanced, changed := rebalanceMixedProviderThread(thread.result.Tool, thread.result.Turns, a.costFor)
 	if !changed || len(rebalanced) == 0 {
 		return thread.groupBuckets
 	}
@@ -469,7 +469,7 @@ const (
 	codexMixedProviderBridgeMaxTurns      = 5
 )
 
-func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, bool) {
+func rebalanceMixedProviderThread(tool string, turns []ThreadTurn, costFor func(usage.UsageEvent) Cost) ([]rebalancedThreadEvent, bool) {
 	if len(turns) == 0 {
 		return nil, false
 	}
@@ -477,14 +477,14 @@ func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, 
 	changed := false
 	for i := 0; i < len(turns); {
 		if !isBridgeTurnStart(turns, i) {
-			items = append(items, threadTurnToRebalancedEvent(turns[i], usage.Unknown(turns[i].Provider), 1))
+			items = append(items, threadTurnToRebalancedEvent(tool, turns[i], usage.Unknown(turns[i].Provider), 1, costFor))
 			i++
 			continue
 		}
 		prevProvider := usage.Unknown(turns[i-1].Provider)
 		nextProvider, end := bridgeTargetProvider(turns, i)
 		if nextProvider == "" || nextProvider == prevProvider || !isRebalanceableBridgeSegment(turns, i, end) {
-			items = append(items, threadTurnToRebalancedEvent(turns[i], usage.Unknown(turns[i].Provider), 1))
+			items = append(items, threadTurnToRebalancedEvent(tool, turns[i], usage.Unknown(turns[i].Provider), 1, costFor))
 			i++
 			continue
 		}
@@ -492,10 +492,10 @@ func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, 
 		splitTurnID := turns[i].ID
 		for j := i; j < end; j++ {
 			if turns[j].ID == splitTurnID {
-				items = append(items, splitBridgeTurn(turns[j], prevProvider, nextProvider)...)
+				items = append(items, splitBridgeTurn(tool, turns[j], prevProvider, nextProvider, costFor)...)
 				continue
 			}
-			items = append(items, threadTurnToRebalancedEvent(turns[j], nextProvider, 1))
+			items = append(items, threadTurnToRebalancedEvent(tool, turns[j], nextProvider, 1, costFor))
 		}
 		i = end
 	}
@@ -603,20 +603,39 @@ func clonePriceComponents(components []Price) []Price {
 	return out
 }
 
-func threadTurnToRebalancedEvent(turn ThreadTurn, provider string, fraction float64) rebalancedThreadEvent {
+func threadTurnToRebalancedEvent(tool string, turn ThreadTurn, provider string, fraction float64, costFor func(usage.UsageEvent) Cost) rebalancedThreadEvent {
+	scaledUsage := scaleTokenUsage(turn.Usage, fraction)
+	costUSD := turn.CostUSD * fraction
+	priceSource := turn.PriceSource
+	price := clonePrice(turn.Price)
+	if costFor != nil {
+		cost := costFor(usage.UsageEvent{
+			ID:                  turn.EventID,
+			TurnID:              turn.ID,
+			Timestamp:           turn.Timestamp,
+			Tool:                usage.Tool(tool),
+			Model:               usage.Unknown(turn.Model),
+			Provider:            usage.Unknown(provider),
+			ProviderAttribution: turn.ProviderAttribution,
+			Usage:               turn.Usage,
+		})
+		costUSD = cost.USD * fraction
+		priceSource = mergePriceSource("", cost.Source)
+		price = priceFromCost(cost)
+	}
 	return rebalancedThreadEvent{
 		Model:       usage.Unknown(turn.Model),
 		Provider:    usage.Unknown(provider),
 		Events:      1,
 		Requests:    1,
-		CostUSD:     turn.CostUSD * fraction,
-		Usage:       scaleTokenUsage(turn.Usage, fraction),
-		PriceSource: turn.PriceSource,
-		Price:       clonePrice(turn.Price),
+		CostUSD:     costUSD,
+		Usage:       scaledUsage,
+		PriceSource: priceSource,
+		Price:       price,
 	}
 }
 
-func splitBridgeTurn(turn ThreadTurn, prevProvider, nextProvider string) []rebalancedThreadEvent {
+func splitBridgeTurn(tool string, turn ThreadTurn, prevProvider, nextProvider string, costFor func(usage.UsageEvent) Cost) []rebalancedThreadEvent {
 	sequence := turn.TurnEventIndex
 	preserve := 0.0
 	switch {
@@ -628,16 +647,16 @@ func splitBridgeTurn(turn ThreadTurn, prevProvider, nextProvider string) []rebal
 		preserve = maxFloat64(0, minFloat64(1, codexMixedProviderBridgeCarryRequests-1))
 	}
 	if preserve <= 0 {
-		return []rebalancedThreadEvent{threadTurnToRebalancedEvent(turn, nextProvider, 1)}
+		return []rebalancedThreadEvent{threadTurnToRebalancedEvent(tool, turn, nextProvider, 1, costFor)}
 	}
 	if preserve >= 1 {
 		return []rebalancedThreadEvent{
-			threadTurnToRebalancedEvent(turn, prevProvider, 1),
+			threadTurnToRebalancedEvent(tool, turn, prevProvider, 1, costFor),
 		}
 	}
 	return []rebalancedThreadEvent{
-		threadTurnToRebalancedEvent(turn, prevProvider, preserve),
-		threadTurnToRebalancedEvent(turn, nextProvider, 1-preserve),
+		threadTurnToRebalancedEvent(tool, turn, prevProvider, preserve, costFor),
+		threadTurnToRebalancedEvent(tool, turn, nextProvider, 1-preserve, costFor),
 	}
 }
 
