@@ -98,6 +98,9 @@ func TestAggregateMarksMixedPricesWhenGroupCombinesSources(t *testing.T) {
 	if results[0].PriceSource != "mixed" || results[0].Price == nil || results[0].Price.Source != "mixed" {
 		t.Fatalf("combined group should mark mixed pricing: %+v", results[0])
 	}
+	if got := results[0].Price.Components; len(got) != 2 || got[0].Source != "custom" || got[0].InputUSDPerMTok != 2 || got[1].Source != "official" || got[1].InputUSDPerMTok != 1 {
+		t.Fatalf("mixed pricing should retain component rates, got %+v", got)
+	}
 }
 
 func TestAccumulatorMatchesAggregateWithCosts(t *testing.T) {
@@ -635,6 +638,87 @@ func TestThreadAccumulatorGroupResultsRebalancesMixedProviderBridgeByTurnBuckets
 	}
 	if byProvider["bcb"].CostUSD != 192 || byProvider["bcb"].Usage.NormalizedTotal() != 192 {
 		t.Fatalf("bcb bridge rebalance mismatch: %+v", byProvider["bcb"])
+	}
+	if byProvider["toska"].PriceSource != "" || byProvider["toska"].Price != nil {
+		t.Fatalf("toska should preserve missing price details without forcing bare mixed: %+v", byProvider["toska"])
+	}
+	if byProvider["bcb"].PriceSource != "" || byProvider["bcb"].Price != nil {
+		t.Fatalf("bcb should preserve missing price details without forcing bare mixed: %+v", byProvider["bcb"])
+	}
+}
+
+func TestThreadAccumulatorGroupResultsRebalancedBridgeRetainsMixedPriceComponents(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{
+			ID:                  "exact-a",
+			TurnID:              "turn-a",
+			Timestamp:           time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 1, Total: 1},
+		},
+		{
+			ID:                  "bridge-b1",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 10, Total: 10},
+		},
+		{
+			ID:                  "bridge-b2",
+			TurnID:              "turn-b",
+			Timestamp:           time.Date(2026, 5, 8, 1, 1, 5, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "toska",
+			ProviderAttribution: string(usage.ProviderAttributionInferredTimeline),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 20, Total: 20},
+		},
+		{
+			ID:                  "exact-d",
+			TurnID:              "turn-d",
+			Timestamp:           time.Date(2026, 5, 8, 1, 2, 0, 0, loc),
+			Tool:                usage.ToolCodex,
+			Model:               "gpt-5.5",
+			Provider:            "bcb",
+			ProviderAttribution: string(usage.ProviderAttributionExactRequest),
+			ThreadID:            "thread-a",
+			Usage:               usage.TokenUsage{Input: 30, Total: 30},
+		},
+	}
+	acc := NewThreadAccumulator(window, Filters{}, func(event usage.UsageEvent) Cost {
+		if event.ID == "exact-d" {
+			return Cost{USD: float64(event.Usage.Input), Source: "default", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5}
+		}
+		return Cost{USD: float64(event.Usage.Input), Source: "user", InputUSDPerMTok: 2, OutputUSDPerMTok: 20, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	got := acc.GroupResults(GroupBy{"tool", "model", "provider"})
+	if len(got) != 2 {
+		t.Fatalf("len(results) = %d, want 2: %+v", len(got), got)
+	}
+	byProvider := map[string]Result{}
+	for _, result := range got {
+		byProvider[result.Key["provider"]] = result
+	}
+	bcb := byProvider["bcb"]
+	if bcb.PriceSource != "mixed" || bcb.Price == nil || bcb.Price.Source != "mixed" {
+		t.Fatalf("bcb should keep mixed source after split bridge turn: %+v", bcb)
+	}
+	if got := bcb.Price.Components; len(got) != 2 || got[0].Source != "custom" || got[0].InputUSDPerMTok != 2 || got[1].Source != "official" || got[1].InputUSDPerMTok != 5 {
+		t.Fatalf("bcb mixed components mismatch: %+v", got)
 	}
 }
 

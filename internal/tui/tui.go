@@ -921,7 +921,7 @@ func modelTableRow(modelName, req, cost, price, tokens, input, output, cached st
 		{value: modelName, width: 26, align: alignLeft},
 		{value: req, width: 5, align: alignRight},
 		{value: cost, width: 10, align: alignRight},
-		{value: tableText(price, 29), width: 29, align: alignLeft},
+		{value: tableText(price, 34), width: 34, align: alignLeft},
 		{value: tokens, width: 8, align: alignRight},
 		{value: input, width: 8, align: alignRight},
 		{value: output, width: 7, align: alignRight},
@@ -932,24 +932,7 @@ func modelTableRow(modelName, req, cost, price, tokens, input, output, cached st
 }
 
 func priceLabel(price *query.Price, source string) string {
-	if price == nil {
-		return sourceLabel(source)
-	}
-	if price.Source == "mixed" || price.Source == "unpriced" {
-		return price.Source
-	}
-	return fmt.Sprintf("%s in=%s out=%s", sourceLabel(price.Source), rateLabel(price.InputUSDPerMTok), rateLabel(price.OutputUSDPerMTok))
-}
-
-func sourceLabel(source string) string {
-	if strings.TrimSpace(source) == "" {
-		return "unknown"
-	}
-	return source
-}
-
-func rateLabel(value float64) string {
-	return fmt.Sprintf("$%.4g/M", value)
+	return report.FormatPriceCompact(price, source)
 }
 
 func threadRow(id, name, tool, modelName, provider, req, cost, split, tokens string) string {

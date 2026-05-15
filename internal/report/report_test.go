@@ -67,6 +67,29 @@ func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
 	}
 }
 
+func TestWriteTableDisplaysMixedPriceComponentRates(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{
+		{
+			Key:      map[string]string{"model": "gpt-5.5", "provider": "toska"},
+			Requests: 2,
+			Usage:    usage.TokenUsage{Input: 2_000_000},
+			CostUSD:  70,
+			Price: &query.Price{Source: "mixed", Components: []query.Price{
+				{Source: "custom", InputUSDPerMTok: 5, OutputUSDPerMTok: 40, CacheHitUSDPerMTok: 4.5, CacheMakeUSDPerMTok: 5},
+				{Source: "official", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if strings.Contains(got, "| mixed |") || !strings.Contains(got, "mixed custom+official in=$5/M out=$30..40/M cache=$0.5..4.5/M make=$5/M") {
+		t.Fatalf("table should describe mixed price components: %s", got)
+	}
+}
+
 func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{{

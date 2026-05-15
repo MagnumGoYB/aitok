@@ -42,6 +42,7 @@ type Price struct {
 	CacheHitUSDPerMTok    float64 `json:"cache_hit_usd_per_mtok,omitempty"`
 	CacheMakeUSDPerMTok   float64 `json:"cache_make_usd_per_mtok,omitempty"`
 	CacheMake1hUSDPerMTok float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
+	Components            []Price `json:"components,omitempty"`
 }
 
 type Result struct {
@@ -102,6 +103,8 @@ type ThreadTurn struct {
 	CostUSD             float64          `json:"cost_usd"`
 	Usage               usage.TokenUsage `json:"usage"`
 	TurnEventIndex      int              `json:"-"`
+	PriceSource         string           `json:"-"`
+	Price               *Price           `json:"-"`
 }
 
 type Accumulator struct {
@@ -289,14 +292,14 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 		bucket.result.CostUSD += cost.USD
 		bucket.costByProvider[provider] += cost.USD
 		recordThreadAttribution(bucket, provider, event.ProviderAttribution, event.Usage, cost.USD)
-		recordThreadTurn(bucket, event, cost.USD)
+		recordThreadTurn(bucket, event, cost.USD, mergePriceSource("", cost.Source), priceFromCost(cost))
 		if source := priceSourceLabel(cost.Source); source != "" {
 			bucket.priceSources[source] = struct{}{}
 		}
 		bucket.price = mergePrice(bucket.price, cost)
 	} else {
 		recordThreadAttribution(bucket, provider, event.ProviderAttribution, event.Usage, 0)
-		recordThreadTurn(bucket, event, 0)
+		recordThreadTurn(bucket, event, 0, "", nil)
 	}
 	if bucket.result.Name == "unknown" && event.ThreadName != "" {
 		bucket.result.Name = event.ThreadName
@@ -507,7 +510,6 @@ func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, 
 			grouped[key] = &rebalancedThreadEvent{
 				Model:    usage.Unknown(item.Model),
 				Provider: usage.Unknown(item.Provider),
-				Price:    &Price{Source: "mixed"},
 			}
 			order = append(order, key)
 		}
@@ -516,6 +518,8 @@ func rebalanceMixedProviderThread(turns []ThreadTurn) ([]rebalancedThreadEvent, 
 		groupedItem.Requests += item.Requests
 		groupedItem.CostUSD += item.CostUSD
 		groupedItem.Usage = groupedItem.Usage.Add(item.Usage)
+		groupedItem.PriceSource = mergePriceSource(groupedItem.PriceSource, item.PriceSource)
+		groupedItem.Price = mergeAggregatedPrice(groupedItem.Price, item.Price)
 	}
 	results := make([]rebalancedThreadEvent, 0, len(order))
 	for _, key := range order {
@@ -584,17 +588,31 @@ func clonePrice(price *Price) *Price {
 		return nil
 	}
 	copy := *price
+	copy.Components = clonePriceComponents(price.Components)
 	return &copy
+}
+
+func clonePriceComponents(components []Price) []Price {
+	if len(components) == 0 {
+		return nil
+	}
+	out := make([]Price, len(components))
+	for i := range components {
+		out[i] = *clonePrice(&components[i])
+	}
+	return out
 }
 
 func threadTurnToRebalancedEvent(turn ThreadTurn, provider string, fraction float64) rebalancedThreadEvent {
 	return rebalancedThreadEvent{
-		Model:    usage.Unknown(turn.Model),
-		Provider: usage.Unknown(provider),
-		Events:   1,
-		Requests: 1,
-		CostUSD:  turn.CostUSD * fraction,
-		Usage:    scaleTokenUsage(turn.Usage, fraction),
+		Model:       usage.Unknown(turn.Model),
+		Provider:    usage.Unknown(provider),
+		Events:      1,
+		Requests:    1,
+		CostUSD:     turn.CostUSD * fraction,
+		Usage:       scaleTokenUsage(turn.Usage, fraction),
+		PriceSource: turn.PriceSource,
+		Price:       clonePrice(turn.Price),
 	}
 }
 
@@ -707,13 +725,61 @@ func mergeAggregatedPrice(existing, next *Price) *Price {
 		return existing
 	}
 	if existing == nil {
-		copy := *next
-		return &copy
+		return clonePrice(next)
 	}
 	if pricesEqual(*existing, *next) {
 		return existing
 	}
-	return &Price{Source: "mixed"}
+	components := mergePriceComponents(existing, next)
+	if len(components) == 1 {
+		return clonePrice(&components[0])
+	}
+	return &Price{Source: "mixed", Components: components}
+}
+
+func mergePriceComponents(prices ...*Price) []Price {
+	componentsByKey := map[string]Price{}
+	for _, price := range prices {
+		for _, component := range priceComponents(price) {
+			component.Components = nil
+			componentsByKey[priceComponentKey(component)] = component
+		}
+	}
+	components := make([]Price, 0, len(componentsByKey))
+	for _, component := range componentsByKey {
+		components = append(components, component)
+	}
+	sort.Slice(components, func(i, j int) bool {
+		return priceComponentKey(components[i]) < priceComponentKey(components[j])
+	})
+	return components
+}
+
+func priceComponents(price *Price) []Price {
+	if price == nil {
+		return nil
+	}
+	if price.Source == "mixed" && len(price.Components) > 0 {
+		out := make([]Price, 0, len(price.Components))
+		for _, component := range price.Components {
+			out = append(out, priceComponents(&component)...)
+		}
+		return out
+	}
+	component := *price
+	component.Components = nil
+	return []Price{component}
+}
+
+func priceComponentKey(price Price) string {
+	return fmt.Sprintf("%s|%.12g|%.12g|%.12g|%.12g|%.12g",
+		price.Source,
+		price.InputUSDPerMTok,
+		price.OutputUSDPerMTok,
+		price.CacheHitUSDPerMTok,
+		price.CacheMakeUSDPerMTok,
+		price.CacheMake1hUSDPerMTok,
+	)
 }
 
 func priceFromCost(cost Cost) *Price {
@@ -883,7 +949,7 @@ func recordThreadAttribution(bucket *threadBucket, provider string, attribution 
 	item.Usage = item.Usage.Add(tokens)
 }
 
-func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64) {
+func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64, priceSource string, price *Price) {
 	if bucket == nil {
 		return
 	}
@@ -902,6 +968,8 @@ func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64)
 		CostUSD:             usd,
 		Usage:               event.Usage,
 		TurnEventIndex:      bucket.turnEventCounts[id],
+		PriceSource:         priceSource,
+		Price:               clonePrice(price),
 	})
 }
 
