@@ -12,7 +12,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `README.md`：面向用户的 CLI 使用和安装路径。
 - `CONTRIBUTING.md`：贡献者验证和离线优先规则。
 - `Makefile`：标准本地命令：`make setup`、`make check`、`make test`、`make test-packages`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body` 和 `make commitlint`。
-- `tools/commitlint` 和 `.githooks/commit-msg`：仓库内 Go 提交消息校验，约束 `{emoji} {type}{scope}: {subject}`，不引入 Node/npm 工具链。`make setup` 会为本地提交启用该 hook。
+- `tools/commitlint` 和 `.githooks/commit-msg`：仓库内 Go 提交消息校验，约束 `{emoji} {type}{scope}: {subject}`，不引入 Node/npm 工具链。每个提交 type 只允许一个 emoji：`✨ feat`、`🐛 fix`、`📝 docs`、`👷 ci`、`💄 style`、`♻️ refactor`、`🔖 release`、`⚡️ perf`、`✅ test`、`🔧 chore`、`🏗️ build`。`make setup` 会为本地提交启用该 hook。
 - `.github/pull_request_template.md`：可重复的 PR 检查清单，覆盖需求分类、验收标准、测试证据、验证、回滚和残余风险。
 - 发版判定策略：工程/流程优化不需要软件发版；feature 和 bugfix 需要跟进发版或明确延后。
 - `.github/workflows/ci.yml`：与本地门禁一致的托管验证。
@@ -27,7 +27,8 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `make build`：单二进制构建检查。
 - `make validate-pr-body`：可执行 PR body 元数据门禁。
 - `make setup`：一次性本地设置，执行 `git config core.hooksPath .githooks`。
-- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`：可执行提交消息门禁，setup 后通过 `.githooks/commit-msg` 接入，并由 PR CI 校验 PR 最新提交。
+- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`：可执行单条提交消息门禁，setup 后通过 `.githooks/commit-msg` 接入。
+- `make commitlint-range COMMIT_RANGE=<base..head>`：可执行 PR range 提交消息门禁，由 PR CI 校验 PR 内每个提交。
 - `.cache/aitok/`：仓库内、git 忽略的 Go build/module cache，供 Makefile 目标使用，让 agent 校验绑定当前 checkout，而不是临时拼接 `/tmp` 路径。
 - Agent 在沙箱 session 内不要直接运行 raw `go test`、`go vet`、`go build` 或 `go run`。统一使用 Makefile 目标，避免 Go 回退到 `~/Library/Caches/go-build`。
 

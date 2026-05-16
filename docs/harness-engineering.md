@@ -12,7 +12,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
 - `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-packages`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
-- `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. `make setup` enables the hook for local commits.
+- `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. Each commit type has exactly one allowed emoji: `✨ feat`, `🐛 fix`, `📝 docs`, `👷 ci`, `💄 style`, `♻️ refactor`, `🔖 release`, `⚡️ perf`, `✅ test`, `🔧 chore`, and `🏗️ build`. `make setup` enables the hook for local commits.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - Release decision policy: engineering/process-only changes do not require a software release; feature and bugfix changes require a follow-up release or explicit deferral.
 - `.github/workflows/ci.yml`: hosted validation matching the local gates.
@@ -27,7 +27,8 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `make build`: single-binary build check.
 - `make validate-pr-body`: executable PR body metadata gate.
 - `make setup`: one-time local setup that runs `git config core.hooksPath .githooks`.
-- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable commit-message gate, wired through `.githooks/commit-msg` after setup and mirrored by PR CI for the latest PR commit.
+- `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`: executable single commit-message gate, wired through `.githooks/commit-msg` after setup.
+- `make commitlint-range COMMIT_RANGE=<base..head>`: executable PR-range commit-message gate, mirrored by PR CI for every commit in the PR.
 - `.cache/aitok/`: repository-local, git-ignored Go build/module cache used by Makefile targets so agent verification stays bound to this checkout instead of ad hoc `/tmp` paths.
 - Agents should not run raw `go test`, `go vet`, `go build`, or `go run` in sandboxed sessions. Use Makefile targets so Go never falls back to `~/Library/Caches/go-build`.
 

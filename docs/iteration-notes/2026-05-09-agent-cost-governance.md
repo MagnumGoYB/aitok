@@ -199,7 +199,8 @@ Commitlint:
 
 - `make setup` now runs `git config core.hooksPath .githooks`.
 - `.githooks/commit-msg` runs `make commitlint COMMIT_MSG_FILE="$1"`.
-- `.github/workflows/pr.yml` fetches the PR head SHA and validates the latest commit message with `make commitlint`, so local setup is helpful but not the only gate.
+- `.github/workflows/pr.yml` validates every commit in the PR range with `make commitlint-range COMMIT_RANGE="<base>..<head>"`, so local setup is helpful but not the only gate.
+- Commit emoji is type-specific and has exactly one allowed value per type: `✨ feat`, `🐛 fix`, `📝 docs`, `👷 ci`, `💄 style`, `♻️ refactor`, `🔖 release`, `⚡️ perf`, `✅ test`, `🔧 chore`, and `🏗️ build`.
 
 Release decision:
 

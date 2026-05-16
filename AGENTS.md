@@ -118,7 +118,7 @@ Before every product or harness iteration, do a short internal review:
 - CI must run `make validate` and `make test-harness`.
 - PRs must include Summary, Requirement Classification, Acceptance Criteria, Changed Areas, Release Decision, TDD / Test Evidence, Validation, and Risk and Rollback.
 - Feature and bugfix PRs must mark release required after merge or identify the explicit user-approved deferral. Harness/tooling, docs, CI, and other engineering-process-only PRs should mark release not required.
-- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`. Run `make setup` once to enable `.githooks/commit-msg`, or run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` directly. PR CI also validates the latest PR commit message.
+- Commit messages must match the repository Go commitlint format: `{emoji} {type}{scope}: {subject}`, and the emoji must match the commit type. Current mapping: `✨ feat`, `🐛 fix`, `📝 docs`, `👷 ci`, `💄 style`, `♻️ refactor`, `🔖 release`, `⚡️ perf`, `✅ test`, `🔧 chore`, `🏗️ build`. Run `make setup` once to enable `.githooks/commit-msg`, or run `make commitlint COMMIT_MSG_FILE=<commit-msg-file>` directly. PR CI validates every commit message in the PR range.
 - Do not claim completion after skipping local validation.
 - Stage/commit only files that belong to the current iteration; do not include unrelated dirty files.
 

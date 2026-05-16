@@ -34,7 +34,7 @@
 7. 发布 `v0.1.15`，GoReleaser 产出 darwin、linux、windows 包。
 8. 增加这份仓库级交接记录，避免后续会话依赖 Codex 全局 memory 索引。
 9. 移除常驻 CodeRabbit review，因为持续付费的 PR review 门禁对本仓库不划算。
-10. 增加 `make setup` 和 PR 侧最新提交 commitlint，让人工提交和 Agent 提交共用同一套提交消息契约。
+10. 增加 `make setup` 和 PR range commitlint，让人工提交和 Agent 提交共用同一套提交消息契约。
 11. 增加显式 PR 发版判定门禁：工程/流程优化不触发软件发版，feature 和 bugfix 必须标记后续发版或明确延后。
 
 ## 产品决策
@@ -149,7 +149,7 @@
 - checkout 内 CLI smoke 使用 `make run ARGS="..."`，不要直接裸跑 `go run`
 - 每个 checkout 运行一次 `make setup`，启用 `.githooks/commit-msg`
 - 提交信息校验使用 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`
-- PR CI 校验 PR 最新提交消息，所以没有运行本地 setup 的贡献者也会被覆盖
+- PR CI 校验 PR range 内每个提交消息，所以没有运行本地 setup 的贡献者也会被覆盖
 
 类似 `/tmp/aitok-commit-msg` 的文件不是项目工具，只是一次性命令输入。
 
@@ -199,7 +199,8 @@ Commitlint：
 
 - `make setup` 会执行 `git config core.hooksPath .githooks`。
 - `.githooks/commit-msg` 执行 `make commitlint COMMIT_MSG_FILE="$1"`。
-- `.github/workflows/pr.yml` 会 fetch PR head SHA，并用 `make commitlint` 校验 PR 最新提交消息；本地 setup 有帮助，但不是唯一门禁。
+- `.github/workflows/pr.yml` 会用 `make commitlint-range COMMIT_RANGE="<base>..<head>"` 校验 PR range 内每个提交消息；本地 setup 有帮助，但不是唯一门禁。
+- 提交 emoji 与 type 强绑定，且每个 type 只允许一个值：`✨ feat`、`🐛 fix`、`📝 docs`、`👷 ci`、`💄 style`、`♻️ refactor`、`🔖 release`、`⚡️ perf`、`✅ test`、`🔧 chore`、`🏗️ build`。
 
 发版判定：
 
