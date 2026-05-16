@@ -118,7 +118,7 @@
 - CI 必须运行 `make validate`、`make test-harness`。
 - PR 必须包含 Summary、Requirement Classification、Acceptance Criteria、Changed Areas、Release Decision、TDD / Test Evidence、Validation、Risk and Rollback。
 - feature 和 bugfix PR 必须标记合并后需要发版，或写明用户已明确批准延后。Harness/tooling、docs、CI 和其他工程流程优化 PR 应标记无需发版。
-- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`。先运行一次 `make setup` 启用 `.githooks/commit-msg`，或直接运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`。PR CI 也会校验 PR 最新提交消息。
+- 提交消息必须符合仓库内 Go commitlint 格式：`{emoji} {type}{scope}: {subject}`，并且 emoji 必须匹配提交 type。当前映射：`✨ feat`、`🐛 fix`、`📝 docs`、`👷 ci`、`💄 style`、`♻️ refactor`、`🔖 release`、`⚡️ perf`、`✅ test`、`🔧 chore`、`🏗️ build`。先运行一次 `make setup` 启用 `.githooks/commit-msg`，或直接运行 `make commitlint COMMIT_MSG_FILE=<commit-msg-file>`。PR CI 会校验 PR range 内的每个提交消息。
 - 不要绕过本地验证后声称完成。
 - Stage/commit 只包含当前迭代文件；不要纳入无关 dirty files。
 

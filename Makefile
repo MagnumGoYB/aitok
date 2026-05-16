@@ -3,8 +3,9 @@ AITOK_CACHE_DIR ?= $(CURDIR)/.cache/aitok
 GOCACHE ?= $(AITOK_CACHE_DIR)/go-build
 GOMODCACHE ?= $(AITOK_CACHE_DIR)/go-mod
 COMMIT_MSG_FILE ?= .git/COMMIT_EDITMSG
+COMMIT_RANGE ?=
 
-.PHONY: setup check test test-packages test-harness vet build run validate validate-pr-body commitlint
+.PHONY: setup check test test-packages test-harness vet build run validate validate-pr-body commitlint commitlint-range
 
 setup:
 	git config core.hooksPath .githooks
@@ -37,5 +38,9 @@ validate-pr-body:
 
 commitlint:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) run ./tools/commitlint --edit "$(COMMIT_MSG_FILE)"
+
+commitlint-range:
+	@test -n "$(COMMIT_RANGE)" || (echo 'COMMIT_RANGE is required, for example: make commitlint-range COMMIT_RANGE="origin/main..HEAD"' >&2; exit 2)
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) run ./tools/commitlint --range "$(COMMIT_RANGE)"
 
 validate: check test build

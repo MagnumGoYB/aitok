@@ -9,11 +9,29 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
 
+type sortableResult struct {
+	result  Result
+	sortKey string
+}
+
+type sortableThreadResult struct {
+	result     ThreadResult
+	tieBreaker string
+	sortTime   time.Time
+}
+
 type Filters struct {
 	Tools     []string
 	Models    []string
 	Providers []string
 	CWD       string
+}
+
+type filterMatcher struct {
+	tools     map[string]struct{}
+	models    map[string]struct{}
+	providers map[string]struct{}
+	cwd       string
 }
 
 type GroupBy []string
@@ -103,25 +121,25 @@ type ThreadTurn struct {
 	CostUSD             float64          `json:"cost_usd"`
 	Usage               usage.TokenUsage `json:"usage"`
 	TurnEventIndex      int              `json:"-"`
-	PriceSource         string           `json:"-"`
-	Price               *Price           `json:"-"`
 }
 
 type Accumulator struct {
-	window  Window
-	filters Filters
-	groupBy GroupBy
-	sortBy  SortMetric
-	costFor func(usage.UsageEvent) Cost
-	buckets map[string]*Result
+	window        Window
+	filters       Filters
+	filterMatcher filterMatcher
+	groupBy       GroupBy
+	sortBy        SortMetric
+	costFor       func(usage.UsageEvent) Cost
+	buckets       map[string]*Result
 }
 
 type ThreadAccumulator struct {
-	window  Window
-	filters Filters
-	sortBy  SortMetric
-	costFor func(usage.UsageEvent) Cost
-	buckets map[string]*threadBucket
+	window        Window
+	filters       Filters
+	filterMatcher filterMatcher
+	sortBy        SortMetric
+	costFor       func(usage.UsageEvent) Cost
+	buckets       map[string]*threadBucket
 }
 
 type threadBucket struct {
@@ -136,8 +154,10 @@ type threadBucket struct {
 	turnEventCounts       map[string]int
 }
 
+var defaultGroupBy = GroupBy{"tool", "model", "provider"}
+
 func DefaultGroupBy() GroupBy {
-	return GroupBy{"tool", "model", "provider"}
+	return append(GroupBy(nil), defaultGroupBy...)
 }
 
 func ParseGroupBy(raw string) GroupBy {
@@ -201,55 +221,62 @@ func NewThreadAccumulator(window Window, filters Filters, costFor func(usage.Usa
 }
 
 func NewAccumulatorWithSort(window Window, filters Filters, groupBy GroupBy, sortBy SortMetric, costFor func(usage.UsageEvent) Cost) *Accumulator {
-	return &Accumulator{window: window, filters: filters, groupBy: groupBy, sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*Result{}}
+	return &Accumulator{window: window, filters: filters, filterMatcher: newFilterMatcher(filters), groupBy: groupBy, sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*Result{}}
 }
 
 func NewThreadAccumulatorWithSort(window Window, filters Filters, sortBy SortMetric, costFor func(usage.UsageEvent) Cost) *ThreadAccumulator {
-	return &ThreadAccumulator{window: window, filters: filters, sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*threadBucket{}}
+	return &ThreadAccumulator{window: window, filters: filters, filterMatcher: newFilterMatcher(filters), sortBy: normalizeSortMetric(sortBy), costFor: costFor, buckets: map[string]*threadBucket{}}
 }
 
 func (a *Accumulator) Add(event usage.UsageEvent) {
-	if !a.window.Contains(event.Timestamp) || !matches(event, a.filters) {
+	if !a.window.Contains(event.Timestamp) || !a.filterMatcher.matches(event) {
 		return
 	}
 	key := keyFor(event, a.groupBy, a.window.Start.Location())
 	bucketKey := serializeKey(a.groupBy, key)
-	if a.buckets[bucketKey] == nil {
-		a.buckets[bucketKey] = &Result{Key: key, Examples: map[string]string{}}
+	bucket := a.buckets[bucketKey]
+	if bucket == nil {
+		bucket = &Result{Key: key, Examples: map[string]string{}}
+		a.buckets[bucketKey] = bucket
 	}
-	a.buckets[bucketKey].Events++
-	a.buckets[bucketKey].Requests++
-	a.buckets[bucketKey].Usage = a.buckets[bucketKey].Usage.Add(event.Usage)
+	bucket.Events++
+	bucket.Requests++
+	bucket.Usage = bucket.Usage.Add(event.Usage)
 	if a.costFor != nil {
 		cost := a.costFor(event)
-		a.buckets[bucketKey].CostUSD += cost.USD
-		a.buckets[bucketKey].PriceSource = mergePriceSource(a.buckets[bucketKey].PriceSource, cost.Source)
-		a.buckets[bucketKey].Price = mergePrice(a.buckets[bucketKey].Price, cost)
+		bucket.CostUSD += cost.USD
+		bucket.PriceSource = mergePriceSource(bucket.PriceSource, cost.Source)
+		bucket.Price = mergePrice(bucket.Price, cost)
 	}
-	if event.CWD != "" && a.buckets[bucketKey].Examples["cwd"] == "" {
-		a.buckets[bucketKey].Examples["cwd"] = event.CWD
+	if event.CWD != "" && bucket.Examples["cwd"] == "" {
+		bucket.Examples["cwd"] = event.CWD
 	}
 }
 
 func (a *Accumulator) Results() []Result {
-	results := make([]Result, 0, len(a.buckets))
+	sortable := make([]sortableResult, 0, len(a.buckets))
 	for _, result := range a.buckets {
 		if len(result.Examples) == 0 {
 			result.Examples = nil
 		}
-		results = append(results, *result)
+		sortable = append(sortable, sortableResult{result: *result, sortKey: serializeKey(a.groupBy, result.Key)})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if compareResults(results[i], results[j], a.sortBy) != 0 {
-			return compareResults(results[i], results[j], a.sortBy) < 0
+	sort.Slice(sortable, func(i, j int) bool {
+		cmp := compareResults(sortable[i].result, sortable[j].result, a.sortBy)
+		if cmp != 0 {
+			return cmp < 0
 		}
-		return serializeKey(a.groupBy, results[i].Key) < serializeKey(a.groupBy, results[j].Key)
+		return sortable[i].sortKey < sortable[j].sortKey
 	})
+	results := make([]Result, 0, len(sortable))
+	for _, item := range sortable {
+		results = append(results, item.result)
+	}
 	return results
 }
 
 func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
-	if !a.window.Contains(event.Timestamp) || !matches(event, a.filters) {
+	if !a.window.Contains(event.Timestamp) || !a.filterMatcher.matches(event) {
 		return
 	}
 	id := usage.Unknown(event.ThreadID)
@@ -287,19 +314,24 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	bucket.result.Events++
 	bucket.result.Requests++
 	bucket.result.Usage = bucket.result.Usage.Add(event.Usage)
+	var cost Cost
+	var normalizedPriceSource string
+	var normalizedPrice *Price
 	if a.costFor != nil {
-		cost := a.costFor(event)
+		cost = a.costFor(event)
+		normalizedPriceSource = mergePriceSource("", cost.Source)
+		normalizedPrice = priceFromCost(cost)
 		bucket.result.CostUSD += cost.USD
 		bucket.costByProvider[provider] += cost.USD
 		recordThreadAttribution(bucket, provider, event.ProviderAttribution, event.Usage, cost.USD)
-		recordThreadTurn(bucket, event, cost.USD, mergePriceSource("", cost.Source), priceFromCost(cost))
-		if source := priceSourceLabel(cost.Source); source != "" {
-			bucket.priceSources[source] = struct{}{}
+		recordThreadTurn(bucket, event, cost.USD)
+		if normalizedPriceSource != "" {
+			bucket.priceSources[normalizedPriceSource] = struct{}{}
 		}
-		bucket.price = mergePrice(bucket.price, cost)
+		bucket.price = mergeAggregatedPrice(bucket.price, normalizedPrice)
 	} else {
 		recordThreadAttribution(bucket, provider, event.ProviderAttribution, event.Usage, 0)
-		recordThreadTurn(bucket, event, 0, "", nil)
+		recordThreadTurn(bucket, event, 0)
 	}
 	if bucket.result.Name == "unknown" && event.ThreadName != "" {
 		bucket.result.Name = event.ThreadName
@@ -319,17 +351,21 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	if bucket.result.LastActiveAt.IsZero() || event.Timestamp.After(bucket.result.LastActiveAt) {
 		bucket.result.LastActiveAt = event.Timestamp
 	}
-	groupKey := keyFor(event, DefaultGroupBy(), time.UTC)
-	groupBucketID := serializeKey(DefaultGroupBy(), groupKey)
-	if bucket.groupBuckets[groupBucketID] == nil {
-		bucket.groupBuckets[groupBucketID] = &Result{Key: groupKey}
+	groupKey := map[string]string{
+		"tool":     string(event.Tool),
+		"model":    model,
+		"provider": provider,
 	}
+	groupBucketID := serializeKey(defaultGroupBy, groupKey)
 	groupBucket := bucket.groupBuckets[groupBucketID]
+	if groupBucket == nil {
+		groupBucket = &Result{Key: groupKey}
+		bucket.groupBuckets[groupBucketID] = groupBucket
+	}
 	groupBucket.Events++
 	groupBucket.Requests++
 	groupBucket.Usage = groupBucket.Usage.Add(event.Usage)
 	if a.costFor != nil {
-		cost := a.costFor(event)
 		groupBucket.CostUSD += cost.USD
 		groupBucket.PriceSource = mergePriceSource(groupBucket.PriceSource, cost.Source)
 		groupBucket.Price = mergePrice(groupBucket.Price, cost)
@@ -337,7 +373,7 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 }
 
 func (a *ThreadAccumulator) Results() []ThreadResult {
-	results := make([]ThreadResult, 0, len(a.buckets))
+	sortable := make([]sortableThreadResult, 0, len(a.buckets))
 	for _, result := range a.buckets {
 		thread := result.result
 		thread.Model = summarizeValues(result.models, "unknown")
@@ -346,47 +382,62 @@ func (a *ThreadAccumulator) Results() []ThreadResult {
 		thread.AttributionBreakdown = summarizeThreadAttributions(result.attributionByProvider)
 		thread.PriceSource = summarizePriceSources(result.priceSources)
 		thread.Price = result.price
-		results = append(results, thread)
+		sortTime := thread.CreatedAt
+		if sortTime.IsZero() {
+			sortTime = thread.LastActiveAt
+		}
+		sortable = append(sortable, sortableThreadResult{
+			result:     thread,
+			tieBreaker: thread.Tool + "|" + thread.ID,
+			sortTime:   sortTime,
+		})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if compareThreads(results[i], results[j], a.sortBy) != 0 {
-			return compareThreads(results[i], results[j], a.sortBy) < 0
+	sort.Slice(sortable, func(i, j int) bool {
+		cmp := compareThreads(sortable[i].result, sortable[j].result, a.sortBy)
+		if cmp != 0 {
+			return cmp < 0
 		}
-		leftCreated := results[i].CreatedAt
-		rightCreated := results[j].CreatedAt
-		if leftCreated.IsZero() {
-			leftCreated = results[i].LastActiveAt
+		if !sortable[i].sortTime.Equal(sortable[j].sortTime) {
+			return sortable[i].sortTime.After(sortable[j].sortTime)
 		}
-		if rightCreated.IsZero() {
-			rightCreated = results[j].LastActiveAt
-		}
-		if !leftCreated.Equal(rightCreated) {
-			return leftCreated.After(rightCreated)
-		}
-		return results[i].Tool+"|"+results[i].ID < results[j].Tool+"|"+results[j].ID
+		return sortable[i].tieBreaker < sortable[j].tieBreaker
 	})
+	results := make([]ThreadResult, 0, len(sortable))
+	for _, item := range sortable {
+		results = append(results, item.result)
+	}
 	return results
 }
 
 func (a *ThreadAccumulator) GroupResults(groupBy GroupBy) []Result {
 	buckets := map[string]*Result{}
+	useDefaultGroupBy := sameGroupBy(groupBy, defaultGroupBy)
 	for _, thread := range a.buckets {
 		threadBuckets := a.groupBucketsForThread(thread, groupBy)
-		for _, groupBucket := range threadBuckets {
+		for bucketID, groupBucket := range threadBuckets {
+			if useDefaultGroupBy {
+				mergeGroupedResultByID(buckets, bucketID, groupBucket)
+				continue
+			}
 			key := regroupThreadBucketKey(groupBucket.Key, groupBy)
 			mergeGroupedResult(buckets, groupBy, key, *groupBucket)
 		}
 	}
-	results := make([]Result, 0, len(buckets))
+	sortable := make([]sortableResult, 0, len(buckets))
 	for _, bucket := range buckets {
-		results = append(results, *bucket)
+		sortable = append(sortable, sortableResult{result: *bucket, sortKey: serializeKey(groupBy, bucket.Key)})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if compareResults(results[i], results[j], a.sortBy) != 0 {
-			return compareResults(results[i], results[j], a.sortBy) < 0
+	sort.Slice(sortable, func(i, j int) bool {
+		cmp := compareResults(sortable[i].result, sortable[j].result, a.sortBy)
+		if cmp != 0 {
+			return cmp < 0
 		}
-		return serializeKey(groupBy, results[i].Key) < serializeKey(groupBy, results[j].Key)
+		return sortable[i].sortKey < sortable[j].sortKey
 	})
+	results := make([]Result, 0, len(sortable))
+	for _, item := range sortable {
+		results = append(results, item.result)
+	}
 	return results
 }
 
@@ -408,7 +459,7 @@ func (a *ThreadAccumulator) groupBucketsForThread(thread *threadBucket, groupBy 
 			"model":    usage.Unknown(item.Model),
 			"provider": usage.Unknown(item.Provider),
 		}
-		bucketID := serializeKey(DefaultGroupBy(), key)
+		bucketID := serializeKey(defaultGroupBy, key)
 		if grouped[bucketID] == nil {
 			grouped[bucketID] = &Result{
 				Key:         key,
@@ -439,6 +490,36 @@ func mergeGroupedResult(buckets map[string]*Result, groupBy GroupBy, key map[str
 	bucket.Usage = bucket.Usage.Add(next.Usage)
 	bucket.PriceSource = mergePriceSource(bucket.PriceSource, next.PriceSource)
 	bucket.Price = mergeAggregatedPrice(bucket.Price, next.Price)
+}
+
+func mergeGroupedResultByID(buckets map[string]*Result, bucketID string, next *Result) {
+	if next == nil {
+		return
+	}
+	bucket := buckets[bucketID]
+	if bucket == nil {
+		copy := *next
+		buckets[bucketID] = &copy
+		return
+	}
+	bucket.Events += next.Events
+	bucket.Requests += next.Requests
+	bucket.CostUSD += next.CostUSD
+	bucket.Usage = bucket.Usage.Add(next.Usage)
+	bucket.PriceSource = mergePriceSource(bucket.PriceSource, next.PriceSource)
+	bucket.Price = mergeAggregatedPrice(bucket.Price, next.Price)
+}
+
+func sameGroupBy(left, right GroupBy) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func supportsProviderRebalance(groupBy GroupBy) bool {
@@ -606,8 +687,8 @@ func clonePriceComponents(components []Price) []Price {
 func threadTurnToRebalancedEvent(tool string, turn ThreadTurn, provider string, fraction float64, costFor func(usage.UsageEvent) Cost) rebalancedThreadEvent {
 	scaledUsage := scaleTokenUsage(turn.Usage, fraction)
 	costUSD := turn.CostUSD * fraction
-	priceSource := turn.PriceSource
-	price := clonePrice(turn.Price)
+	var priceSource string
+	var price *Price
 	if costFor != nil {
 		cost := costFor(usage.UsageEvent{
 			ID:                  turn.EventID,
@@ -911,17 +992,53 @@ func summarizeValues(values map[string]struct{}, fallback string) string {
 	return strings.Join(items[:2], ",") + ",..."
 }
 
-func matches(event usage.UsageEvent, filters Filters) bool {
-	if len(filters.Tools) > 0 && !contains(filters.Tools, string(event.Tool)) {
-		return false
+func newFilterMatcher(filters Filters) filterMatcher {
+	return filterMatcher{
+		tools:     buildFilterSet(filters.Tools),
+		models:    buildFilterSet(filters.Models),
+		providers: buildFilterSet(filters.Providers),
+		cwd:       strings.TrimSpace(filters.CWD),
 	}
-	if len(filters.Models) > 0 && !contains(filters.Models, event.Model) {
-		return false
+}
+
+func buildFilterSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
 	}
-	if len(filters.Providers) > 0 && !contains(filters.Providers, event.Provider) {
-		return false
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := normalizeFilterValue(value)
+		if normalized != "" {
+			set[normalized] = struct{}{}
+		}
 	}
-	if filters.CWD != "" && !strings.Contains(event.CWD, filters.CWD) {
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+func normalizeFilterValue(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func (m filterMatcher) matches(event usage.UsageEvent) bool {
+	if len(m.tools) > 0 {
+		if _, ok := m.tools[normalizeFilterValue(string(event.Tool))]; !ok {
+			return false
+		}
+	}
+	if len(m.models) > 0 {
+		if _, ok := m.models[normalizeFilterValue(event.Model)]; !ok {
+			return false
+		}
+	}
+	if len(m.providers) > 0 {
+		if _, ok := m.providers[normalizeFilterValue(event.Provider)]; !ok {
+			return false
+		}
+	}
+	if m.cwd != "" && !strings.Contains(event.CWD, m.cwd) {
 		return false
 	}
 	return true
@@ -972,7 +1089,7 @@ func recordThreadAttribution(bucket *threadBucket, provider string, attribution 
 	item.Usage = item.Usage.Add(tokens)
 }
 
-func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64, priceSource string, price *Price) {
+func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64) {
 	if bucket == nil {
 		return
 	}
@@ -991,8 +1108,6 @@ func recordThreadTurn(bucket *threadBucket, event usage.UsageEvent, usd float64,
 		CostUSD:             usd,
 		Usage:               event.Usage,
 		TurnEventIndex:      bucket.turnEventCounts[id],
-		PriceSource:         priceSource,
-		Price:               clonePrice(price),
 	})
 }
 
@@ -1088,7 +1203,7 @@ func contains(values []string, target string) bool {
 }
 
 func keyFor(event usage.UsageEvent, groupBy GroupBy, loc *time.Location) map[string]string {
-	key := map[string]string{}
+	key := make(map[string]string, len(groupBy))
 	for _, group := range groupBy {
 		switch group {
 		case "tool":
@@ -1109,7 +1224,7 @@ func keyFor(event usage.UsageEvent, groupBy GroupBy, loc *time.Location) map[str
 }
 
 func serializeKey(groupBy GroupBy, key map[string]string) string {
-	var parts []string
+	parts := make([]string, 0, len(groupBy))
 	for _, group := range groupBy {
 		parts = append(parts, group+"="+key[group])
 	}

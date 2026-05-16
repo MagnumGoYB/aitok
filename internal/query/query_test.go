@@ -1,11 +1,23 @@
 package query
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
+
+func TestDefaultGroupByReturnsIndependentSlice(t *testing.T) {
+	first := DefaultGroupBy()
+	first[0] = "cwd"
+
+	got := DefaultGroupBy()
+	want := GroupBy{"tool", "model", "provider"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DefaultGroupBy() = %#v, want %#v", got, want)
+	}
+}
 
 func TestAggregateFiltersAndGroups(t *testing.T) {
 	loc := time.UTC

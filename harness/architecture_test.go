@@ -63,13 +63,13 @@ func TestCommitWorkflowSupportsHumanAndHostedValidation(t *testing.T) {
 
 	prWorkflow := read(t, ".github", "workflows", "pr.yml")
 	for _, expected := range []string{
-		"Fetch pull request commits",
+		"fetch-depth: 0",
+		"github.event.pull_request.base.sha",
 		"github.event.pull_request.head.sha",
-		"git log -1 --format=%B",
-		"make commitlint COMMIT_MSG_FILE=",
+		"make commitlint-range COMMIT_RANGE=",
 	} {
 		if !strings.Contains(prWorkflow, expected) {
-			t.Fatalf("PR workflow must validate the latest commit message with %s", expected)
+			t.Fatalf("PR workflow must validate every PR commit message with %s", expected)
 		}
 	}
 }
@@ -534,7 +534,7 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	prTemplate := read(t, ".github", "pull_request_template.md")
 	gitignore := read(t, ".gitignore")
 
-	for _, target := range []string{"check:", "test:", "test-packages:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "validate:"} {
+	for _, target := range []string{"check:", "test:", "test-packages:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "commitlint-range:", "validate:"} {
 		if !strings.Contains(makefile, target) {
 			t.Fatalf("Makefile missing %s", target)
 		}
@@ -617,9 +617,13 @@ func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
 	commitlint := read(t, "tools", "commitlint", "main.go")
 	for _, expected := range []string{
 		`maxHeaderLength = 64`,
-		`emoji + " " + type + optional scope + ": " + subject`,
+		`type-specific emoji + " " + type + optional scope + ": " + subject`,
+		`typeEmojiValues`,
+		`lintCommitRange`,
 		`"feat"`,
 		`"fix"`,
+		`"perf"`,
+		`"test"`,
 		`"harness"`,
 		`"sources"`,
 	} {
@@ -644,6 +648,13 @@ func TestCommitWorkflowConfigurationStaysExecutable(t *testing.T) {
 	for _, expected := range []string{"make commitlint COMMIT_MSG_FILE=", ".githooks/commit-msg", "{emoji} {type}{scope}: {subject}"} {
 		if !strings.Contains(docs, expected) {
 			t.Fatalf("agent and PR docs must mention %s", expected)
+		}
+	}
+
+	workflow := read(t, ".github", "workflows", "pr.yml")
+	for _, expected := range []string{"make commitlint-range COMMIT_RANGE=", "pull request commit messages"} {
+		if !strings.Contains(workflow, expected) {
+			t.Fatalf("PR workflow must validate all PR commit messages with %s", expected)
 		}
 	}
 }

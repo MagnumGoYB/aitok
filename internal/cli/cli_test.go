@@ -170,6 +170,47 @@ func TestSummaryUsesCustomPricingFile(t *testing.T) {
 	}
 }
 
+func TestSummaryPerModelPricingStaysAccurate(t *testing.T) {
+	home := t.TempDir()
+	pricingPath := filepath.Join(home, "pricing.json")
+	writeFixture(t, pricingPath, `{"models":[{"match":"gpt-5.4","input_usd_per_mtok":2},{"match":"claude-sonnet-4","input_usd_per_mtok":3},{"match":"gemini-2.5-flash","input_usd_per_mtok":0.3}]}`)
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "gpt.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"model_provider":"openai","cwd":"/repo"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"model":"gpt-5.4","cwd":"/repo"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}`+"\n")
+	writeFixture(t, filepath.Join(home, ".claude", "projects", "proj", "session.jsonl"),
+		`{"type":"assistant","uuid":"claude-1","timestamp":"2026-05-08T02:00:00Z","cwd":"/repo","message":{"id":"msg-1","model":"claude-sonnet-4","usage":{"input_tokens":1000000,"output_tokens":1},"stop_reason":"end_turn"}}`+"\n")
+	geminiOutfile := filepath.Join(home, ".gemini", "telemetry.log")
+	writeFixture(t, filepath.Join(home, ".gemini", "settings.json"), `{"telemetry":{"enabled":true,"target":"local","outfile":"`+geminiOutfile+`","logPrompts":false}}`)
+	writeFixture(t, geminiOutfile,
+		`{"timestamp":"2026-05-08T03:00:00Z","name":"gemini_cli.api_response","attributes":{"model":"gemini-2.5-flash","auth_type":"google","input_token_count":1000000,"total_token_count":1000000}}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--pricing", pricingPath, "--no-version-check", "summary", "--period", "today", "--format", "json", "--group-by", "model"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload report.Payload
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("summary json should be valid: %v\n%s", err, out.String())
+	}
+	got := map[string]float64{}
+	for _, result := range payload.Results {
+		got[result.Key["model"]] = result.CostUSD
+	}
+	if got["gpt-5.4"] != 2 {
+		t.Fatalf("gpt-5.4 cost = %.4f, want 2; payload=%+v", got["gpt-5.4"], payload.Results)
+	}
+	if got["claude-sonnet-4"] != 3 {
+		t.Fatalf("claude-sonnet-4 cost = %.4f, want 3; payload=%+v", got["claude-sonnet-4"], payload.Results)
+	}
+	if got["gemini-2.5-flash"] != 0.3 {
+		t.Fatalf("gemini-2.5-flash cost = %.4f, want 0.3; payload=%+v", got["gemini-2.5-flash"], payload.Results)
+	}
+}
+
 func TestSummaryShowsDifferentPricesForModelProviderPairs(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".aitok", "pricing.json"), `{"models":[{"match":"gpt-5.4","provider":"team-a","input_usd_per_mtok":2,"output_usd_per_mtok":20,"cache_hit_usd_per_mtok":0.2,"cache_make_usd_per_mtok":2}]}`)
