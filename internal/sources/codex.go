@@ -19,6 +19,11 @@ type Codex struct {
 	providerTimeline codexProviderTimeline
 }
 
+type codexSessionFile struct {
+	path string
+	meta threadMeta
+}
+
 func NewCodex(opts Options) Codex {
 	return Codex{Home: cleanHome(opts.Home), WindowStart: opts.WindowStart, WindowEnd: opts.WindowEnd}
 }
@@ -41,60 +46,48 @@ func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) er
 		filepath.Join(c.Home, ".codex", "sessions"),
 		filepath.Join(c.Home, ".codex", "archived_sessions"),
 	}
-	targets := c.collectProviderThreads(ctx, roots)
+	sessionFiles, targets, err := c.collectSessionFiles(ctx, roots)
+	if err != nil {
+		return err
+	}
 	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home, targets)
 	index := readCodexSessionIndex(filepath.Join(c.Home, ".codex", "session_index.jsonl"))
 	seen := map[string]struct{}{}
-	for _, root := range roots {
-		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d == nil || d.IsDir() || filepath.Ext(path) != ".jsonl" {
-				return nil
+	for _, file := range sessionFiles {
+		meta := file.meta
+		if title := index[meta.ID]; title != "" {
+			meta.Name = chooseThreadTitle(title, meta.Name)
+		}
+		state := codexState{provider: "unknown", model: "unknown", thread: meta}
+		var pending *codexBufferedTurn
+		var turns []*codexBufferedTurn
+		readErr := readJSONLines(ctx, file.path, func(obj map[string]any) error {
+			if pending != nil && codexTurnContextBoundaryID(obj) != "" && codexTurnContextBoundaryID(obj) != pending.id {
+				turns = append(turns, pending)
+				pending = nil
 			}
-			if !c.fileMayOverlapWindow(path) {
-				return nil
-			}
-			meta := parseCodexThreadMeta(path)
-			if meta.Skip {
-				return nil
-			}
-			if title := index[meta.ID]; title != "" {
-				meta.Name = chooseThreadTitle(title, meta.Name)
-			}
-			state := codexState{provider: "unknown", model: "unknown", thread: meta}
-			var pending *codexBufferedTurn
-			var turns []*codexBufferedTurn
-			readErr := readJSONLines(ctx, path, func(obj map[string]any) error {
-				if pending != nil && codexTurnContextBoundaryID(obj) != "" && codexTurnContextBoundaryID(obj) != pending.id {
+			state.update(obj)
+			event, ok := c.parseBufferedEvent(obj, &state)
+			if ok {
+				if pending != nil && event.turnID != "" && event.turnID != pending.id {
 					turns = append(turns, pending)
 					pending = nil
 				}
-				state.update(obj)
-				event, ok := c.parseBufferedEvent(obj, &state)
-				if ok {
-					if pending != nil && event.turnID != "" && event.turnID != pending.id {
-						turns = append(turns, pending)
-						pending = nil
-					}
-					pending = appendCodexBufferedTurn(pending, state, event)
-				}
-				return nil
-			})
-			if readErr != nil {
-				return readErr
-			}
-			if pending != nil {
-				turns = append(turns, pending)
-			}
-			resolved := c.resolveBufferedTurnProviders(state.thread.ID, turns)
-			for i, turn := range turns {
-				if err := c.flushBufferedTurn(path, &state, turn, resolved[i], seen, handle); err != nil {
-					return err
-				}
+				pending = appendCodexBufferedTurn(pending, state, event)
 			}
 			return nil
 		})
-		if err != nil {
-			return err
+		if readErr != nil {
+			return readErr
+		}
+		if pending != nil {
+			turns = append(turns, pending)
+		}
+		resolved := c.resolveBufferedTurnProviders(state.thread.ID, turns)
+		for i, turn := range turns {
+			if err := c.flushBufferedTurn(file.path, &state, turn, resolved[i], seen, handle); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -183,10 +176,11 @@ func (c Codex) providerForBufferedEvent(threadID string, pending *codexBufferedT
 	return pending.provider, attribution
 }
 
-func (c Codex) collectProviderThreads(ctx context.Context, roots []string) codexProviderTargets {
+func (c Codex) collectSessionFiles(ctx context.Context, roots []string) ([]codexSessionFile, codexProviderTargets, error) {
 	targets := newCodexProviderTargets()
+	files := make([]codexSessionFile, 0)
 	for _, root := range roots {
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -197,11 +191,18 @@ func (c Codex) collectProviderThreads(ctx context.Context, roots []string) codex
 				return nil
 			}
 			meta := parseCodexThreadMeta(path)
+			if meta.Skip {
+				return nil
+			}
 			targets.addThread(meta.ID)
+			files = append(files, codexSessionFile{path: path, meta: meta})
 			return nil
 		})
+		if err != nil {
+			return nil, codexProviderTargets{}, err
+		}
 	}
-	return targets
+	return files, targets, nil
 }
 
 func (c Codex) fileMayOverlapWindow(path string) bool {

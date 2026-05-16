@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -27,7 +28,14 @@ type ModelPrice struct {
 }
 
 type Catalog struct {
-	Models []ModelPrice `json:"models"`
+	Models        []ModelPrice `json:"models"`
+	sortedModelsC []modelMatcher
+}
+
+type modelMatcher struct {
+	price         ModelPrice
+	matchLower    string
+	providerLower string
 }
 
 type Cost struct {
@@ -56,7 +64,7 @@ func Load(home string) (Catalog, error) {
 }
 
 func DefaultCatalog() Catalog {
-	return Catalog{Models: []ModelPrice{
+	catalog := Catalog{Models: []ModelPrice{
 		{Match: "codex-auto-review", Provider: "bcb", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5, Multiplier: 1, Source: "default"},
 		{Match: "gpt-5.5", Provider: "openai", InputUSDPerMTok: 5, OutputUSDPerMTok: 30, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 5, Multiplier: 1, Source: "default"},
 		{Match: "gpt-5.4-mini", Provider: "openai", InputUSDPerMTok: 0.75, OutputUSDPerMTok: 4.5, CacheHitUSDPerMTok: 0.075, CacheMakeUSDPerMTok: 0.75, Multiplier: 1, Source: "default"},
@@ -79,6 +87,8 @@ func DefaultCatalog() Catalog {
 		{Match: "gemini-2.5-flash", Provider: "google", InputUSDPerMTok: 0.3, OutputUSDPerMTok: 2.5, CacheHitUSDPerMTok: 0.03, CacheMakeUSDPerMTok: 0.3, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.0-flash", Provider: "google", InputUSDPerMTok: 0.1, OutputUSDPerMTok: 0.4, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0.1, Multiplier: 1, Source: "default"},
 	}}
+	catalog.refreshSortedModels()
+	return catalog
 }
 
 func (c Catalog) CostFor(event usage.UsageEvent) Cost {
@@ -130,58 +140,93 @@ func (c Catalog) match(event usage.UsageEvent) (ModelPrice, bool) {
 	model := strings.ToLower(event.Model)
 	provider := strings.ToLower(event.Provider)
 	models := c.sortedModels()
-	for _, price := range models {
-		if price.Provider == "" || provider == "" || !strings.Contains(provider, strings.ToLower(price.Provider)) {
+	for _, candidate := range models {
+		if candidate.providerLower == "" || provider == "" || !strings.Contains(provider, candidate.providerLower) {
 			continue
 		}
-		if strings.Contains(model, strings.ToLower(price.Match)) {
-			if price.Source == "" {
-				price.Source = "configured"
-			}
-			return price, true
+		if strings.Contains(model, candidate.matchLower) {
+			return finalizeMatchedPrice(candidate.price), true
 		}
 	}
-	for _, price := range models {
-		if price.Provider != "" {
+	for _, candidate := range models {
+		if candidate.providerLower != "" {
 			continue
 		}
-		if strings.Contains(model, strings.ToLower(price.Match)) {
-			if price.Source == "" {
-				price.Source = "configured"
-			}
-			return price, true
+		if strings.Contains(model, candidate.matchLower) {
+			return finalizeMatchedPrice(candidate.price), true
 		}
 	}
-	for _, price := range models {
-		if price.Provider == "" || price.Source != "default" {
+	for _, candidate := range models {
+		if candidate.providerLower == "" || candidate.price.Source != "default" {
 			continue
 		}
-		if strings.Contains(model, strings.ToLower(price.Match)) {
-			if price.Source == "" {
-				price.Source = "configured"
-			}
-			return price, true
+		if strings.Contains(model, candidate.matchLower) {
+			return finalizeMatchedPrice(candidate.price), true
 		}
 	}
 	return ModelPrice{}, false
 }
 
-func (c Catalog) sortedModels() []ModelPrice {
-	models := append([]ModelPrice(nil), c.Models...)
-	sort.SliceStable(models, func(i, j int) bool {
-		return len(models[i].Match) > len(models[j].Match)
+func finalizeMatchedPrice(price ModelPrice) ModelPrice {
+	if price.Source == "" {
+		price.Source = "configured"
+	}
+	return price
+}
+
+func (c Catalog) sortedModels() []modelMatcher {
+	if len(c.sortedModelsC) > 0 || len(c.Models) == 0 {
+		return c.sortedModelsC
+	}
+	matchers := make([]modelMatcher, 0, len(c.Models))
+	for _, price := range c.Models {
+		matchers = append(matchers, modelMatcher{
+			price:         price,
+			matchLower:    strings.ToLower(price.Match),
+			providerLower: strings.ToLower(price.Provider),
+		})
+	}
+	sort.SliceStable(matchers, func(i, j int) bool {
+		return len(matchers[i].price.Match) > len(matchers[j].price.Match)
 	})
-	return models
+	return matchers
+}
+
+func (c *Catalog) refreshSortedModels() {
+	c.sortedModelsC = make([]modelMatcher, 0, len(c.Models))
+	for _, price := range c.Models {
+		c.sortedModelsC = append(c.sortedModelsC, modelMatcher{
+			price:         price,
+			matchLower:    strings.ToLower(price.Match),
+			providerLower: strings.ToLower(price.Provider),
+		})
+	}
+	sort.SliceStable(c.sortedModelsC, func(i, j int) bool {
+		return len(c.sortedModelsC[i].price.Match) > len(c.sortedModelsC[j].price.Match)
+	})
+}
+
+func (c *Catalog) UnmarshalJSON(data []byte) error {
+	type rawCatalog Catalog
+	var raw rawCatalog
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = Catalog(raw)
+	c.refreshSortedModels()
+	return nil
 }
 
 func (c *Catalog) upsert(price ModelPrice) {
 	for i, existing := range c.Models {
 		if strings.EqualFold(existing.Match, price.Match) && strings.EqualFold(existing.Provider, price.Provider) {
 			c.Models[i] = price
+			c.refreshSortedModels()
 			return
 		}
 	}
 	c.Models = append([]ModelPrice{price}, c.Models...)
+	c.refreshSortedModels()
 }
 
 func perMillion(tokens int64, price float64) float64 {

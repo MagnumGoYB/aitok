@@ -345,3 +345,31 @@ func TestDefaultCatalogCoversCodexAutoReview(t *testing.T) {
 		t.Fatalf("source = %q, want default", cost.Source)
 	}
 }
+
+func BenchmarkCostFor(b *testing.B) {
+	catalog := DefaultCatalog()
+	events := make([]usage.UsageEvent, 4096)
+	models := []string{"gpt-5.5", "gpt-5.4", "claude-sonnet-4", "claude-opus-4-7", "gemini-2.5-flash", "gemini-2.5-pro", "codex-auto-review"}
+	providers := []string{"openai", "anthropic", "google", "bcb"}
+	for i := range events {
+		events[i] = usage.UsageEvent{
+			Tool:     usage.ToolCodex,
+			Model:    models[i%len(models)],
+			Provider: providers[i%len(providers)],
+			Usage: usage.TokenUsage{
+				Input:           int64(100_000 + i%10_000),
+				Output:          int64(10_000 + i%1_000),
+				CachedInput:     int64(50_000 + i%5_000),
+				CacheCreation:   int64(5_000 + i%500),
+				CacheCreation5m: int64(2_000 + i%200),
+				CacheCreation1h: int64(1_000 + i%100),
+			},
+		}
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, event := range events {
+			_ = catalog.CostFor(event)
+		}
+	}
+}
