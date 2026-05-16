@@ -310,6 +310,72 @@ base_url = "https://team-b.example"
 	}
 }
 
+func TestCodexPrefersChatgptAuthModeOverConfiguredProviderHost(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000188","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000188.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"), "")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1746666001,
+			0,
+			'INFO',
+			'codex_client::default_client',
+			'session_loop:turn{otel.name="session_task.turn" thread.id=019e0000-0000-7000-8000-000000000188 turn.id=turn-a model=gpt-5.4}:run_turn:run_sampling_request: Request completed method=POST url=https://api.toskaxy.xyz/v1/responses status=200 OK',
+			null
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1746666001,
+			500000000,
+			'INFO',
+			'codex_otel.log_only',
+			'session_loop:turn{otel.name="session_task.turn" thread.id=019e0000-0000-7000-8000-000000000188 turn.id=turn-a model=gpt-5.4}:model_client.stream_responses_api:endpoint_session.stream_with:event.name="codex.api_request" auth_mode="Chatgpt" model=gpt-5.4 slug=gpt-5.4',
+			null
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Provider != "openai" {
+		t.Fatalf("auth_mode should override configured provider host: %+v", events[0])
+	}
+	if events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("auth_mode attribution = %q, want exact_request", events[0].ProviderAttribution)
+	}
+}
+
 func TestCodexUsesConfigBaseURLWhenProvidersShareHost(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `

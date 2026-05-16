@@ -55,6 +55,8 @@ var (
 	codexConnectURLPattern     = regexp.MustCompile(`starting new connection: (https?://[^\s]+)`)
 	codexHostSomePattern       = regexp.MustCompile(`host=Some\("([^"]+)"\)`)
 	codexPoolHostPattern       = regexp.MustCompile(`\("https", ([^)]+)\)`)
+	codexAuthModeQuotedPattern = regexp.MustCompile(`auth_mode="([^"]+)"`)
+	codexAuthModeSomePattern   = regexp.MustCompile(`auth_mode=Some\(([^)]+)\)`)
 	codexRequestEvidenceTokens = []string{
 		"model_client.",
 		"endpoint_session.",
@@ -65,16 +67,19 @@ var (
 		"Http::connect;",
 		"checkout waiting for idle connection",
 		"Turn error:",
+		"auth_mode=",
 	}
 	codexTrustedSQLiteProviderTargets = map[string]struct{}{
 		"codex_api::sse::responses":                 {},
 		"codex_client::default_client":              {},
 		"codex_client::transport":                   {},
+		"codex_otel.log_only":                       {},
+		"codex_otel.trace_safe":                     {},
+		"feedback_tags":                             {},
 		"hyper_util::client::legacy::connect::http": {},
 	}
 	codexIgnoredTextLogProviderTargets = map[string]struct{}{
 		"codex_core::stream_events_utils": {},
-		"codex_otel.log_only":             {},
 	}
 	codexIgnoredRequestEvidenceSubstrings = []string{
 		`run_turn:list_models`,
@@ -85,6 +90,7 @@ var (
 const (
 	codexProviderStrengthWeak   = 1
 	codexProviderStrengthStrong = 2
+	codexProviderStrengthAuth   = 3
 )
 
 func newCodexProviderTargets() codexProviderTargets {
@@ -227,16 +233,29 @@ func (t codexProviderTimeline) exactProviderForTurn(threadID, turnID string) (st
 		return "", false
 	}
 	var provider string
+	var bestStrength int
 	var found bool
+	var ambiguous bool
 	for _, point := range t[threadID] {
 		if point.TurnID != turnID {
 			continue
 		}
 		found = true
-		if provider != "" && provider != point.Provider {
-			return "", true
+		if point.Strength > bestStrength {
+			bestStrength = point.Strength
+			provider = point.Provider
+			ambiguous = false
+			continue
 		}
-		provider = point.Provider
+		if point.Strength < bestStrength {
+			continue
+		}
+		if provider != "" && provider != point.Provider {
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return "", true
 	}
 	return provider, found
 }
@@ -461,7 +480,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 		if shouldIgnoreCodexRequestEvidence(row.Body) {
 			continue
 		}
-		provider := providerFromCodexRequestEvidence(row.Body, matcher)
+		provider, strength := providerFromCodexRequestEvidence(row.Body, matcher)
 		if provider == "" {
 			continue
 		}
@@ -473,7 +492,7 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 			At:       time.Unix(row.TS, row.TSNanos).UTC(),
 			TurnID:   turnID,
 			Provider: provider,
-			Strength: codexProviderStrengthStrong,
+			Strength: strength,
 		})
 	}
 	return timeline
@@ -501,6 +520,8 @@ func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProvide
 	}
 	sort.Strings(hostFilters)
 	sort.Strings(bodyThreadFilters)
+	providerFilters := append([]string{}, hostFilters...)
+	providerFilters = append(providerFilters, "feedback_log_body like '%auth_mode=%'")
 	trustedTargets := make([]string, 0, len(codexTrustedSQLiteProviderTargets))
 	for target := range codexTrustedSQLiteProviderTargets {
 		trustedTargets = append(trustedTargets, "'"+strings.ReplaceAll(target, "'", "''")+"'")
@@ -513,7 +534,7 @@ where (
     or (` + strings.Join(bodyThreadFilters, " or ") + `)
   )
   and target in (` + strings.Join(trustedTargets, ",") + `)
-  and (` + strings.Join(hostFilters, " or ") + `)
+  and (` + strings.Join(providerFilters, " or ") + `)
   and feedback_log_body not like '%ToolCall:%'
   and (
     feedback_log_body like '%model_client.%'
@@ -525,6 +546,7 @@ where (
     or feedback_log_body like '%Http::connect;%'
     or feedback_log_body like '%checkout waiting for idle connection%'
     or feedback_log_body like '%Turn error:%'
+    or feedback_log_body like '%auth_mode=%'
   )
 order by ts;`
 }
@@ -554,7 +576,7 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	if err != nil {
 		return
 	}
-	provider := providerFromCodexRequestEvidence(line, matcher)
+	provider, strength := providerFromCodexRequestEvidence(line, matcher)
 	if provider == "" {
 		return
 	}
@@ -562,21 +584,50 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 		At:       ts,
 		TurnID:   turnID,
 		Provider: provider,
-		Strength: codexProviderStrengthForLogLine(line),
+		Strength: maxCodexProviderStrength(strength, codexProviderStrengthForLogLine(line)),
 	})
 }
 
-func providerFromCodexRequestEvidence(line string, matcher codexProviderMatcher) string {
+func providerFromCodexRequestEvidence(line string, matcher codexProviderMatcher) (string, int) {
+	if provider := providerFromCodexAuthMode(line); provider != "" {
+		return provider, codexProviderStrengthAuth
+	}
 	rawURL, host := extractCodexRequestURLAndHost(line)
 	if rawURL != "" {
 		if provider := matcher.providerForURL(rawURL); provider != "" {
-			return provider
+			return provider, codexProviderStrengthStrong
 		}
 	}
 	if host == "" {
+		return "", 0
+	}
+	provider := matcher.hostProviders[host]
+	if provider == "" {
+		return "", 0
+	}
+	return provider, codexProviderStrengthStrong
+}
+
+func providerFromCodexAuthMode(line string) string {
+	authMode := extractCodexAuthMode(line)
+	switch {
+	case strings.EqualFold(authMode, "Chatgpt"):
+		return "openai"
+	default:
 		return ""
 	}
-	return matcher.hostProviders[host]
+}
+
+func extractCodexAuthMode(line string) string {
+	for _, pattern := range []*regexp.Regexp{
+		codexAuthModeQuotedPattern,
+		codexAuthModeSomePattern,
+	} {
+		if match := pattern.FindStringSubmatch(line); len(match) == 2 {
+			return strings.TrimSpace(match[1])
+		}
+	}
+	return ""
 }
 
 func (m codexProviderMatcher) providerForURL(rawURL string) string {
@@ -667,6 +718,13 @@ func codexProviderStrengthForLogLine(line string) int {
 		return codexProviderStrengthWeak
 	}
 	return codexProviderStrengthStrong
+}
+
+func maxCodexProviderStrength(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func codexTextLogProviderTarget(line string) string {
