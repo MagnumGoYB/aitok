@@ -314,6 +314,10 @@ func TestCodexPrefersConfiguredProviderHostOverChatgptAuthMode(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
 [model_providers.toska]
 name = "toska"
 base_url = "https://api.toskaxy.xyz/v1"
@@ -698,6 +702,10 @@ func TestCodexPrefersExplicitProviderHostOverChatGPTAuthMode(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
 [model_providers.toska]
 name = "toska"
 base_url = "https://api.toskaxy.xyz/v1"
@@ -729,6 +737,10 @@ func TestCodexSameTurnWebsocketProviderCutoverUsesEventTime(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
 [model_providers.toska]
 name = "toska"
 base_url = "https://api.toskaxy.xyz/v1"
@@ -761,10 +773,14 @@ base_url = "https://api.toskaxy.xyz/v1"
 	}
 }
 
-func TestCodexUsesSQLiteWebsocketProviderEvidence(t *testing.T) {
+func TestCodexDoesNotLetIsolatedSQLiteWebsocketProviderOverrideSessionFallback(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
 [model_providers.toska]
 name = "toska"
 base_url = "https://api.toskaxy.xyz/v1"
@@ -811,8 +827,75 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 1 {
 		t.Fatalf("len(events) = %d, want 1", len(events))
 	}
-	if events[0].Provider != "openai" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
-		t.Fatalf("sqlite websocket provider should override session fallback: %+v", events[0])
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("isolated sqlite websocket provider should keep session fallback: %+v", events[0])
+	}
+}
+
+func TestCodexUsesThreadlessSQLiteConversationProviderEvidence(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000018a","model_provider":"openai","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-00000000018a.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"), "")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1746666002,
+			0,
+			'INFO',
+			'codex_client::transport',
+			'model_client.stream_responses_api{model=gpt-5.4}:responses.stream_request: event.name="codex.api_request" auth_mode="Chatgpt" conversation.id=019e0000-0000-7000-8000-00000000018a turn.id=turn-a',
+			null
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1746666002,
+			500000000,
+			'INFO',
+			'codex_client::transport',
+			'model_client.stream_responses_api{model=gpt-5.4}:responses.stream_request: POST to https://api.toskaxy.xyz/v1/responses conversation.id=019e0000-0000-7000-8000-00000000018a turn.id=turn-a',
+			null
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("threadless conversation-id sqlite evidence should resolve exact provider: %+v", events[0])
 	}
 }
 
@@ -862,10 +945,14 @@ base_url = "https://team-b.example"
 	}
 }
 
-func TestCodexPrefersSessionProviderOverConflictingEarlierTimelineInference(t *testing.T) {
+func TestCodexPrefersSessionProviderOverIsolatedEarlierWebsocketProvider(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
 [model_providers.toska]
 name = "toska"
 base_url = "https://api.toskaxy.xyz/v1"
@@ -890,11 +977,331 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Provider != "openai" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
-		t.Fatalf("first turn should use exact openai evidence: %+v", events[0])
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("isolated websocket provider should not override session fallback: %+v", events[0])
 	}
 	if events[1].Provider != "toska" || events[1].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
 		t.Fatalf("conflicting earlier inference should not override current session provider: %+v", events[1])
+	}
+}
+
+func TestCodexAllowsBoundedTimelineInferenceToOverrideSessionFallback(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.team_a]
+name = "team-a"
+base_url = "https://team-a.example"
+
+[model_providers.team_b]
+name = "team-b"
+base_url = "https://team-b.example"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-000000000209","model_provider":"team-b","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-prev","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:01:00Z","payload":{"id":"turn-mid","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:01:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":110,"total_tokens":110}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:02:00Z","payload":{"id":"turn-next","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:02:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"total_tokens":120}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-000000000209.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000209}:turn{turn.id=turn-prev model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-a.example/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-08T01:02:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-000000000209}:turn{turn.id=turn-next model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://team-a.example/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3", len(events))
+	}
+	if events[0].Provider != "team-a" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("previous anchor turn should remain exact provider: %+v", events[0])
+	}
+	if events[1].Provider != "team-a" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("bounded timeline inference should override conflicting session fallback: %+v", events[1])
+	}
+	if events[2].Provider != "team-a" || events[2].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("next anchor turn should remain exact provider: %+v", events[2])
+	}
+}
+
+func TestCodexUsesTurnlessSQLiteProviderAnchorsForBoundedTimelineInference(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:24:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000020a","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:24:00Z","payload":{"id":"turn-prev","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:24:08Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:24:40Z","payload":{"id":"turn-mid","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:24:52Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":110,"total_tokens":110}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:41:20Z","payload":{"id":"turn-next","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:41:30Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"total_tokens":120}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-24-00-019e0000-0000-7000-8000-00000000020a.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:24:53.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000020a}:turn{turn.id=turn-mid model=gpt-5.4}:model_client.stream_responses_websocket{model=gpt-5.4 wire_api=responses transport="responses_websocket" api.path="responses" turn.has_metadata_header=true websocket.warmup=false}:model_client.websocket_connection{provider=OpenAI wire_api=responses transport="responses_websocket" api.path="responses" turn.has_metadata_header=true}: codex_core::client: close time.busy=8.42µs time.idle=8.33µs`+"\n"+
+			`2026-05-08T01:41:25.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000020a}:turn{turn.id=turn-next model=gpt-5.4}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://api.toskaxy.xyz/v1/responses: {"model":"gpt-5.4"}`+"\n")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778203448,
+			0,
+			'INFO',
+			'codex_client::default_client',
+			'session_loop:thread{thread.id=019e0000-0000-7000-8000-00000000020a model=gpt-5.4}:run_turn:run_sampling_request: Request completed method=POST url=https://api.openai.com/v1/responses status=200 OK',
+			null
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778204419,
+			0,
+			'INFO',
+			'codex_client::default_client',
+			'session_loop:thread{thread.id=019e0000-0000-7000-8000-00000000020a model=gpt-5.4}:run_turn:run_sampling_request: Request completed method=POST url=https://api.openai.com/v1/responses status=200 OK',
+			null
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3", len(events))
+	}
+	if events[1].Provider != "openai" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("turnless sqlite anchor should allow bounded openai inference: %+v", events[1])
+	}
+	if events[2].Provider != "toska" || events[2].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("next turn should keep exact toska provider: %+v", events[2])
+	}
+}
+
+func TestCodexIgnoresTurnlessSQLiteSSEAuthModeAnchorsForTimelineInference(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:24:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000020c","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:24:40Z","payload":{"id":"turn-mid","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:24:52Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":110,"total_tokens":110}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-24-00-019e0000-0000-7000-8000-00000000020c.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"), "")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778203448,
+			0,
+			'INFO',
+			'codex_otel.log_only',
+			'event.name="codex.sse_event" event.kind=response.completed event.timestamp=2026-05-08T01:24:08Z conversation.id=019e0000-0000-7000-8000-00000000020c auth_mode="Chatgpt" model=gpt-5.4 slug=gpt-5.4',
+			null
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778204419,
+			0,
+			'INFO',
+			'codex_otel.log_only',
+			'event.name="codex.sse_event" event.kind=response.completed event.timestamp=2026-05-08T01:40:19Z conversation.id=019e0000-0000-7000-8000-00000000020c auth_mode="Chatgpt" model=gpt-5.4 slug=gpt-5.4',
+			null
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("turnless sse auth anchors should not override session fallback: %+v", events[0])
+	}
+}
+
+func TestCodexIgnoresToolResultLinesAsProviderEvidence(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.openai]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T03:10:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000020d","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T03:11:00Z","payload":{"id":"turn-main","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T03:11:12Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"total_tokens":120}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T11-10-00-019e0000-0000-7000-8000-00000000020d.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"), "")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778209872,
+			159988000,
+			'INFO',
+			'codex_otel.log_only',
+			'session_loop{thread_id=019e0000-0000-7000-8000-00000000020d}:turn{turn.id=turn-main model=gpt-5.5}:dispatch_tool_call_with_code_mode_result: event.name="codex.tool_result" tool_name=exec_command output=Chunk ID: demo Output: Request completed method=POST url=https://api.openai.com/v1/responses status=200 OK conversation.id=019e0000-0000-7000-8000-00000000020d',
+			'019e0000-0000-7000-8000-00000000020d'
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778209909,
+			0,
+			'INFO',
+			'codex_client::default_client',
+			'session_loop{thread_id=019e0000-0000-7000-8000-00000000020d}:turn{turn.id=turn-main model=gpt-5.5}:run_turn:run_sampling_request: Request completed method=POST url=https://api.toskaxy.xyz/v1/responses status=200 OK',
+			'019e0000-0000-7000-8000-00000000020d'
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("tool result text should not affect early event attribution: %+v", events[0])
+	}
+}
+
+func TestCodexIgnoresTurnlessSQLiteAnchorsWhenModelsDoNotMatch(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T02:10:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000020b","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T02:10:00Z","payload":{"id":"turn-main","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T02:10:16Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T02:10:23Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"total_tokens":120}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T10-10-00-019e0000-0000-7000-8000-00000000020b.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T02:10:17.340000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000020b}:turn{turn.id=turn-main model=gpt-5.5}:model_client.stream_responses_websocket{model=gpt-5.5 wire_api=responses transport="responses_websocket" api.path="responses" turn.has_metadata_header=true websocket.warmup=false}:model_client.websocket_connection{provider=OpenAI wire_api=responses transport="responses_websocket" api.path="responses" turn.has_metadata_header=true}: codex_core::client: close time.busy=7.46µs time.idle=7.33µs`+"\n")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778206226,
+			896650000,
+			'INFO',
+			'codex_otel.log_only',
+			'event.name="codex.sse_event" event.kind=response.completed input_token_count=235491 output_token_count=3744 event.timestamp=2026-05-08T02:10:26.896Z conversation.id=019e0000-0000-7000-8000-00000000020b auth_mode="Chatgpt" model=gpt-5.4-mini slug=gpt-5.4-mini',
+			null
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1778207126,
+			896650000,
+			'INFO',
+			'codex_otel.log_only',
+			'event.name="codex.sse_event" event.kind=response.completed input_token_count=235491 output_token_count=3744 event.timestamp=2026-05-08T02:25:26.896Z conversation.id=019e0000-0000-7000-8000-00000000020b auth_mode="Chatgpt" model=gpt-5.4-mini slug=gpt-5.4-mini',
+			null
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("mismatched turnless model should not override first event: %+v", events[0])
+	}
+	if events[1].Provider != "toska" || events[1].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
+		t.Fatalf("mismatched turnless model should not override second event: %+v", events[1])
 	}
 }
 
@@ -964,7 +1371,7 @@ func TestCodexExactProviderForTurnAtUsesLatestPriorPoint(t *testing.T) {
 				At:       time.Date(2026, 5, 8, 7, 41, 5, 0, time.UTC),
 				TurnID:   turnID,
 				Provider: "openai",
-				Strength: codexProviderStrengthAuth,
+				Strength: codexProviderStrengthWeak,
 			},
 			{
 				At:       time.Date(2026, 5, 8, 7, 41, 19, 0, time.UTC),

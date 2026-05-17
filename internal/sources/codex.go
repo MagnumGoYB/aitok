@@ -156,9 +156,9 @@ func (c Codex) providerForBufferedEvent(threadID string, pending *codexBufferedT
 		return pending.provider, string(usage.ProviderAttributionModel)
 	}
 	if c.providerTimeline != nil {
-		if provider, found := c.providerTimeline.exactProviderForTurnAt(threadID, event.turnID, event.at); found {
-			if provider != "" {
-				return provider, string(usage.ProviderAttributionExactRequest)
+		if match := c.providerTimeline.exactProviderMatchForTurnAt(threadID, event.turnID, event.at); match.Found {
+			if match.Provider != "" && c.shouldUseExactProvider(threadID, pending, event.at, match) {
+				return match.Provider, string(usage.ProviderAttributionExactRequest)
 			}
 			if provider := c.inferredProviderForPendingEvent(threadID, pending, event); provider != "" {
 				return provider, string(usage.ProviderAttributionInferredTimeline)
@@ -463,9 +463,9 @@ func (c Codex) providerForBufferedTurn(threadID string, pending *codexBufferedTu
 		return pending.provider, string(usage.ProviderAttributionModel)
 	}
 	if c.providerTimeline != nil {
-		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found {
-			if provider != "" {
-				return provider, string(usage.ProviderAttributionExactRequest)
+		if match := c.providerTimeline.exactProviderMatchForTurn(threadID, pending.id); match.Found {
+			if match.Provider != "" && c.shouldUseExactProvider(threadID, pending, pending.inferenceAt(), match) {
+				return match.Provider, string(usage.ProviderAttributionExactRequest)
 			}
 			if pending.provider != "" {
 				return pending.provider, pendingProviderAttribution(pending)
@@ -484,7 +484,7 @@ func (c Codex) inferredProviderForPendingEvent(threadID string, pending *codexBu
 		return ""
 	}
 	return c.allowedInferredProvider(
-		c.providerTimeline.inferredProviderForTimeExcludingTurn(threadID, event.turnID, event.at).Provider,
+		c.providerTimeline.inferredProviderForTimeExcludingTurn(threadID, event.turnID, event.at),
 		pending,
 	)
 }
@@ -494,12 +494,13 @@ func (c Codex) inferredProviderForPendingTurn(threadID string, pending *codexBuf
 		return ""
 	}
 	return c.allowedInferredProvider(
-		c.providerTimeline.inferredProviderForTime(threadID, pending.inferenceAt()).Provider,
+		c.providerTimeline.inferredProviderForTime(threadID, pending.inferenceAt()),
 		pending,
 	)
 }
 
-func (c Codex) allowedInferredProvider(provider string, pending *codexBufferedTurn) string {
+func (c Codex) allowedInferredProvider(inference codexProviderInference, pending *codexBufferedTurn) string {
+	provider := inference.Provider
 	if provider == "" || pending == nil {
 		return provider
 	}
@@ -510,9 +511,29 @@ func (c Codex) allowedInferredProvider(provider string, pending *codexBufferedTu
 		return provider
 	}
 	if pending.provider != provider {
-		return ""
+		if inference.Prev == nil || inference.Next == nil {
+			return ""
+		}
+		if inference.Prev.Provider != provider || inference.Next.Provider != provider {
+			return ""
+		}
+		if !codexInferenceAnchorMatchesModel(inference.Prev, pending.model) || !codexInferenceAnchorMatchesModel(inference.Next, pending.model) {
+			return ""
+		}
+		return provider
 	}
 	return provider
+}
+
+func codexInferenceAnchorMatchesModel(point *codexProviderPoint, model string) bool {
+	if point == nil || point.TurnID != "" {
+		return true
+	}
+	model = normalizeCodexModel(model)
+	if model == "" || point.Model == "" {
+		return false
+	}
+	return point.Model == model
 }
 
 func pendingProviderAttribution(pending *codexBufferedTurn) string {
@@ -521,6 +542,25 @@ func pendingProviderAttribution(pending *codexBufferedTurn) string {
 		attribution = string(usage.ProviderAttributionSessionFallback)
 	}
 	return attribution
+}
+
+func (c Codex) shouldUseExactProvider(threadID string, pending *codexBufferedTurn, at time.Time, match codexProviderPointMatch) bool {
+	if match.Provider == "" {
+		return false
+	}
+	if match.Strength >= codexProviderStrengthStrong || pending == nil {
+		return true
+	}
+	if pending.provider == "" || pending.providerFromModel {
+		return true
+	}
+	if pendingProviderAttribution(pending) != string(usage.ProviderAttributionSessionFallback) {
+		return true
+	}
+	if pending.provider == match.Provider {
+		return true
+	}
+	return c.providerTimeline.hasLaterConflictingProvider(threadID, pending.id, match.Provider, at)
 }
 
 func (c Codex) resolveBufferedTurnProviders(threadID string, turns []*codexBufferedTurn) []codexResolvedProvider {
@@ -561,8 +601,10 @@ func (c Codex) labeledProviderForBufferedTurn(threadID string, pending *codexBuf
 		return pending.provider, string(usage.ProviderAttributionModel), true
 	}
 	if c.providerTimeline != nil {
-		if provider, found := c.providerTimeline.exactProviderForTurn(threadID, pending.id); found && provider != "" {
-			return provider, string(usage.ProviderAttributionExactRequest), true
+		if match := c.providerTimeline.exactProviderMatchForTurn(threadID, pending.id); match.Found &&
+			match.Provider != "" &&
+			c.shouldUseExactProvider(threadID, pending, pending.inferenceAt(), match) {
+			return match.Provider, string(usage.ProviderAttributionExactRequest), true
 		}
 	}
 	return "", "", false
