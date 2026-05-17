@@ -57,6 +57,7 @@ var (
 	codexPoolHostPattern       = regexp.MustCompile(`\("https", ([^)]+)\)`)
 	codexAuthModeQuotedPattern = regexp.MustCompile(`auth_mode="([^"]+)"`)
 	codexAuthModeSomePattern   = regexp.MustCompile(`auth_mode=Some\(([^)]+)\)`)
+	codexProviderFieldPattern  = regexp.MustCompile(`provider="?([A-Za-z0-9._-]+)"?`)
 	codexRequestEvidenceTokens = []string{
 		"model_client.",
 		"endpoint_session.",
@@ -68,6 +69,7 @@ var (
 		"checkout waiting for idle connection",
 		"Turn error:",
 		"auth_mode=",
+		"provider=",
 	}
 	codexTrustedSQLiteProviderTargets = map[string]struct{}{
 		"codex_api::sse::responses":                 {},
@@ -90,7 +92,7 @@ var (
 const (
 	codexProviderStrengthWeak   = 1
 	codexProviderStrengthStrong = 2
-	codexProviderStrengthAuth   = 3
+	codexProviderStrengthAuth   = 1
 )
 
 func newCodexProviderTargets() codexProviderTargets {
@@ -222,7 +224,7 @@ func (t codexProviderTimeline) inferenceForTurn(threadID, turnID string, at time
 	if threadID == "" || turnID == "" {
 		return codexProviderInference{}
 	}
-	if provider, exact := t.exactProviderForTurn(threadID, turnID); exact {
+	if provider, exact := t.exactProviderForTurnAt(threadID, turnID, at); exact {
 		return codexProviderInference{Provider: provider, Exact: true}
 	}
 	return t.inferredProviderForTime(threadID, at)
@@ -232,32 +234,98 @@ func (t codexProviderTimeline) exactProviderForTurn(threadID, turnID string) (st
 	if threadID == "" || turnID == "" {
 		return "", false
 	}
+	points := t.turnPoints(threadID, turnID)
+	if len(points) == 0 {
+		return "", false
+	}
 	var provider string
-	var bestStrength int
 	var found bool
-	var ambiguous bool
-	for _, point := range t[threadID] {
+	for i := 0; i < len(points); {
+		j := i + 1
+		for j < len(points) && points[j].At.Equal(points[i].At) {
+			j++
+		}
+		resolved, ok := resolveCodexProviderPointGroup(points[i:j])
+		if ok {
+			if !found {
+				provider = resolved
+				found = true
+			} else if provider != resolved {
+				return "", true
+			}
+		} else {
+			return "", true
+		}
+		i = j
+	}
+	return provider, found
+}
+
+func (t codexProviderTimeline) exactProviderForTurnAt(threadID, turnID string, at time.Time) (string, bool) {
+	if threadID == "" || turnID == "" || at.IsZero() {
+		return "", false
+	}
+	points := t.turnPoints(threadID, turnID)
+	if len(points) == 0 {
+		return "", false
+	}
+	end := sort.Search(len(points), func(i int) bool {
+		return points[i].At.After(at)
+	})
+	if end == 0 {
+		return "", false
+	}
+	start := end - 1
+	for start > 0 && points[start-1].At.Equal(points[end-1].At) {
+		start--
+	}
+	return resolveCodexProviderPointGroup(points[start:end])
+}
+
+func (t codexProviderTimeline) turnPoints(threadID, turnID string) []codexProviderPoint {
+	if threadID == "" || turnID == "" {
+		return nil
+	}
+	points := t[threadID]
+	filtered := make([]codexProviderPoint, 0, len(points))
+	for _, point := range points {
 		if point.TurnID != turnID {
 			continue
 		}
-		found = true
+		filtered = append(filtered, point)
+	}
+	return filtered
+}
+
+func resolveCodexProviderPointGroup(points []codexProviderPoint) (string, bool) {
+	if len(points) == 0 {
+		return "", false
+	}
+	var provider string
+	var bestStrength int
+	var found bool
+	for _, point := range points {
+		if point.Provider == "" {
+			continue
+		}
 		if point.Strength > bestStrength {
 			bestStrength = point.Strength
 			provider = point.Provider
-			ambiguous = false
+			found = true
 			continue
 		}
 		if point.Strength < bestStrength {
 			continue
 		}
-		if provider != "" && provider != point.Provider {
-			ambiguous = true
+		if provider != point.Provider {
+			return "", true
 		}
+		found = true
 	}
-	if ambiguous {
-		return "", true
+	if !found {
+		return "", false
 	}
-	return provider, found
+	return provider, true
 }
 
 func (t codexProviderTimeline) inferredProviderForTime(threadID string, at time.Time) codexProviderInference {
@@ -522,6 +590,7 @@ func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProvide
 	sort.Strings(bodyThreadFilters)
 	providerFilters := append([]string{}, hostFilters...)
 	providerFilters = append(providerFilters, "feedback_log_body like '%auth_mode=%'")
+	providerFilters = append(providerFilters, "feedback_log_body like '%provider=%'")
 	trustedTargets := make([]string, 0, len(codexTrustedSQLiteProviderTargets))
 	for target := range codexTrustedSQLiteProviderTargets {
 		trustedTargets = append(trustedTargets, "'"+strings.ReplaceAll(target, "'", "''")+"'")
@@ -547,6 +616,7 @@ where (
     or feedback_log_body like '%checkout waiting for idle connection%'
     or feedback_log_body like '%Turn error:%'
     or feedback_log_body like '%auth_mode=%'
+    or feedback_log_body like '%provider=%'
   )
 order by ts;`
 }
@@ -589,8 +659,8 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 }
 
 func providerFromCodexRequestEvidence(line string, matcher codexProviderMatcher) (string, int) {
-	if provider := providerFromCodexAuthMode(line); provider != "" {
-		return provider, codexProviderStrengthAuth
+	if provider, strength := providerFromCodexWebsocketProvider(line, matcher); provider != "" {
+		return provider, strength
 	}
 	rawURL, host := extractCodexRequestURLAndHost(line)
 	if rawURL != "" {
@@ -603,19 +673,55 @@ func providerFromCodexRequestEvidence(line string, matcher codexProviderMatcher)
 	}
 	provider := matcher.hostProviders[host]
 	if provider == "" {
-		return "", 0
+		return providerFromCodexAuthMode(line)
 	}
 	return provider, codexProviderStrengthStrong
 }
 
-func providerFromCodexAuthMode(line string) string {
+func providerFromCodexAuthMode(line string) (string, int) {
+	if !isCodexAPIRequestAuthEvidence(line) {
+		return "", 0
+	}
 	authMode := extractCodexAuthMode(line)
 	switch {
 	case strings.EqualFold(authMode, "Chatgpt"):
-		return "openai"
+		return "openai", codexProviderStrengthAuth
 	default:
-		return ""
+		return "", 0
 	}
+}
+
+func providerFromCodexWebsocketProvider(line string, matcher codexProviderMatcher) (string, int) {
+	if !strings.Contains(line, "websocket_connection{provider=") {
+		return "", 0
+	}
+	match := codexProviderFieldPattern.FindStringSubmatch(line)
+	if len(match) != 2 {
+		return "", 0
+	}
+	switch provider := strings.ToLower(strings.TrimSpace(match[1])); provider {
+	case "openai":
+		return "openai", codexProviderStrengthStrong
+	case "":
+		return "", 0
+	default:
+		for _, endpoint := range matcher.endpoints {
+			if strings.EqualFold(endpoint.Provider, provider) {
+				return endpoint.Provider, codexProviderStrengthStrong
+			}
+		}
+		for hostProvider := range matcher.hostProviders {
+			if strings.EqualFold(matcher.hostProviders[hostProvider], provider) {
+				return matcher.hostProviders[hostProvider], codexProviderStrengthStrong
+			}
+		}
+		return "", 0
+	}
+}
+
+func isCodexAPIRequestAuthEvidence(line string) bool {
+	return strings.Contains(line, `event.name="codex.api_request"`) ||
+		strings.Contains(line, `event.name=\"codex.api_request\"`)
 }
 
 func extractCodexAuthMode(line string) string {

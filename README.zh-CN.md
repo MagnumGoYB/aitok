@@ -111,7 +111,7 @@ TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也
 
 报告会返回请求数量、Token 总量、缓存 Token、预估 USD 成本，以及每个 `model/provider` 分组实际匹配到的价格。默认离线价格表来自官方公开价格快照，显示为 `official`；命中 `~/.aitok/pricing.json` 本地覆盖时显示为 `custom`。如果自定义分组合并了多种价格定义，则价格显示为 `mixed`。
 
-Codex 的 provider 归属只使用本地、非密钥证据。存在 `team-a/gpt-5.4` 这类带 provider 前缀的模型名时优先使用该前缀；模型名不带前缀时，aitok 会在本地请求日志 host 能唯一匹配 `~/.codex/config.toml` 中 `[model_providers.*].base_url` 时使用该 host 归属。同一个 turn 的请求证据会作用于该 turn 的全部 token-count 行，包括早于 request-completed 日志的 token-count。两个 provider 锚点之间缺少直接证据的裸模型 turn 会保守沿用前一个 provider 段，直到后续切换证据出现；Model Usage 只对被 exact request 证据夹住的短 inferred 桥接段做窄范围修正。未知 host、多个 provider 共享同一 host、日志缺少请求 URL，或 provider URL 已变更但当前 config 不再包含旧 host 时，都会回退到 session 日志记录的 provider。
+Codex 的 provider 归属只使用本地、非密钥证据。存在 `team-a/gpt-5.4` 这类带 provider 前缀的模型名时优先使用该前缀；模型名不带前缀时，aitok 会在本地请求日志 host 能唯一匹配 `~/.codex/config.toml` 中 `[model_providers.*].base_url` 时使用该 host 归属。同一个 turn 内的 provider 证据会按事件时间生效：较早的 token-count 只使用它自身时间点之前已知的最佳 provider，后续 token-count 才会在新的 auth 或 request-host 证据出现后切换。两个 provider 锚点之间缺少直接证据的裸模型 turn 会保守沿用前一个 provider 段，直到后续切换证据出现；Model Usage 只对被 exact request 证据夹住的短 inferred 桥接段做窄范围修正。未知 host、多个 provider 共享同一 host、日志缺少请求 URL，或 provider URL 已变更但当前 config 不再包含旧 host 时，都会回退到 session 日志记录的 provider。
 
 若需要在 summary payload 中包含匹配的本机会话列表，传入 `--threads`：
 
