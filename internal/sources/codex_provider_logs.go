@@ -21,13 +21,23 @@ type codexProviderPoint struct {
 	Model    string
 	Provider string
 	Strength int
+	Source   codexProviderEvidenceSource
 }
 
 type codexProviderPointMatch struct {
 	Provider string
 	Strength int
 	Found    bool
+	Source   codexProviderEvidenceSource
 }
+
+type codexProviderEvidenceSource int
+
+const (
+	codexProviderEvidenceUnknown codexProviderEvidenceSource = iota
+	codexProviderEvidenceTextLog
+	codexProviderEvidenceSQLite
+)
 
 type codexProviderInference struct {
 	Provider string
@@ -254,9 +264,6 @@ func (t codexProviderTimeline) exactProviderMatchForTurn(threadID, turnID string
 		return codexProviderPointMatch{}
 	}
 	points := t.turnPoints(threadID, turnID)
-	if len(points) == 0 {
-		return codexProviderPointMatch{}
-	}
 	var match codexProviderPointMatch
 	for i := 0; i < len(points); {
 		j := i + 1
@@ -271,6 +278,9 @@ func (t codexProviderTimeline) exactProviderMatchForTurn(threadID, turnID string
 				return codexProviderPointMatch{Found: true}
 			} else if resolved.Strength > match.Strength {
 				match.Strength = resolved.Strength
+				match.Source = resolved.Source
+			} else if resolved.Strength == match.Strength && codexProviderEvidenceSourceRank(resolved.Source) > codexProviderEvidenceSourceRank(match.Source) {
+				match.Source = resolved.Source
 			}
 		} else {
 			return codexProviderPointMatch{Found: true}
@@ -278,6 +288,11 @@ func (t codexProviderTimeline) exactProviderMatchForTurn(threadID, turnID string
 		i = j
 	}
 	return match
+}
+
+func (t codexProviderTimeline) turnHasMixedProviders(threadID, turnID string) bool {
+	match := t.exactProviderMatchForTurn(threadID, turnID)
+	return match.Found && match.Provider == ""
 }
 
 func (t codexProviderTimeline) exactProviderForTurnAt(threadID, turnID string, at time.Time) (string, bool) {
@@ -335,10 +350,15 @@ func resolveCodexProviderPointGroup(points []codexProviderPoint) codexProviderPo
 				Provider: point.Provider,
 				Strength: point.Strength,
 				Found:    true,
+				Source:   point.Source,
 			}
 			continue
 		}
 		if point.Strength < match.Strength {
+			continue
+		}
+		if point.Provider == match.Provider && codexProviderEvidenceSourceRank(point.Source) > codexProviderEvidenceSourceRank(match.Source) {
+			match.Source = point.Source
 			continue
 		}
 		if match.Provider != point.Provider {
@@ -346,6 +366,17 @@ func resolveCodexProviderPointGroup(points []codexProviderPoint) codexProviderPo
 		}
 	}
 	return match
+}
+
+func codexProviderEvidenceSourceRank(source codexProviderEvidenceSource) int {
+	switch source {
+	case codexProviderEvidenceTextLog:
+		return 2
+	case codexProviderEvidenceSQLite:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (t codexProviderTimeline) hasLaterConflictingProvider(threadID, turnID, provider string, at time.Time) bool {
@@ -619,6 +650,7 @@ func scanCodexSQLiteProviderTimelineQuery(ctx context.Context, sqlite, path, que
 			Model:    extractCodexProviderEvidenceModel(row.Body),
 			Provider: provider,
 			Strength: strength,
+			Source:   codexProviderEvidenceSQLite,
 		})
 	}
 }
@@ -725,6 +757,7 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 		Model:    extractCodexProviderEvidenceModel(line),
 		Provider: provider,
 		Strength: maxCodexProviderStrength(strength, codexProviderStrengthForLogLine(line)),
+		Source:   codexProviderEvidenceTextLog,
 	})
 }
 

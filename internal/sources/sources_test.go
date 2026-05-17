@@ -658,7 +658,7 @@ base_url = "https://www.aiixiao.shop"
 	}
 }
 
-func TestCodexAppliesSameTurnCompletedRequestOnlyAfterItArrives(t *testing.T) {
+func TestCodexAppliesSameTurnCompletedRequestToEarlierTokenCounts(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -690,8 +690,8 @@ base_url = "https://www.aiixiao.shop"
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("earlier token_count should not use future same-turn request evidence: %+v", events[0])
+	if events[0].Provider != "bcb" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("earlier token_count should inherit same-turn completed request evidence: %+v", events[0])
 	}
 	if events[1].Provider != "bcb" || events[1].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
 		t.Fatalf("later token_count should use completed request evidence after it arrives: %+v", events[1])
@@ -945,7 +945,7 @@ base_url = "https://team-b.example"
 	}
 }
 
-func TestCodexPrefersSessionProviderOverIsolatedEarlierWebsocketProvider(t *testing.T) {
+func TestCodexUsesTextLogWebsocketProviderForOwningTurnOnly(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -977,11 +977,11 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("isolated websocket provider should not override session fallback: %+v", events[0])
+	if events[0].Provider != "openai" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("text-log websocket evidence should resolve the owning turn exactly: %+v", events[0])
 	}
 	if events[1].Provider != "toska" || events[1].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("conflicting earlier inference should not override current session provider: %+v", events[1])
+		t.Fatalf("earlier websocket evidence should not leak into later turns: %+v", events[1])
 	}
 }
 
@@ -1031,7 +1031,7 @@ base_url = "https://team-b.example"
 	}
 }
 
-func TestCodexUsesTurnlessSQLiteProviderAnchorsForBoundedTimelineInference(t *testing.T) {
+func TestCodexUsesTextLogWebsocketProviderBeforeLaterSQLiteAnchors(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -1099,8 +1099,8 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 3 {
 		t.Fatalf("len(events) = %d, want 3", len(events))
 	}
-	if events[1].Provider != "openai" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
-		t.Fatalf("turnless sqlite anchor should allow bounded openai inference: %+v", events[1])
+	if events[1].Provider != "openai" || events[1].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("same-turn text websocket should resolve the turn exactly before later sqlite anchors: %+v", events[1])
 	}
 	if events[2].Provider != "toska" || events[2].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
 		t.Fatalf("next turn should keep exact toska provider: %+v", events[2])
@@ -1232,12 +1232,12 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 1 {
 		t.Fatalf("len(events) = %d, want 1", len(events))
 	}
-	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("tool result text should not affect early event attribution: %+v", events[0])
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("tool result text should not block same-turn real request attribution: %+v", events[0])
 	}
 }
 
-func TestCodexIgnoresTurnlessSQLiteAnchorsWhenModelsDoNotMatch(t *testing.T) {
+func TestCodexIgnoresTurnlessSQLiteAnchorsWithoutOverridingTextWebsocketTurn(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
 [model_providers]
@@ -1297,11 +1297,11 @@ base_url = "https://api.toskaxy.xyz/v1"
 	if len(events) != 2 {
 		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("mismatched turnless model should not override first event: %+v", events[0])
+	if events[0].Provider != "openai" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("same-turn text websocket should still resolve the first event exactly: %+v", events[0])
 	}
-	if events[1].Provider != "toska" || events[1].ProviderAttribution != string(usage.ProviderAttributionSessionFallback) {
-		t.Fatalf("mismatched turnless model should not override second event: %+v", events[1])
+	if events[1].Provider != "openai" || events[1].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("mismatched turnless model should not displace the websocket-resolved turn: %+v", events[1])
 	}
 }
 

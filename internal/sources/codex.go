@@ -156,7 +156,13 @@ func (c Codex) providerForBufferedEvent(threadID string, pending *codexBufferedT
 		return pending.provider, string(usage.ProviderAttributionModel)
 	}
 	if c.providerTimeline != nil {
-		if match := c.providerTimeline.exactProviderMatchForTurnAt(threadID, event.turnID, event.at); match.Found {
+		var match codexProviderPointMatch
+		if c.providerTimeline.turnHasMixedProviders(threadID, event.turnID) {
+			match = c.providerTimeline.exactProviderMatchForTurnAt(threadID, event.turnID, event.at)
+		} else {
+			match = c.providerTimeline.exactProviderMatchForTurn(threadID, event.turnID)
+		}
+		if match.Found {
 			if match.Provider != "" && c.shouldUseExactProvider(threadID, pending, event.at, match) {
 				return match.Provider, string(usage.ProviderAttributionExactRequest)
 			}
@@ -560,6 +566,9 @@ func (c Codex) shouldUseExactProvider(threadID string, pending *codexBufferedTur
 	if pending.provider == match.Provider {
 		return true
 	}
+	if match.Source == codexProviderEvidenceTextLog {
+		return true
+	}
 	return c.providerTimeline.hasLaterConflictingProvider(threadID, pending.id, match.Provider, at)
 }
 
@@ -601,10 +610,12 @@ func (c Codex) labeledProviderForBufferedTurn(threadID string, pending *codexBuf
 		return pending.provider, string(usage.ProviderAttributionModel), true
 	}
 	if c.providerTimeline != nil {
-		if match := c.providerTimeline.exactProviderMatchForTurn(threadID, pending.id); match.Found &&
-			match.Provider != "" &&
-			c.shouldUseExactProvider(threadID, pending, pending.inferenceAt(), match) {
-			return match.Provider, string(usage.ProviderAttributionExactRequest), true
+		if !c.providerTimeline.turnHasMixedProviders(threadID, pending.id) {
+			if match := c.providerTimeline.exactProviderMatchForTurn(threadID, pending.id); match.Found &&
+				match.Provider != "" &&
+				c.shouldUseExactProvider(threadID, pending, pending.inferenceAt(), match) {
+				return match.Provider, string(usage.ProviderAttributionExactRequest), true
+			}
 		}
 	}
 	return "", "", false
