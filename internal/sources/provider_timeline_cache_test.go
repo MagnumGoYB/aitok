@@ -30,9 +30,11 @@ func TestProviderTimelineCacheRoundTripAndSignatureInvalidation(t *testing.T) {
 			{At: time.Date(2026, 5, 8, 1, 0, 0, 0, time.UTC), TurnID: "turn-a", Provider: "openai", Strength: codexProviderStrengthStrong},
 		},
 	}
-	writeProviderTimelineCache(sig1, timeline)
+	windowStart := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	windowEnd := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
+	writeProviderTimelineCache(sig1, windowStart, windowEnd, timeline)
 
-	got, ok := readProviderTimelineCache(sig1)
+	got, ok := readProviderTimelineCache(sig1, windowStart, windowEnd)
 	if !ok {
 		t.Fatal("expected cache hit after round trip")
 	}
@@ -48,7 +50,10 @@ func TestProviderTimelineCacheRoundTripAndSignatureInvalidation(t *testing.T) {
 	if sig1 == sig2 {
 		t.Fatal("expected signature to change when input file changes")
 	}
-	if _, ok := readProviderTimelineCache(sig2); ok {
+	if _, ok := readProviderTimelineCache(sig2, windowStart, windowEnd); ok {
 		t.Fatal("expected cache miss for changed signature")
+	}
+	if _, ok := readProviderTimelineCache(sig1, windowStart.Add(-time.Hour), windowEnd); ok {
+		t.Fatal("expected cache miss for changed window")
 	}
 }

@@ -12,12 +12,14 @@ import (
 )
 
 type providerTimelineCache struct {
-	Signature string                `json:"signature"`
-	Generated time.Time             `json:"generated_at"`
-	Timeline  codexProviderTimeline `json:"timeline"`
+	Signature   string                `json:"signature"`
+	WindowStart time.Time             `json:"window_start"`
+	WindowEnd   time.Time             `json:"window_end"`
+	Generated   time.Time             `json:"generated_at"`
+	Timeline    codexProviderTimeline `json:"timeline"`
 }
 
-func readProviderTimelineCache(signature string) (codexProviderTimeline, bool) {
+func readProviderTimelineCache(signature string, windowStart, windowEnd time.Time) (codexProviderTimeline, bool) {
 	if signature == "" {
 		return nil, false
 	}
@@ -29,20 +31,22 @@ func readProviderTimelineCache(signature string) (codexProviderTimeline, bool) {
 	if err := json.Unmarshal(data, &cache); err != nil {
 		return nil, false
 	}
-	if cache.Signature != signature {
+	if cache.Signature != signature || !cache.WindowStart.Equal(windowStart) || !cache.WindowEnd.Equal(windowEnd) {
 		return nil, false
 	}
 	return cache.Timeline, true
 }
 
-func writeProviderTimelineCache(signature string, timeline codexProviderTimeline) {
+func writeProviderTimelineCache(signature string, windowStart, windowEnd time.Time, timeline codexProviderTimeline) {
 	if signature == "" {
 		return
 	}
 	cache := providerTimelineCache{
-		Signature: signature,
-		Generated: time.Now().UTC(),
-		Timeline:  timeline,
+		Signature:   signature,
+		WindowStart: windowStart,
+		WindowEnd:   windowEnd,
+		Generated:   time.Now().UTC(),
+		Timeline:    timeline,
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {

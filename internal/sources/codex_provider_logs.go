@@ -21,8 +21,10 @@ import (
 type codexProviderPoint struct {
 	At       time.Time
 	TurnID   string
+	Model    string
 	Provider string
 	Strength int
+	Source   codexProviderEvidenceSource
 }
 
 type codexProviderInference struct {
@@ -33,6 +35,21 @@ type codexProviderInference struct {
 }
 
 type codexProviderTimeline map[string][]codexProviderPoint
+
+type codexProviderPointMatch struct {
+	Provider string
+	Strength int
+	Found    bool
+	Source   codexProviderEvidenceSource
+}
+
+type codexProviderEvidenceSource int
+
+const (
+	codexProviderEvidenceUnknown codexProviderEvidenceSource = iota
+	codexProviderEvidenceTextLog
+	codexProviderEvidenceSQLite
+)
 
 type codexProviderHost struct {
 	BaseURL  string
@@ -52,6 +69,7 @@ type codexProviderTargets struct {
 var (
 	codexThreadIDPattern       = regexp.MustCompile(`thread_id=([0-9a-fA-F-]{36})`)
 	codexBodyThreadIDPattern   = regexp.MustCompile(`thread\.id=([0-9a-fA-F-]{36})`)
+	codexConversationIDPattern = regexp.MustCompile(`conversation\.id=([0-9a-fA-F-]{36})`)
 	codexTurnIDPattern         = regexp.MustCompile(`turn\.id=([^}\s]+)`)
 	codexHTTPURLPattern        = regexp.MustCompile(`\b(?:POST|GET) to (https?://[^\s:"]+)`)
 	codexURLFieldPattern       = regexp.MustCompile(`\burl[:=] ?(https?://[^\s,"}]+)`)
@@ -60,6 +78,8 @@ var (
 	codexPoolHostPattern       = regexp.MustCompile(`\("https", ([^)]+)\)`)
 	codexAuthModeQuotedPattern = regexp.MustCompile(`auth_mode="([^"]+)"`)
 	codexAuthModeSomePattern   = regexp.MustCompile(`auth_mode=Some\(([^)]+)\)`)
+	codexLogModelPattern       = regexp.MustCompile(`\bmodel="?([^",}\s]+)"?`)
+	codexLogSlugPattern        = regexp.MustCompile(`\bslug="?([^",}\s]+)"?`)
 	codexProviderFieldPattern  = regexp.MustCompile(`provider="?([A-Za-z0-9._-]+)"?`)
 	codexRequestEvidenceTokens = []string{
 		"model_client.",
@@ -89,6 +109,10 @@ var (
 	codexIgnoredRequestEvidenceSubstrings = []string{
 		`run_turn:list_models`,
 		`api.path="models"`,
+		`event.name="codex.tool_result"`,
+		`event.name="codex.tool_decision"`,
+		`event.name=\"codex.tool_result\"`,
+		`event.name=\"codex.tool_decision\"`,
 	}
 )
 
@@ -138,7 +162,7 @@ func readCodexProviderTimeline(ctx context.Context, home string, windowStart, wi
 	textLogPath := filepath.Join(home, ".codex", "log", "codex-tui.log")
 	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
 	cacheSignature := providerTimelineCacheSignature(append([]string{configPath, textLogPath, sqlitePath}, targets.threadIDs()...))
-	if cached, ok := readProviderTimelineCache(cacheSignature); ok {
+	if cached, ok := readProviderTimelineCache(cacheSignature, windowStart, windowEnd); ok {
 		return cached
 	}
 	matcher := newCodexProviderMatcher(readCodexProviderHosts(configPath))
@@ -156,7 +180,7 @@ func readCodexProviderTimeline(ctx context.Context, home string, windowStart, wi
 			return timeline[threadID][i].At.Before(timeline[threadID][j].At)
 		})
 	}
-	writeProviderTimelineCache(cacheSignature, timeline)
+	writeProviderTimelineCache(cacheSignature, windowStart, windowEnd, timeline)
 	return timeline
 }
 
@@ -238,56 +262,71 @@ func (t codexProviderTimeline) inferenceForTurn(threadID, turnID string, at time
 	if threadID == "" || turnID == "" {
 		return codexProviderInference{}
 	}
-	if provider, exact := t.exactProviderForTurnAt(threadID, turnID, at); exact {
-		return codexProviderInference{Provider: provider, Exact: true}
+	if match := t.exactProviderMatchForTurnAt(threadID, turnID, at); match.Found {
+		return codexProviderInference{Provider: match.Provider, Exact: true}
 	}
 	return t.inferredProviderForTime(threadID, at)
 }
 
 func (t codexProviderTimeline) exactProviderForTurn(threadID, turnID string) (string, bool) {
+	match := t.exactProviderMatchForTurn(threadID, turnID)
+	return match.Provider, match.Found
+}
+
+func (t codexProviderTimeline) exactProviderMatchForTurn(threadID, turnID string) codexProviderPointMatch {
 	if threadID == "" || turnID == "" {
-		return "", false
+		return codexProviderPointMatch{}
 	}
 	points := t.turnPoints(threadID, turnID)
-	if len(points) == 0 {
-		return "", false
-	}
-	var provider string
-	var found bool
+	var match codexProviderPointMatch
 	for i := 0; i < len(points); {
 		j := i + 1
 		for j < len(points) && points[j].At.Equal(points[i].At) {
 			j++
 		}
-		resolved, ok := resolveCodexProviderPointGroup(points[i:j])
-		if ok {
-			if !found {
-				provider = resolved
-				found = true
-			} else if provider != resolved {
-				return "", true
+		resolved := resolveCodexProviderPointGroup(points[i:j])
+		if resolved.Found {
+			if !match.Found {
+				match = resolved
+			} else if match.Provider != resolved.Provider {
+				return codexProviderPointMatch{Found: true}
+			} else if resolved.Strength > match.Strength {
+				match.Strength = resolved.Strength
+				match.Source = resolved.Source
+			} else if resolved.Strength == match.Strength && codexProviderEvidenceSourceRank(resolved.Source) > codexProviderEvidenceSourceRank(match.Source) {
+				match.Source = resolved.Source
 			}
 		} else {
-			return "", true
+			return codexProviderPointMatch{Found: true}
 		}
 		i = j
 	}
-	return provider, found
+	return match
+}
+
+func (t codexProviderTimeline) turnHasMixedProviders(threadID, turnID string) bool {
+	match := t.exactProviderMatchForTurn(threadID, turnID)
+	return match.Found && match.Provider == ""
 }
 
 func (t codexProviderTimeline) exactProviderForTurnAt(threadID, turnID string, at time.Time) (string, bool) {
+	match := t.exactProviderMatchForTurnAt(threadID, turnID, at)
+	return match.Provider, match.Found
+}
+
+func (t codexProviderTimeline) exactProviderMatchForTurnAt(threadID, turnID string, at time.Time) codexProviderPointMatch {
 	if threadID == "" || turnID == "" || at.IsZero() {
-		return "", false
+		return codexProviderPointMatch{}
 	}
 	points := t.turnPoints(threadID, turnID)
 	if len(points) == 0 {
-		return "", false
+		return codexProviderPointMatch{}
 	}
 	end := sort.Search(len(points), func(i int) bool {
 		return points[i].At.After(at)
 	})
 	if end == 0 {
-		return "", false
+		return codexProviderPointMatch{}
 	}
 	start := end - 1
 	for start > 0 && points[start-1].At.Equal(points[end-1].At) {
@@ -311,35 +350,60 @@ func (t codexProviderTimeline) turnPoints(threadID, turnID string) []codexProvid
 	return filtered
 }
 
-func resolveCodexProviderPointGroup(points []codexProviderPoint) (string, bool) {
+func resolveCodexProviderPointGroup(points []codexProviderPoint) codexProviderPointMatch {
 	if len(points) == 0 {
-		return "", false
+		return codexProviderPointMatch{}
 	}
-	var provider string
-	var bestStrength int
-	var found bool
+	var match codexProviderPointMatch
 	for _, point := range points {
 		if point.Provider == "" {
 			continue
 		}
-		if point.Strength > bestStrength {
-			bestStrength = point.Strength
-			provider = point.Provider
-			found = true
+		if point.Strength > match.Strength {
+			match = codexProviderPointMatch{
+				Provider: point.Provider,
+				Strength: point.Strength,
+				Found:    true,
+				Source:   point.Source,
+			}
 			continue
 		}
-		if point.Strength < bestStrength {
+		if point.Strength < match.Strength {
 			continue
 		}
-		if provider != point.Provider {
-			return "", true
+		if point.Provider == match.Provider && codexProviderEvidenceSourceRank(point.Source) > codexProviderEvidenceSourceRank(match.Source) {
+			match.Source = point.Source
+			continue
 		}
-		found = true
+		if match.Provider != point.Provider {
+			return codexProviderPointMatch{Found: true}
+		}
 	}
-	if !found {
-		return "", false
+	return match
+}
+
+func codexProviderEvidenceSourceRank(source codexProviderEvidenceSource) int {
+	switch source {
+	case codexProviderEvidenceTextLog:
+		return 2
+	case codexProviderEvidenceSQLite:
+		return 1
+	default:
+		return 0
 	}
-	return provider, true
+}
+
+func (t codexProviderTimeline) hasLaterConflictingProvider(threadID, turnID, provider string, at time.Time) bool {
+	if threadID == "" || turnID == "" || provider == "" || at.IsZero() {
+		return false
+	}
+	for _, point := range t.turnPoints(threadID, turnID) {
+		if !point.At.After(at) || point.Provider == "" || point.Provider == provider {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (t codexProviderTimeline) inferredProviderForTime(threadID string, at time.Time) codexProviderInference {
@@ -620,6 +684,9 @@ func scanCodexSQLiteProviderTimelineQuery(ctx context.Context, sqlite, path, que
 		if provider == "" {
 			continue
 		}
+		if strings.Contains(row.Body, "websocket_connection{provider=") {
+			strength = codexProviderStrengthWeak
+		}
 		turnID := codexLogTurnID(row.Body)
 		if turnID == "" {
 			continue
@@ -627,8 +694,10 @@ func scanCodexSQLiteProviderTimelineQuery(ctx context.Context, sqlite, path, que
 		timeline[threadID] = append(timeline[threadID], codexProviderPoint{
 			At:       time.Unix(row.TS, row.TSNanos).UTC(),
 			TurnID:   turnID,
+			Model:    extractCodexProviderEvidenceModel(row.Body),
 			Provider: provider,
 			Strength: strength,
+			Source:   codexProviderEvidenceSQLite,
 		})
 	}
 	return timeline
@@ -763,8 +832,10 @@ func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line strin
 	timeline[threadID] = append(timeline[threadID], codexProviderPoint{
 		At:       ts,
 		TurnID:   turnID,
+		Model:    extractCodexProviderEvidenceModel(line),
 		Provider: provider,
 		Strength: maxCodexProviderStrength(strength, codexProviderStrengthForLogLine(line)),
+		Source:   codexProviderEvidenceTextLog,
 	})
 }
 
@@ -811,18 +882,18 @@ func providerFromCodexWebsocketProvider(line string, matcher codexProviderMatche
 	}
 	switch provider := strings.ToLower(strings.TrimSpace(match[1])); provider {
 	case "openai":
-		return "openai", codexProviderStrengthStrong
+		return "openai", codexProviderStrengthWeak
 	case "":
 		return "", 0
 	default:
 		for _, endpoint := range matcher.endpoints {
 			if strings.EqualFold(endpoint.Provider, provider) {
-				return endpoint.Provider, codexProviderStrengthStrong
+				return endpoint.Provider, codexProviderStrengthWeak
 			}
 		}
 		for hostProvider := range matcher.hostProviders {
 			if strings.EqualFold(matcher.hostProviders[hostProvider], provider) {
-				return matcher.hostProviders[hostProvider], codexProviderStrengthStrong
+				return matcher.hostProviders[hostProvider], codexProviderStrengthWeak
 			}
 		}
 		return "", 0
@@ -841,6 +912,18 @@ func extractCodexAuthMode(line string) string {
 	} {
 		if match := pattern.FindStringSubmatch(line); len(match) == 2 {
 			return strings.TrimSpace(match[1])
+		}
+	}
+	return ""
+}
+
+func extractCodexProviderEvidenceModel(line string) string {
+	for _, pattern := range []*regexp.Regexp{
+		codexLogModelPattern,
+		codexLogSlugPattern,
+	} {
+		if match := pattern.FindStringSubmatch(line); len(match) == 2 {
+			return normalizeCodexModel(strings.TrimSpace(match[1]))
 		}
 	}
 	return ""
@@ -966,11 +1049,16 @@ func codexThreadID(line string) string {
 }
 
 func codexBodyThreadID(line string) string {
-	match := codexBodyThreadIDPattern.FindStringSubmatch(line)
-	if len(match) != 2 {
-		return ""
+	for _, pattern := range []*regexp.Regexp{
+		codexBodyThreadIDPattern,
+		codexConversationIDPattern,
+	} {
+		match := pattern.FindStringSubmatch(line)
+		if len(match) == 2 {
+			return match[1]
+		}
 	}
-	return match[1]
+	return ""
 }
 
 func codexLogTurnID(line string) string {
