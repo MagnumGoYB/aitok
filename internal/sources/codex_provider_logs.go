@@ -2,16 +2,19 @@ package sources
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -127,22 +130,33 @@ func (t codexProviderTargets) threadIDs() []string {
 	return ids
 }
 
-func readCodexProviderTimeline(ctx context.Context, home string, targets codexProviderTargets) codexProviderTimeline {
+func readCodexProviderTimeline(ctx context.Context, home string, windowStart, windowEnd time.Time, targets codexProviderTargets) codexProviderTimeline {
 	if targets.empty() {
 		return nil
 	}
-	matcher := newCodexProviderMatcher(readCodexProviderHosts(filepath.Join(home, ".codex", "config.toml")))
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	textLogPath := filepath.Join(home, ".codex", "log", "codex-tui.log")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	cacheSignature := providerTimelineCacheSignature(append([]string{configPath, textLogPath, sqlitePath}, targets.threadIDs()...))
+	if cached, ok := readProviderTimelineCache(cacheSignature); ok {
+		return cached
+	}
+	matcher := newCodexProviderMatcher(readCodexProviderHosts(configPath))
 	if matcher.empty() {
 		return nil
 	}
 	timeline := codexProviderTimeline{}
-	timeline.merge(readCodexTextLogProviderTimeline(ctx, filepath.Join(home, ".codex", "log", "codex-tui.log"), matcher, targets))
-	timeline.merge(readCodexSQLiteProviderTimeline(ctx, filepath.Join(home, ".codex", "logs_2.sqlite"), matcher, targets))
+	timeline.merge(readCodexTextLogProviderTimeline(ctx, textLogPath, matcher, targets))
+	sqliteTargets := targetsWithoutTimeline(targets, timeline)
+	if !sqliteTargets.empty() {
+		timeline.merge(readCodexSQLiteProviderTimeline(ctx, sqlitePath, windowStart, windowEnd, matcher, sqliteTargets))
+	}
 	for threadID := range timeline {
 		sort.SliceStable(timeline[threadID], func(i, j int) bool {
 			return timeline[threadID][i].At.Before(timeline[threadID][j].At)
 		})
 	}
+	writeProviderTimelineCache(cacheSignature, timeline)
 	return timeline
 }
 
@@ -510,7 +524,7 @@ func readCodexTextLogProviderTimeline(ctx context.Context, path string, matcher 
 	return timeline
 }
 
-func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher codexProviderMatcher, targets codexProviderTargets) codexProviderTimeline {
+func readCodexSQLiteProviderTimeline(ctx context.Context, path string, windowStart, windowEnd time.Time, matcher codexProviderMatcher, targets codexProviderTargets) codexProviderTimeline {
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
@@ -518,34 +532,88 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 	if err != nil {
 		return nil
 	}
+	queries := []string{codexSQLiteProviderThreadlessQuery(matcher, windowStart, windowEnd)}
+	queries = append(queries, codexSQLiteProviderThreadQueries(matcher, windowStart, windowEnd, targets)...)
+	if len(queries) == 0 {
+		return nil
+	}
 	timeline := codexProviderTimeline{}
-	query := codexSQLiteProviderQuery(matcher, targets)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	parallelism := minInt(len(queries), minInt(maxCodexSQLiteQueryParallelism, runtime.NumCPU()))
+	if parallelism < 1 {
+		parallelism = 1
+	}
+	sem := make(chan struct{}, parallelism)
+	for _, query := range queries {
+		if query == "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(query string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			local := scanCodexSQLiteProviderTimelineQuery(ctx, sqlite, path, query, matcher, targets)
+			if len(local) == 0 {
+				return
+			}
+			mu.Lock()
+			timeline.merge(local)
+			mu.Unlock()
+		}(query)
+	}
+	wg.Wait()
+	return timeline
+}
+
+const maxCodexSQLiteQueryParallelism = 4
+
+func scanCodexSQLiteProviderTimelineQuery(ctx context.Context, sqlite, path, query string, matcher codexProviderMatcher, targets codexProviderTargets) codexProviderTimeline {
+	timeline := codexProviderTimeline{}
 	if query == "" {
-		return nil
+		return timeline
 	}
-	out, err := exec.CommandContext(ctx, sqlite, "-json", path, query).Output()
-	if err != nil || len(bytes.TrimSpace(out)) == 0 {
-		return nil
+	cmd := exec.CommandContext(ctx, sqlite, "-json", path, query)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return timeline
 	}
-	var rows []struct {
-		TS       int64  `json:"ts"`
-		TSNanos  int64  `json:"ts_nanos"`
-		ThreadID string `json:"thread_id"`
-		Target   string `json:"target"`
-		Body     string `json:"body"`
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return timeline
 	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil
+	defer func() {
+		_ = cmd.Wait()
+	}()
+
+	dec := json.NewDecoder(stdout)
+	tok, err := dec.Token()
+	if err != nil {
+		return timeline
 	}
-	for _, row := range rows {
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return timeline
+	}
+	for dec.More() {
+		var row struct {
+			TS       int64  `json:"ts"`
+			TSNanos  int64  `json:"ts_nanos"`
+			ThreadID string `json:"thread_id"`
+			Target   string `json:"target"`
+			Body     string `json:"body"`
+		}
+		if err := dec.Decode(&row); err != nil {
+			return timeline
+		}
 		threadID := strings.TrimSpace(row.ThreadID)
 		if threadID == "" {
 			threadID = codexBodyThreadID(row.Body)
 		}
-		if threadID == "" || row.TS <= 0 || !isTrustedCodexSQLiteProviderTarget(row.Target) {
+		if threadID == "" || row.TS <= 0 || !targets.hasThread(threadID) || !isTrustedCodexSQLiteProviderTarget(row.Target) {
 			continue
 		}
-		if shouldIgnoreCodexRequestEvidence(row.Body) {
+		if shouldIgnoreCodexRequestEvidence(row.Body) || !isCodexRequestEvidenceLine(row.Body) {
 			continue
 		}
 		provider, strength := providerFromCodexRequestEvidence(row.Body, matcher)
@@ -566,59 +634,101 @@ func readCodexSQLiteProviderTimeline(ctx context.Context, path string, matcher c
 	return timeline
 }
 
-func codexSQLiteProviderQuery(matcher codexProviderMatcher, targets codexProviderTargets) string {
-	var hostFilters []string
-	for _, host := range matcher.hosts() {
-		escaped := strings.ReplaceAll(host, "'", "''")
-		hostFilters = append(hostFilters, "feedback_log_body like '%"+escaped+"%'")
-	}
-	if len(hostFilters) == 0 {
-		return ""
-	}
+func codexSQLiteProviderThreadQueries(matcher codexProviderMatcher, windowStart, windowEnd time.Time, targets codexProviderTargets) []string {
 	threadIDs := targets.threadIDs()
+	if len(threadIDs) == 0 {
+		return nil
+	}
+	chunkSize := len(threadIDs) / maxCodexSQLiteQueryParallelism
+	if chunkSize < 8 {
+		chunkSize = 8
+	}
+	queries := make([]string, 0, (len(threadIDs)+chunkSize-1)/chunkSize)
+	for i := 0; i < len(threadIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(threadIDs) {
+			end = len(threadIDs)
+		}
+		if query := codexSQLiteProviderThreadQuery(matcher, windowStart, windowEnd, threadIDs[i:end]); query != "" {
+			queries = append(queries, query)
+		}
+	}
+	return queries
+}
+
+func codexSQLiteProviderThreadQuery(matcher codexProviderMatcher, windowStart, windowEnd time.Time, threadIDs []string) string {
 	if len(threadIDs) == 0 {
 		return ""
 	}
-	threadFilters := make([]string, 0, len(threadIDs))
-	bodyThreadFilters := make([]string, 0, len(threadIDs))
-	for _, threadID := range threadIDs {
-		escaped := strings.ReplaceAll(threadID, "'", "''")
-		threadFilters = append(threadFilters, "'"+escaped+"'")
-		bodyThreadFilters = append(bodyThreadFilters, "feedback_log_body like '%thread.id="+escaped+"%'")
+	trustedTargets := codexSQLiteProviderTrustedTargetsClause()
+	if trustedTargets == "" {
+		return ""
 	}
-	sort.Strings(hostFilters)
-	sort.Strings(bodyThreadFilters)
-	providerFilters := append([]string{}, hostFilters...)
-	providerFilters = append(providerFilters, "feedback_log_body like '%auth_mode=%'")
-	providerFilters = append(providerFilters, "feedback_log_body like '%provider=%'")
+	threadFilters := make([]string, 0, len(threadIDs))
+	for _, threadID := range threadIDs {
+		threadFilters = append(threadFilters, "'"+strings.ReplaceAll(threadID, "'", "''")+"'")
+	}
+	sort.Strings(threadFilters)
+	return `select ts, ts_nanos, thread_id, target, feedback_log_body as body
+from logs
+where thread_id in (` + strings.Join(threadFilters, ",") + `)
+` + codexSQLiteTimeWindowClause(windowStart, windowEnd) + `
+  and ` + trustedTargets
+}
+
+func codexSQLiteProviderThreadlessQuery(matcher codexProviderMatcher, windowStart, windowEnd time.Time) string {
+	trustedTargets := codexSQLiteProviderTrustedTargetsClause()
+	if trustedTargets == "" {
+		return ""
+	}
+	return `select ts, ts_nanos, thread_id, target, feedback_log_body as body
+from logs
+where (thread_id is null or thread_id = '')
+` + codexSQLiteTimeWindowClause(windowStart, windowEnd) + `
+  and ` + trustedTargets
+}
+
+func codexSQLiteTimeWindowClause(windowStart, windowEnd time.Time) string {
+	if windowStart.IsZero() || windowEnd.IsZero() {
+		return ""
+	}
+	return `  and ts >= ` + strconv.FormatInt(windowStart.Unix(), 10) + `
+  and ts < ` + strconv.FormatInt(windowEnd.Unix(), 10)
+}
+
+func targetsWithoutTimeline(targets codexProviderTargets, timeline codexProviderTimeline) codexProviderTargets {
+	if targets.empty() {
+		return targets
+	}
+	if len(timeline) == 0 {
+		return targets
+	}
+	out := newCodexProviderTargets()
+	for threadID := range targets.threads {
+		if len(timeline[threadID]) == 0 {
+			out.addThread(threadID)
+		}
+	}
+	return out
+}
+
+func codexSQLiteProviderTrustedTargetsClause() string {
 	trustedTargets := make([]string, 0, len(codexTrustedSQLiteProviderTargets))
 	for target := range codexTrustedSQLiteProviderTargets {
 		trustedTargets = append(trustedTargets, "'"+strings.ReplaceAll(target, "'", "''")+"'")
 	}
 	sort.Strings(trustedTargets)
-	return `select ts, ts_nanos, thread_id, target, feedback_log_body as body
-from logs
-where (
-    thread_id in (` + strings.Join(threadFilters, ",") + `)
-    or (` + strings.Join(bodyThreadFilters, " or ") + `)
-  )
-  and target in (` + strings.Join(trustedTargets, ",") + `)
-  and (` + strings.Join(providerFilters, " or ") + `)
-  and feedback_log_body not like '%ToolCall:%'
-  and (
-    feedback_log_body like '%model_client.%'
-    or feedback_log_body like '%endpoint_session.%'
-    or feedback_log_body like '%Request completed%'
-    or feedback_log_body like '%POST to https://%'
-    or feedback_log_body like '%GET to https://%'
-    or feedback_log_body like '%starting new connection:%'
-    or feedback_log_body like '%Http::connect;%'
-    or feedback_log_body like '%checkout waiting for idle connection%'
-    or feedback_log_body like '%Turn error:%'
-    or feedback_log_body like '%auth_mode=%'
-    or feedback_log_body like '%provider=%'
-  )
-order by ts;`
+	if len(trustedTargets) == 0 {
+		return ""
+	}
+	return `target in (` + strings.Join(trustedTargets, ",") + `)`
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func addCodexProviderPointFromLogLine(timeline codexProviderTimeline, line string, matcher codexProviderMatcher, targets codexProviderTargets) {

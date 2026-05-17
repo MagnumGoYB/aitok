@@ -360,7 +360,7 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 		return queryCost(catalog.CostFor(event))
 	})
 	useThreadBaseline := query.SupportsThreadBaseline(groupBy)
-	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+	err = sources.ForEachConcurrent(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
 		if !useThreadBaseline {
 			acc.Add(event)
 		}
@@ -373,7 +373,7 @@ func buildPayload(ctx context.Context, f *flags, now time.Time) (report.Payload,
 		return report.Payload{}, err
 	}
 	var threads []query.ThreadResult
-	if useThreadBaseline || f.threads || f.renderTUI {
+	if f.threads || f.renderTUI {
 		threads = threadAcc.Results()
 	}
 	results := acc.Results()
@@ -431,7 +431,7 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 		return queryCost(catalog.CostFor(event))
 	})
 	var unpriced unpricedPricingCount
-	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+	err = sources.ForEachConcurrent(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
 		if !window.Contains(event.Timestamp) || !eventMatches(event, filters) {
 			return nil
 		}
@@ -495,7 +495,7 @@ func buildPricingAudit(ctx context.Context, f *flags, now time.Time) (report.Pri
 		item report.PricingAuditResult
 	}
 	buckets := map[string]*bucket{}
-	err = sources.ForEach(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
+	err = sources.ForEachConcurrent(ctx, sources.Defaults(opts), func(event usage.UsageEvent) error {
 		if !window.Contains(event.Timestamp) || !eventMatches(event, filters) || catalog.Covers(event) {
 			return nil
 		}

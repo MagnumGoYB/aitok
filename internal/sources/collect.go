@@ -2,6 +2,8 @@ package sources
 
 import (
 	"context"
+	"errors"
+	"sync"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
 )
@@ -31,4 +33,52 @@ func ForEach(ctx context.Context, sources []Source, handle func(usage.UsageEvent
 		}
 	}
 	return JoinErrors(errs)
+}
+
+func ForEachConcurrent(ctx context.Context, sources []Source, handle func(usage.UsageEvent) error) error {
+	type sourceResult struct {
+		index  int
+		events []usage.UsageEvent
+		err    error
+	}
+	results := make([][]usage.UsageEvent, len(sources))
+	errs := make([]error, 0, len(sources))
+	resultCh := make(chan sourceResult, len(sources))
+
+	var wg sync.WaitGroup
+	for i, source := range sources {
+		wg.Add(1)
+		go func(index int, source Source) {
+			defer wg.Done()
+			events := make([]usage.UsageEvent, 0, 128)
+			err := source.Scan(ctx, func(event usage.UsageEvent) error {
+				events = append(events, event)
+				return nil
+			})
+			resultCh <- sourceResult{index: index, events: events, err: err}
+		}(i, source)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	for result := range resultCh {
+		results[result.index] = result.events
+		if result.err != nil && !errors.Is(result.err, context.Canceled) && !errors.Is(result.err, context.DeadlineExceeded) {
+			errs = append(errs, result.err)
+		}
+	}
+	if len(errs) > 0 {
+		return JoinErrors(errs)
+	}
+	for _, events := range results {
+		for _, event := range events {
+			if err := handle(event); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

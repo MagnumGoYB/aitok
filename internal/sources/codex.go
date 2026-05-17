@@ -6,7 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
@@ -50,47 +53,121 @@ func (c Codex) Scan(ctx context.Context, handle func(usage.UsageEvent) error) er
 	if err != nil {
 		return err
 	}
-	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home, targets)
+	c.providerTimeline = readCodexProviderTimeline(ctx, c.Home, c.WindowStart, c.WindowEnd, targets)
 	index := readCodexSessionIndex(filepath.Join(c.Home, ".codex", "session_index.jsonl"))
+	fileEvents, err := c.collectSessionFileEvents(ctx, sessionFiles, index)
+	if err != nil {
+		return err
+	}
 	seen := map[string]struct{}{}
 	for _, file := range sessionFiles {
-		meta := file.meta
-		if title := index[meta.ID]; title != "" {
-			meta.Name = chooseThreadTitle(title, meta.Name)
-		}
-		state := codexState{provider: "unknown", model: "unknown", thread: meta}
-		var pending *codexBufferedTurn
-		var turns []*codexBufferedTurn
-		readErr := readJSONLines(ctx, file.path, func(obj map[string]any) error {
-			if pending != nil && codexTurnContextBoundaryID(obj) != "" && codexTurnContextBoundaryID(obj) != pending.id {
-				turns = append(turns, pending)
-				pending = nil
+		events := fileEvents[file.path]
+		for _, event := range events {
+			if _, exists := seen[event.ID]; exists {
+				continue
 			}
-			state.update(obj)
-			event, ok := c.parseBufferedEvent(obj, &state)
-			if ok {
-				if pending != nil && event.turnID != "" && event.turnID != pending.id {
-					turns = append(turns, pending)
-					pending = nil
-				}
-				pending = appendCodexBufferedTurn(pending, state, event)
-			}
-			return nil
-		})
-		if readErr != nil {
-			return readErr
-		}
-		if pending != nil {
-			turns = append(turns, pending)
-		}
-		resolved := c.resolveBufferedTurnProviders(state.thread.ID, turns)
-		for i, turn := range turns {
-			if err := c.flushBufferedTurn(file.path, &state, turn, resolved[i], seen, handle); err != nil {
+			seen[event.ID] = struct{}{}
+			if err := handle(event); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (c Codex) collectSessionFileEvents(ctx context.Context, sessionFiles []codexSessionFile, index map[string]string) (map[string][]usage.UsageEvent, error) {
+	if len(sessionFiles) == 0 {
+		return map[string][]usage.UsageEvent{}, nil
+	}
+	type fileResult struct {
+		path   string
+		events []usage.UsageEvent
+		err    error
+	}
+	maxWorkers := runtime.NumCPU()
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	if maxWorkers > len(sessionFiles) {
+		maxWorkers = len(sessionFiles)
+	}
+	sem := make(chan struct{}, maxWorkers)
+	results := make(chan fileResult, len(sessionFiles))
+	var wg sync.WaitGroup
+	for _, file := range sessionFiles {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(file codexSessionFile) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			events, err := c.readCodexSessionFileEvents(ctx, file, index)
+			results <- fileResult{path: file.path, events: events, err: err}
+		}(file)
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	out := make(map[string][]usage.UsageEvent, len(sessionFiles))
+	var errs []error
+	for result := range results {
+		if result.err != nil {
+			errs = append(errs, result.err)
+			continue
+		}
+		out[result.path] = result.events
+	}
+	if len(errs) > 0 {
+		return nil, JoinErrors(errs)
+	}
+	return out, nil
+}
+
+func (c Codex) readCodexSessionFileEvents(ctx context.Context, file codexSessionFile, index map[string]string) ([]usage.UsageEvent, error) {
+	meta := file.meta
+	if title := index[meta.ID]; title != "" {
+		meta.Name = chooseThreadTitle(title, meta.Name)
+	}
+	state := codexState{provider: "unknown", model: "unknown", thread: meta}
+	var pending *codexBufferedTurn
+	var turns []*codexBufferedTurn
+	err := readJSONLines(ctx, file.path, func(obj map[string]any) error {
+		if pending != nil && codexTurnContextBoundaryID(obj) != "" && codexTurnContextBoundaryID(obj) != pending.id {
+			turns = append(turns, pending)
+			pending = nil
+		}
+		state.update(obj)
+		event, ok := c.parseBufferedEvent(obj, &state)
+		if ok {
+			if pending != nil && event.turnID != "" && event.turnID != pending.id {
+				turns = append(turns, pending)
+				pending = nil
+			}
+			pending = appendCodexBufferedTurn(pending, state, event)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pending != nil {
+		turns = append(turns, pending)
+	}
+	resolved := c.resolveBufferedTurnProviders(state.thread.ID, turns)
+	events := make([]usage.UsageEvent, 0, len(turns))
+	seen := map[string]struct{}{}
+	for i, turn := range turns {
+		for _, event := range turn.events {
+			provider, attribution := c.providerForBufferedEvent(state.thread.ID, turn, event, resolved[i])
+			usageEvent := c.codexUsageEvent(file.path, &state, event.turnID, event.at, event.tokens, event.model, provider, attribution, event.cwd)
+			if _, exists := seen[usageEvent.ID]; exists {
+				continue
+			}
+			seen[usageEvent.ID] = struct{}{}
+			events = append(events, usageEvent)
+		}
+	}
+	return events, nil
 }
 
 func appendCodexBufferedTurn(pending *codexBufferedTurn, state codexState, event codexBufferedEvent) *codexBufferedTurn {
@@ -180,7 +257,7 @@ func (c Codex) providerForBufferedEvent(threadID string, pending *codexBufferedT
 
 func (c Codex) collectSessionFiles(ctx context.Context, roots []string) ([]codexSessionFile, codexProviderTargets, error) {
 	targets := newCodexProviderTargets()
-	files := make([]codexSessionFile, 0)
+	candidates := make([]string, 0)
 	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err := ctx.Err(); err != nil {
@@ -192,19 +269,72 @@ func (c Codex) collectSessionFiles(ctx context.Context, roots []string) ([]codex
 			if !c.fileMayOverlapWindow(path) {
 				return nil
 			}
-			meta := parseCodexThreadMeta(path)
-			if meta.Skip {
-				return nil
-			}
-			targets.addThread(meta.ID)
-			files = append(files, codexSessionFile{path: path, meta: meta})
+			candidates = append(candidates, path)
 			return nil
 		})
 		if err != nil {
 			return nil, codexProviderTargets{}, err
 		}
 	}
-	return files, targets, nil
+	if len(candidates) == 0 {
+		return nil, targets, nil
+	}
+	sort.Strings(candidates)
+	type parsedFile struct {
+		index int
+		file  codexSessionFile
+		ok    bool
+		err   error
+	}
+	maxWorkers := runtime.NumCPU()
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	if maxWorkers > len(candidates) {
+		maxWorkers = len(candidates)
+	}
+	sem := make(chan struct{}, maxWorkers)
+	results := make(chan parsedFile, len(candidates))
+	var wg sync.WaitGroup
+	for i, path := range candidates {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(index int, path string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			meta := parseCodexThreadMeta(path)
+			if meta.Skip {
+				results <- parsedFile{index: index}
+				return
+			}
+			results <- parsedFile{index: index, file: codexSessionFile{path: path, meta: meta}, ok: true}
+		}(i, path)
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	files := make([]codexSessionFile, len(candidates))
+	okByIndex := make([]bool, len(candidates))
+	for result := range results {
+		if result.err != nil {
+			return nil, codexProviderTargets{}, result.err
+		}
+		if !result.ok {
+			continue
+		}
+		files[result.index] = result.file
+		okByIndex[result.index] = true
+		targets.addThread(result.file.meta.ID)
+	}
+	out := make([]codexSessionFile, 0, len(candidates))
+	for i := range files {
+		if !okByIndex[i] {
+			continue
+		}
+		out = append(out, files[i])
+	}
+	return out, targets, nil
 }
 
 func (c Codex) fileMayOverlapWindow(path string) bool {
