@@ -30,6 +30,9 @@ type localizedCopy struct {
 	empty            string
 	emptyFiltered    string
 	help             string
+	helpInline       string
+	helpTitle        string
+	statusTitle      string
 	sortTokens       string
 	sortCost         string
 	contextTool      string
@@ -83,7 +86,10 @@ func copyFor(language Language) localizedCopy {
 			threads:          "会话",
 			empty:            "当前查询没有找到用量事件。",
 			emptyFiltered:    "当前筛选条件下没有匹配结果。",
-			help:             "1 全部 · 2 Claude Code · 3 Codex · 4 Gemini · s 排序 · tab 切换 · j/k 移动 · c 复制 · / 搜索 · l 语言 · q 退出",
+			help:             "1  全部\n2  Claude Code\n3  Codex\n4  Gemini\ns  切换排序\ntab  切换面板\nj/k  移动选中\npgup/pgdn  页面翻页\nc  复制会话 ID\n/  搜索\nl  切换语言\nesc  关闭弹窗\nq  退出",
+			helpInline:       "1 全部  2 Claude Code  3 Codex  4 Gemini  s 排序  tab 面板  j/k 移动  c 复制  / 搜索  l 语言  q 退出",
+			helpTitle:        "帮助",
+			statusTitle:      "状态",
 			sortTokens:       "按 Tokens",
 			sortCost:         "按 Cost",
 			contextTool:      "工具",
@@ -128,7 +134,10 @@ func copyFor(language Language) localizedCopy {
 		threads:          "Threads",
 		empty:            "No usage events found for this query.",
 		emptyFiltered:    "No rows match the current filters.",
-		help:             "1 All · 2 Claude Code · 3 Codex · 4 Gemini · s sort · tab pane · j/k move · c copy · / search · l lang · q quit",
+		help:             "1  All\n2  Claude Code\n3  Codex\n4  Gemini\ns  Toggle sort\ntab  Switch pane\nj/k  Move selection\npgup/pgdn  Page scroll\nc  Copy thread ID\n/  Search\nl  Toggle language\nesc  Close dialog\nq  Quit",
+		helpInline:       "1 All  2 Claude Code  3 Codex  4 Gemini  s Sort  tab Pane  j/k Move  c Copy  / Search  l Lang  q Quit",
+		helpTitle:        "Help",
+		statusTitle:      "Status",
 		sortTokens:       "Tokens",
 		sortCost:         "Cost",
 		contextTool:      "Tool",

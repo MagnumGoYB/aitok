@@ -78,13 +78,122 @@ func TestModelShowsHelpOnlyWhenRequested(t *testing.T) {
 	m := NewModel(samplePayload())
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "? help") || strings.Contains(view, "1 All") {
-		t.Fatalf("default footer should stay compact and hide full shortcuts:\n%s", view)
+		t.Fatalf("default header should stay compact and hide full shortcuts:\n%s", view)
 	}
 	updated, _ := m.Update(keyMsg("?"))
 	m = updated.(model)
 	view = stripANSI(m.View())
-	if !strings.Contains(view, "1 All") || !strings.Contains(view, "4 Gemini") || strings.Contains(view, "1=All") || !strings.Contains(view, "q quit") {
-		t.Fatalf("? should toggle full shortcut help:\n%s", view)
+	if !strings.Contains(view, "1 All") || !strings.Contains(view, "4 Gemini") || strings.Contains(view, "1=All") || !strings.Contains(view, "q Quit") {
+		t.Fatalf("? should toggle full shortcut help in the header notice:\n%s", view)
+	}
+	if !headerContains(view, "1 All") || !headerContains(view, "q Quit") {
+		t.Fatalf("help shortcuts should stay in the top-right header notice:\n%s", view)
+	}
+	updated, _ = m.Update(keyMsg("esc"))
+	m = updated.(model)
+	view = stripANSI(m.View())
+	if strings.Contains(view, "1 All") || !strings.Contains(view, "Usage Dashboard") {
+		t.Fatalf("esc should close help dialog and restore dashboard:\n%s", view)
+	}
+}
+
+func headerContains(view string, value string) bool {
+	lines := strings.Split(view, "\n")
+	limit := 4
+	if len(lines) < limit {
+		limit = len(lines)
+	}
+	for _, line := range lines[:limit] {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestHeaderNoticeDoesNotBreakViewportLineWidths(t *testing.T) {
+	m := NewModel(hardeningPayload())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 24})
+	m = updated.(model)
+	base := stripANSI(m.View())
+	updated, _ = m.Update(keyMsg("c"))
+	m = updated.(model)
+	view := stripANSI(m.View())
+	if got, want := len(strings.Split(view, "\n")), len(strings.Split(base, "\n")); got != want {
+		t.Fatalf("header notice should preserve viewport line count, got %d want %d:\n%s", got, want, view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), 160; got > want {
+			t.Fatalf("header notice should not corrupt viewport line width, got %d > %d:\n%s", got, want, view)
+		}
+	}
+	if !strings.Contains(view, "Threads") || !strings.Contains(view, "Selected Thread") || !headerContains(view, "Copied thread ID:") {
+		t.Fatalf("copy status should stay in the top-right header notice without hiding dashboard content:\n%s", view)
+	}
+}
+
+func TestCopyStatusRendersAsHeaderNotice(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 14})
+	m = updated.(model)
+	updated, cmd := m.Update(keyMsg("c"))
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("copy should emit clipboard command")
+	}
+	view := stripANSI(m.View())
+	if !headerContains(view, "Copied thread ID: thread-a") || !strings.Contains(view, "Usage Dashboard") {
+		t.Fatalf("copy status should render as a top-right header notice:\n%s", view)
+	}
+	updated, _ = m.Update(clearCopyStatusMsg{})
+	m = updated.(model)
+	view = stripANSI(m.View())
+	if strings.Contains(view, "Copied thread ID") || !strings.Contains(view, "Usage Dashboard") {
+		t.Fatalf("copy status should auto-clear and reveal dashboard:\n%s", view)
+	}
+}
+
+func TestPageScrollsWholeDashboardWhenViewportIsShort(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	for i := 0; i < 8; i++ {
+		payload.Results = append(payload.Results, query.Result{
+			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "provider-" + string(rune('a'+i))},
+			Requests: 1,
+			Usage:    usage.TokenUsage{Input: int64(1_000_000 - i)},
+		})
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 12})
+	m = updated.(model)
+	top := stripANSI(m.View())
+	if !strings.Contains(top, "Usage Dashboard") {
+		t.Fatalf("initial short viewport should show the top of the dashboard:\n%s", top)
+	}
+	if strings.Contains(top, "Model Usage") {
+		t.Fatalf("initial short viewport should be clipped before lower sections:\n%s", top)
+	}
+	updated, _ = m.Update(keyMsg("pgdown"))
+	m = updated.(model)
+	updated, _ = m.Update(keyMsg("pgdown"))
+	m = updated.(model)
+	bottom := stripANSI(m.View())
+	if strings.Contains(bottom, "Usage Dashboard") || !strings.Contains(bottom, "Model Usage") {
+		t.Fatalf("repeated pgdown should scroll the whole dashboard down to lower sections:\n%s", bottom)
+	}
+	updated, _ = m.Update(keyMsg("pgup"))
+	m = updated.(model)
+	updated, _ = m.Update(keyMsg("pgup"))
+	m = updated.(model)
+	backTop := stripANSI(m.View())
+	if !strings.Contains(backTop, "Usage Dashboard") {
+		t.Fatalf("pgup should scroll the whole dashboard back to the top:\n%s", backTop)
 	}
 }
 
@@ -97,8 +206,8 @@ func TestHeaderPlacesHelpOnTitleRowAndSearchBelow(t *testing.T) {
 	if titleIndex < 0 || subtitleIndex < 0 || helpIndex < 0 || searchIndex < 0 {
 		t.Fatalf("view missing expected header parts:\n%s", view)
 	}
-	if !(subtitleIndex < helpIndex && helpIndex < searchIndex) {
-		t.Fatalf("help should stay after subtitle and before toolbar metadata:\n%s", view)
+	if !(titleIndex < helpIndex && helpIndex < searchIndex) {
+		t.Fatalf("help should stay in the title-row notice before toolbar metadata:\n%s", view)
 	}
 	lines := strings.Split(view, "\n")
 	if len(lines) < 4 || strings.TrimSpace(lines[0]) != "" || strings.TrimSpace(lines[1]) != "" {
@@ -111,8 +220,8 @@ func TestHeaderPlacesHelpOnTitleRowAndSearchBelow(t *testing.T) {
 		if !strings.HasPrefix(lines[i-1], "  Usage Dashboard") || !strings.HasPrefix(line, "  Monitor AI model usage and estimated cost") {
 			t.Fatalf("header should keep left padding:\n%s", view)
 		}
-		if !strings.Contains(line, "      ? help") {
-			t.Fatalf("compact help should render after subtitle with spacing:\n%s", view)
+		if !strings.Contains(lines[i-1], "? help") {
+			t.Fatalf("compact help should render on the title row as a right notice:\n%s", view)
 		}
 		if i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) == "" {
 			t.Fatalf("header should not add extra vertical padding before toolbar:\n%s", view)

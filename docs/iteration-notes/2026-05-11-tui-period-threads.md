@@ -10,6 +10,7 @@ This note is a versioned handoff for future AI coding agents. Read it before con
 - Feature commit: `107b7da1f2d3a4d4207c9c4581778aca1153a45e`
 - Merge commit: `97e4cbbd8bcd08e5a2667b415eb35122de434acc`
 - Release status: PR #13 and follow-up TUI fixes were released through `v0.1.26`; no release follow-up is currently pending for this iteration.
+- Later dashboard modernization notes live in `docs/iteration-notes/2026-05-18-tui-dashboard-modernization.md`.
 - Primary agent contract: `aitok --no-version-check summary --period today --threads --format json`
 
 ## Why This Iteration Happened
@@ -82,7 +83,6 @@ The full version sequence for this iteration is:
 - `v0.1.24`: fixed Model Usage chart ratios for sub-1m token rows and added total `Tokens` to the Model Usage table.
 - `v0.1.25`: kept one row per thread ID, replaced thread `model=mixed` with a compact comma-joined model list, merged redundant request/event-heavy default output, and shaded Model Usage bars within one hue family so relative usage is still visually distinct.
 - `v0.1.26`: added `--sort tokens|cost` for query outputs, let TUI switch sort metrics with `s`, showed metric badges in Threads and Model Usage, localized missed table/search labels, and scaled Model Usage chart bars/labels by USD when Cost sorting is active.
-
 Current TUI layout constraints to preserve:
 
 - Threads filtering must stay in sync with the active tool tabs and search term. Any cursor movement, Home/End jump, copy action, and scrollbar math should operate on the filtered thread slice instead of the unfiltered payload.

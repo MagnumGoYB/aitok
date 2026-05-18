@@ -17,7 +17,7 @@ var (
 	sectionStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F5FBFF"))
 	mutedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	helpCompactStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#CDEFFF"))
 	contextLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	contextValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	badgeStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#CDEFFF")).Background(lipgloss.Color("#183548")).Padding(0, 1)

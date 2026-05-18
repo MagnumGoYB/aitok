@@ -49,6 +49,7 @@
 - 在 `main` 上，release workflow 只验证项目，不发布 GitHub Release。
 - 在匹配的 `v*` tag 上，release job 先运行 `make validate`，再使用 GoReleaser 和 `.goreleaser.yml` 发布校验和、多平台 archive 和 Homebrew cask。
 - Harness、docs、CI 或流程护栏等工程/流程优化不需要软件发版。feature 和 bugfix 合并后应提示或继续进入发版流程，除非明确延后。
+- 已推送到 GitHub 的 release tag 如果发布失败，不要移动或强推该远端 tag。应在 `main` 上补修复、bump 下一个 patch 版本、创建新 tag，并发布新版本。
 - Homebrew cask 发布到 `MagnumGoYB/homebrew-aitok` tap，并通过 `brew tap MagnumGoYB/aitok` 后执行 `brew install --cask aitok` 安装；文档刻意不使用完整 cask 名称，避免重复出现 `aitok`。
 - Cask 只从 macOS archive 集合生成。Linux 和 Windows archive 仍会作为 GitHub Release 产物发布，但不会进入 Homebrew cask DSL。
 - 生成的 cask 会在 macOS post-install 阶段对已安装的 `aitok` 二进制运行 `xattr` hook，避免未签名 CLI archive 在 Homebrew 安装后仍保留 quarantine 状态。

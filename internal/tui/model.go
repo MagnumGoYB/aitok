@@ -2,6 +2,7 @@ package tui
 
 import (
 	"io"
+	"strings"
 	"time"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
@@ -13,6 +14,7 @@ import (
 const allTools = "all"
 
 const refreshInterval = 5 * time.Second
+const copyStatusDuration = 2 * time.Second
 
 type model struct {
 	payload      report.Payload
@@ -20,6 +22,8 @@ type model struct {
 	search       string
 	searching    bool
 	width        int
+	height       int
+	scrollOffset int
 	language     Language
 	refresh      func() (report.Payload, error)
 	focusedPane  string
@@ -36,6 +40,8 @@ type refreshResultMsg struct {
 	payload report.Payload
 	err     error
 }
+
+type clearCopyStatusMsg struct{}
 
 func NewModel(payload report.Payload) model {
 	return NewModelWithLanguage(payload, LanguageEnglish)
@@ -97,8 +103,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.scheduleRefresh()
+	case clearCopyStatusMsg:
+		m.copyStatus = ""
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
+		m.clampScrollOffset()
 	case tea.KeyMsg:
 		key := msg.String()
 		if m.searching {
@@ -136,6 +147,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureThreadVisible()
 			m.ensureModelUsageVisible()
 		case "esc":
+			if m.showHelp {
+				m.showHelp = false
+				return m, nil
+			}
+			if m.copyStatus != "" {
+				m.copyStatus = ""
+				return m, nil
+			}
 			m.search = ""
 			m.searching = false
 		case "1":
@@ -156,6 +175,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureModelUsageVisible()
 		case "tab":
 			m.toggleFocusedPane()
+		case "pgup", "ctrl+u":
+			m.movePage(-1)
+		case "pgdown", "ctrl+d":
+			m.movePage(1)
 		case "up", "k":
 			if m.focusedPane == "models" && m.canMoveModels() {
 				m.moveModelUsageCursor(-1)
@@ -193,11 +216,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusedPane = "threads"
 				id := m.filteredThreads()[m.threadCursor].ID
 				m.copyStatus = copyFor(m.language).copyStatusPrefix + ": " + id
-				return m, copyToClipboard(id)
+				return m, tea.Batch(copyToClipboard(id), clearCopyStatusAfter())
 			}
 		}
 	}
 	return m, nil
+}
+
+func clearCopyStatusAfter() tea.Cmd {
+	return tea.Tick(copyStatusDuration, func(time.Time) tea.Msg {
+		return clearCopyStatusMsg{}
+	})
+}
+
+func (m *model) movePage(direction int) {
+	if m.height <= 0 {
+		return
+	}
+	step := m.height - 2
+	if step < 1 {
+		step = 1
+	}
+	m.scrollOffset += direction * step
+	m.clampScrollOffset()
+}
+
+func (m *model) clampScrollOffset() {
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	maxOffset := m.maxScrollOffset()
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+}
+
+func (m model) maxScrollOffset() int {
+	if m.height <= 0 {
+		return 0
+	}
+	lineCount := len(strings.Split(m.fullView(), "\n"))
+	maxOffset := lineCount - m.height
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
 }
 
 func (m model) canMoveThreads() bool {

@@ -15,10 +15,37 @@ type dashboardSections struct {
 	cards      string
 	threads    string
 	modelUsage string
-	footer     string
 }
 
 func (m model) View() string {
+	return m.viewportView()
+}
+
+func (m model) viewportView() string {
+	view := m.fullView()
+	if m.height <= 0 {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	maxOffset := len(lines) - m.height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := m.scrollOffset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	end := offset + m.height
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[offset:end], "\n")
+}
+
+func (m model) fullView() string {
 	if m.width <= 0 {
 		m.width = 120
 	}
@@ -35,15 +62,6 @@ func (m model) View() string {
 	if len(threads) > 0 {
 		sections.threads = m.threadsPanel(threads, copy)
 	}
-	if m.showHelp {
-		sections.footer = helpStyle.Render(copy.help)
-	}
-	if m.copyStatus != "" {
-		if sections.footer != "" {
-			sections.footer += "  "
-		}
-		sections.footer += statusStyle.Render(m.copyStatus)
-	}
 
 	var b strings.Builder
 	b.WriteString(sections.header)
@@ -58,10 +76,6 @@ func (m model) View() string {
 	}
 	b.WriteString(sections.modelUsage)
 	b.WriteString("\n")
-	if sections.footer != "" {
-		b.WriteString(sections.footer)
-		b.WriteString("\n")
-	}
 	return b.String()
 }
 
@@ -111,17 +125,41 @@ func (m model) toolbarMeta(copy localizedCopy) string {
 
 func (m model) header(copy localizedCopy) string {
 	indent := strings.Repeat(" ", 2)
-	subtitle := subtitleStyle.Render(copy.subtitle) + strings.Repeat(" ", 6) + helpCompactStyle.Render(copy.helpCompact)
-	return lipgloss.NewStyle().Width(dashboardWidth(m.width)).Render("\n\n" + indent + titleStyle.Render(copy.title) + "\n" + indent + subtitle)
+	notice := m.headerNotice(copy)
+	titleLine := placeHeaderRight(indent+titleStyle.Render(copy.title), notice, dashboardWidth(m.width))
+	subtitleLine := indent + subtitleStyle.Render(copy.subtitle)
+	return lipgloss.NewStyle().Width(dashboardWidth(m.width)).Render("\n\n" + titleLine + "\n" + subtitleLine)
 }
 
-func (m model) headerGapWidth(left, right string) int {
-	available := dashboardWidth(m.width)
-	gap := available - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 2 {
-		return 2
+func (m model) headerNotice(copy localizedCopy) string {
+	switch {
+	case m.copyStatus != "":
+		return statusStyle.Render(m.copyStatus)
+	case m.showHelp:
+		return helpStyle.Render(copy.helpInline)
+	default:
+		return helpCompactStyle.Render(copy.helpCompact)
 	}
-	return gap
+}
+
+func placeHeaderRight(left, right string, width int) string {
+	if right == "" {
+		return left
+	}
+	rightWidth := lipgloss.Width(right)
+	available := width - lipgloss.Width(left)
+	if available <= 2 {
+		return left
+	}
+	if rightWidth > available-2 {
+		right = tableText(right, available-2)
+		rightWidth = lipgloss.Width(right)
+	}
+	gap := width - lipgloss.Width(left) - rightWidth
+	if gap < 2 {
+		gap = 2
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (m model) windowLabel(copy localizedCopy) string {
@@ -158,7 +196,7 @@ func (m model) cards(summary totals, copy localizedCopy) string {
 		cardWithWidth(copy.totalTokens, formatInt(summary.total), "▱", purple, cardWidths[2]),
 		cardWithWidth(copy.cachedTokens, formatInt(summary.cached), "◉", orange, cardWidths[3]),
 	}
-	if m.width < 96 {
+	if dashboardWidth(m.width) < 108 {
 		return lipgloss.JoinVertical(lipgloss.Left,
 			lipgloss.JoinHorizontal(lipgloss.Top, cards[0], cards[1]),
 			lipgloss.JoinHorizontal(lipgloss.Top, cards[2], cards[3]),

@@ -187,6 +187,36 @@ Bugfix 目标：`v0.1.29` 之后的下一个 patch release。
 
 - `make test-packages PKGS="./internal/sources ./internal/cli"`
 
+## 2026-05-15 至 2026-05-17 Provider 归因跟进
+
+发版跨度：`v0.1.31` 到 `v0.1.37`。
+
+第一轮 provider 切换修复后，用户继续用真实本地总数和 mixed provider 价格做验证。这一阶段应视为产品契约加固，而不是报表显示层的微调。
+
+重要跟进改动：
+
+- `v0.1.31`：重平衡 Codex mixed-provider 用量，让同一个会话在证据足够时可以产出独立的 provider 成本 bucket。
+- `v0.1.32`：在 query/report 输出中保留 mixed price components，让 `mixed` 价格可以解释，而不是压成一条不透明记录。
+- `v0.1.33`：降低多工具 summary 开销，修复较大本地日志下 week/month summary 变慢的问题。
+- `v0.1.34`：provider split 逻辑尊重 Codex `ChatGPT` auth mode。
+- `v0.1.35`：继续加速 week/month summary，并保持性能优化 streaming-first。
+- `v0.1.36`：恢复 Codex same-turn provider 归因，因为后续证据表明 token 行和 request evidence 可能属于同一逻辑 turn，但日志顺序不同。
+- `v0.1.37`：发布 same-turn 归因修复以及之前的性能/provider 修正。
+
+这一阶段沉淀的长期规则：
+
+- 可见的 `mixed` price 不一定只是显示问题。它可能代表更深层的聚合或重平衡问题。用户报告真实总数不一致时，要用 live `summary` 输出验证。
+- Provider split 优先使用 provider-qualified model 字符串和 request-host mapping 这类精确证据；只有证据边界清晰时，才做保守的 same-turn 或 short-bridge inference。
+- 不要从 API Key 推断 provider。Provider 分组只能使用本地工具日志和配置里已经存在的 provider/auth metadata 与 request-host evidence。
+- 性能修复必须保持 source scanning streaming。不要为了 week/month latency 把大型 JSONL 日志一次性加载进内存。
+- Mixed provider cost 在 TUI 和非 TUI 报告中都应该可解释。展示总成本时，如果数据里有多个 provider-specific price component，就保留 component breakdown。
+
+后续继续处理这类问题时的验证要求：
+
+- 迭代中使用 targeted package checks，发版前跑 `make validate`。
+- 至少覆盖 provider-qualified model string、带唯一 request-host evidence 的裸模型名、same-turn evidence、unknown host fallback，以及 mixed price component reporting。
+- 对用户报告的真实总数不一致，使用 `make run ARGS="--no-version-check summary ..."` 在对应 period 做 live smoke，不要只依赖单元测试。
+
 ## 流程自动化更新
 
 CodeRabbit：

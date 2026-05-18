@@ -187,6 +187,36 @@ Validation for this slice:
 
 - `make test-packages PKGS="./internal/sources ./internal/cli"`
 
+## 2026-05-15 To 2026-05-17 Provider Attribution Follow-Ups
+
+Release span: `v0.1.31` through `v0.1.37`.
+
+After the first provider-switch fix, the user continued validating real local totals and mixed provider pricing. Treat this period as a product-contract hardening phase, not cosmetic report work.
+
+Important follow-up changes:
+
+- `v0.1.31`: rebalanced Codex mixed-provider usage so a single conversation can produce separate provider cost buckets when the evidence supports a split.
+- `v0.1.32`: preserved mixed price components in query/report output so `mixed` pricing remains explainable instead of collapsing into one opaque row.
+- `v0.1.33`: reduced multi-tool summary overhead after week/month summaries became slow on larger local logs.
+- `v0.1.34`: respected Codex `ChatGPT` auth mode in provider split logic.
+- `v0.1.35`: sped up week and month summaries, keeping the performance work streaming-first.
+- `v0.1.36`: restored Codex same-turn provider attribution after later evidence showed some token rows and request evidence can arrive in the same logical turn but different log order.
+- `v0.1.37`: released the same-turn attribution fix and the preceding performance/provider corrections.
+
+Durable rules from this period:
+
+- A visible `mixed` price is not automatically a display-only issue. It may indicate a deeper aggregation or rebalancing problem. Validate with live `summary` output when the user reports real totals.
+- Provider split logic should prefer exact evidence from provider-qualified model strings and request-host mappings, then apply conservative same-turn or short-bridge inference only when the evidence is bounded.
+- Do not infer provider from API keys. Provider grouping may only use local provider/auth metadata and request-host evidence already present in local tool logs and config.
+- Performance fixes must keep source scanning streaming. Do not solve week/month latency by loading large JSONL logs fully into memory.
+- Mixed provider costs should stay explainable in both TUI and non-TUI reports. When showing a total cost, preserve the component breakdown if the data contains multiple provider-specific prices.
+
+Validation expectation for future work in this area:
+
+- Use targeted package checks while iterating, then `make validate` before release.
+- Include at least one fixture or smoke path for provider-qualified model strings, bare model names with unique request-host evidence, same-turn evidence, unknown host fallback, and mixed price component reporting.
+- For user-reported total mismatches, run a live `make run ARGS="--no-version-check summary ..."` smoke on the reported period instead of relying only on unit tests.
+
 ## Process Automation Updates
 
 CodeRabbit:
