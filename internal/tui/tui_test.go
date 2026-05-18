@@ -922,7 +922,8 @@ func TestThreadDetailShowsFullActiveAndSplitAndOmitsSource(t *testing.T) {
 	}
 	m := NewModel(payload)
 	detail := stripANSI(m.threadDetailStripWithWidth(m.filteredThreads(), copyFor(LanguageEnglish), 64, 0))
-	for _, expected := range []string{"gpt-5.4,gpt-5.5", "openai,toska", "2026-05-18 06:12", "Cost: $3.0000 (toska $1.0000 / openai $2.0000)"} {
+	lastActive := payload.Threads[0].LastActiveAt.In(time.Local).Format("2006-01-02 15:04")
+	for _, expected := range []string{"gpt-5.4,gpt-5.5", "openai,toska", lastActive, "Cost: $3.0000 (toska $1.0000 / openai $2.0000)"} {
 		if !strings.Contains(detail, expected) {
 			t.Fatalf("thread detail should show full value %q:\n%s", expected, detail)
 		}
