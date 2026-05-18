@@ -27,13 +27,11 @@ func TestRenderSmoke(t *testing.T) {
 		"Estimated Cost",
 		"Total Tokens",
 		"Cached Tokens",
-		"Model Usage [All Threads Cost]",
+		"Model Usage",
 		"Search:",
 		"[Tokens]",
 		"Price",
-		"s sort",
-		"/ search",
-		"l language",
+		"? help",
 	} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("view missing %q: %s", expected, view)
@@ -62,20 +60,66 @@ func TestRenderChinese(t *testing.T) {
 		"总成本",
 		"总 Token 数",
 		"缓存 Token",
-		"模型用量 [全部会话成本]",
+		"模型用量",
 		"搜索:",
 		"[按 Tokens]",
 		"价格",
-		"s 排序",
 		"模型",
 		"请求",
-		"/ 搜索",
-		"l 语言",
+		"? help",
 	} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("Chinese view missing %q: %s", expected, view)
 		}
 	}
+}
+
+func TestModelShowsHelpOnlyWhenRequested(t *testing.T) {
+	m := NewModel(samplePayload())
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "? help") || strings.Contains(view, "1 All") {
+		t.Fatalf("default footer should stay compact and hide full shortcuts:\n%s", view)
+	}
+	updated, _ := m.Update(keyMsg("?"))
+	m = updated.(model)
+	view = stripANSI(m.View())
+	if !strings.Contains(view, "1 All") || !strings.Contains(view, "4 Gemini") || strings.Contains(view, "1=All") || !strings.Contains(view, "q quit") {
+		t.Fatalf("? should toggle full shortcut help:\n%s", view)
+	}
+}
+
+func TestHeaderPlacesHelpOnTitleRowAndSearchBelow(t *testing.T) {
+	view := stripANSI(RenderWidth(samplePayload(), 140))
+	titleIndex := strings.Index(view, "Usage Dashboard")
+	subtitleIndex := strings.Index(view, "Monitor AI model usage and estimated cost")
+	helpIndex := strings.Index(view, "? help")
+	searchIndex := strings.Index(view, "Search:")
+	if titleIndex < 0 || subtitleIndex < 0 || helpIndex < 0 || searchIndex < 0 {
+		t.Fatalf("view missing expected header parts:\n%s", view)
+	}
+	if !(subtitleIndex < helpIndex && helpIndex < searchIndex) {
+		t.Fatalf("help should stay after subtitle and before toolbar metadata:\n%s", view)
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) < 4 || strings.TrimSpace(lines[0]) != "" || strings.TrimSpace(lines[1]) != "" {
+		t.Fatalf("header should keep top padding:\n%s", view)
+	}
+	for i, line := range lines {
+		if !strings.Contains(line, "Monitor AI model usage and estimated cost") {
+			continue
+		}
+		if !strings.HasPrefix(lines[i-1], "  Usage Dashboard") || !strings.HasPrefix(line, "  Monitor AI model usage and estimated cost") {
+			t.Fatalf("header should keep left padding:\n%s", view)
+		}
+		if !strings.Contains(line, "      ? help") {
+			t.Fatalf("compact help should render after subtitle with spacing:\n%s", view)
+		}
+		if i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) == "" {
+			t.Fatalf("header should not add extra vertical padding before toolbar:\n%s", view)
+		}
+		return
+	}
+	t.Fatalf("subtitle missing:\n%s", view)
 }
 
 func TestModelTogglesLanguage(t *testing.T) {
@@ -231,15 +275,19 @@ func TestModelUsageTableShowsMixedPriceDetails(t *testing.T) {
 func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 	view := RenderWidth(samplePayload(), 140)
 	lines := strings.Split(stripANSI(view), "\n")
+	tableIndex := -1
 	for i, line := range lines {
-		if strings.Contains(line, "1,225") && strings.Contains(line, "█") {
-			if i+2 >= len(lines) || strings.Trim(lines[i+1], " │") != "" || !strings.Contains(lines[i+2], "Model") {
-				t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
-			}
-			return
+		if strings.Contains(line, "Model") && strings.Contains(line, "Req") && strings.Contains(line, "Cached") {
+			tableIndex = i
+			break
 		}
 	}
-	t.Fatalf("model usage chart line missing: %s", view)
+	if tableIndex < 2 {
+		t.Fatalf("model usage table header missing: %s", view)
+	}
+	if strings.Trim(lines[tableIndex-1], " │") != "" {
+		t.Fatalf("model usage chart and table must be separated by a blank line: %s", view)
+	}
 }
 
 func TestModelUsageChartKeepsSmallTokenRatiosVisible(t *testing.T) {
@@ -259,18 +307,18 @@ func TestModelUsageChartKeepsSmallTokenRatiosVisible(t *testing.T) {
 	}
 }
 
-func TestModelUsageBarStyleUsesSameHueWithDepthByRank(t *testing.T) {
+func TestModelUsageBarStyleUsesSameHueDepthByRank(t *testing.T) {
 	first := modelUsageBarStyle(0, 4).GetForeground()
 	second := modelUsageBarStyle(1, 4).GetForeground()
 	last := modelUsageBarStyle(3, 4).GetForeground()
 	if first == second || second == last || first == last {
-		t.Fatalf("bar shades should vary by rank, got first=%v second=%v last=%v", first, second, last)
+		t.Fatalf("bar colors should vary by rank within one hue family, got first=%v second=%v last=%v", first, second, last)
 	}
-	if first != lipgloss.Color("#0A84D6") {
-		t.Fatalf("highest-usage bar should use the darkest shade, got %v", first)
+	if first != lipgloss.Color("#0782C8") {
+		t.Fatalf("highest-usage bar should use the deepest heat shade, got %v", first)
 	}
-	if last != lipgloss.Color("#7CCDF5") {
-		t.Fatalf("lowest-usage bar should use the lightest shade, got %v", last)
+	if last != lipgloss.Color("#4CC2FF") {
+		t.Fatalf("fourth bar should step down toward the thread highlight hue, got %v", last)
 	}
 }
 
@@ -321,6 +369,17 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 	}
 }
 
+func TestModelUsageTableAddsBreathingRoomAroundCost(t *testing.T) {
+	header := stripANSI(modelTableRow("Model", "Req", "Cost", "Price", "Tokens", "Input", "Output", "Cached"))
+	reqEnd := strings.Index(header, "Req") + len("Req")
+	costStart := strings.Index(header, "Cost")
+	costEnd := costStart + len("Cost")
+	priceStart := strings.Index(header, "Price")
+	if costStart-reqEnd < 3 || priceStart-costEnd < 3 {
+		t.Fatalf("model usage table should keep wider spacing around Cost:\n%s", header)
+	}
+}
+
 func TestModelUsageTableIncludesTotalTokens(t *testing.T) {
 	payload := report.Payload{
 		Results: []query.Result{{
@@ -339,7 +398,7 @@ func TestModelUsageTableIncludesTotalTokens(t *testing.T) {
 	}
 }
 
-func TestModelUsageCapsRowsWhenProvidersAreMany(t *testing.T) {
+func TestModelUsageScrollsWhenProvidersAreMany(t *testing.T) {
 	payload := samplePayload()
 	payload.Results = nil
 	for i := 0; i < 12; i++ {
@@ -351,11 +410,141 @@ func TestModelUsageCapsRowsWhenProvidersAreMany(t *testing.T) {
 		})
 	}
 	view := stripANSI(RenderWidth(payload, 160))
-	if strings.Contains(view, "provider-h") || strings.Contains(view, "provider-l") {
-		t.Fatalf("model usage should cap provider-heavy output to top rows:\n%s", view)
+	for _, expected := range []string{"provider-a", "provider-b", "provider-c", "provider-d"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("model usage chart should show the first visible provider bars including %q:\n%s", expected, view)
+		}
 	}
-	if !strings.Contains(view, "provider-a") || !strings.Contains(view, "provider-f") {
-		t.Fatalf("model usage should keep the most important provider rows:\n%s", view)
+	tableHeader := modelTableHeaderNeedle(view)
+	chart := view[:strings.Index(view, tableHeader)]
+	if strings.Contains(chart, "provider-e") || strings.Contains(chart, "provider-l") {
+		t.Fatalf("model usage chart should fold bars after the top four:\n%s", view)
+	}
+	if !strings.Contains(view, "8 more folded; scroll the table below to view more") {
+		t.Fatalf("model usage chart should explain folded bars:\n%s", view)
+	}
+	if !strings.Contains(view, "┃") {
+		t.Fatalf("model usage table overflow should show a scrollbar:\n%s", view)
+	}
+
+	m := NewModel(payload)
+	m.width = 160
+	updated, _ := m.Update(keyMsg("tab"))
+	m = updated.(model)
+	updated, _ = m.Update(keyMsg("end"))
+	m = updated.(model)
+	view = stripANSI(m.View())
+	tableHeader = modelTableHeaderNeedle(view)
+	table := view[strings.Index(view, tableHeader):]
+	if !strings.Contains(table, "provider-l") || strings.Contains(table, "provider-a") {
+		t.Fatalf("end should scroll model usage table to the last rows:\n%s", view)
+	}
+}
+
+func modelTableHeaderNeedle(view string) string {
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "Model") && strings.Contains(line, "Req") && strings.Contains(line, "Cost") && strings.Contains(line, "Price") {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestDashboardShowsCurrentAnalysisContext(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	m := NewModel(payload)
+	m.search = "gpt"
+	view := stripANSI(m.View())
+	for _, expected := range []string{"Sort:", "[Tokens]", "Search: gpt", "Models: 1", "Threads: 1"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("dashboard context missing %q:\n%s", expected, view)
+		}
+	}
+	if strings.Contains(view, "Models: 1/1") || strings.Contains(view, "Threads: 1/1") {
+		t.Fatalf("dashboard should show compact model/thread counts:\n%s", view)
+	}
+	if strings.Contains(view, "Tool: All") {
+		t.Fatalf("dashboard should not render a separate Tool context row:\n%s", view)
+	}
+}
+
+func TestThreadsShowSelectedDetailStrip(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Source: "project-a", LastActiveAt: time.Date(2026, 5, 11, 10, 30, 0, 0, time.UTC), Usage: usage.TokenUsage{Input: 10}, CostBreakdown: []query.ThreadCost{{Provider: "openai", USD: 0.1}}},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	for _, expected := range []string{"Selected Thread", "ID: thread-a", "Last Active:", "Tokens: 10", "Cost: $0.1000"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("thread detail strip missing %q:\n%s", expected, view)
+		}
+	}
+	if strings.Contains(view, "Source:") || strings.Contains(view, "project-a") || strings.Contains(view, "Split:") {
+		t.Fatalf("thread detail strip should omit Source and Split:\n%s", view)
+	}
+	lines := strings.Split(view, "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "Last Active:") {
+			continue
+		}
+		if !strings.Contains(line, "2026-05-11") {
+			t.Fatalf("Last Active value should render on the same line:\n%s", view)
+		}
+		return
+	}
+	t.Fatalf("Last Active label missing:\n%s", view)
+}
+
+func TestThreadsPanelUsesQuarterWidthDetailAndAlignsBottom(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+		{ID: "thread-b", Name: "Deploy", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Usage: usage.TokenUsage{Input: 8}},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	panel := stripANSI(m.threadsPanel(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, line := range strings.Split(panel, "\n") {
+		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
+			t.Fatalf("threads panel line should not exceed dashboard width %d, got %d:\n%s", want, got, panel)
+		}
+	}
+	lines := strings.Split(panel, "\n")
+	var topLine string
+	for _, line := range lines {
+		if strings.Contains(line, "╭") && strings.Contains(line, "╮  ╭") {
+			topLine = line
+			break
+		}
+	}
+	if topLine == "" {
+		t.Fatalf("wide threads panel should render side-by-side boxes:\n%s", panel)
+	}
+	if got, want := runewidth.StringWidth(topLine), dashboardOuterWidth(m.width); got != want {
+		t.Fatalf("threads panel top border should align to dashboard width %d, got %d:\n%s", want, got, panel)
+	}
+	parts := strings.Split(topLine, "  ")
+	if len(parts) < 2 {
+		t.Fatalf("wide threads panel should keep a two-column gap:\n%s", panel)
+	}
+	detailWidth := runewidth.StringWidth(parts[len(parts)-1])
+	if detailWidth < 43 {
+		t.Fatalf("selected detail should use roughly a quarter of dashboard width, got %d:\n%s", detailWidth, panel)
+	}
+	var bottomLine string
+	for _, line := range lines {
+		if strings.Contains(line, "╰") && strings.Contains(line, "╯  ╰") {
+			bottomLine = line
+		}
+	}
+	if bottomLine == "" {
+		t.Fatalf("threads and selected detail boxes should align their bottom borders:\n%s", panel)
+	}
+	if got, want := runewidth.StringWidth(bottomLine), dashboardOuterWidth(m.width); got != want {
+		t.Fatalf("threads panel bottom border should align to dashboard width %d, got %d:\n%s", want, got, panel)
 	}
 }
 
@@ -375,6 +564,22 @@ func TestThreadsRenderBeforeBorderedModelUsage(t *testing.T) {
 	}
 	if !strings.Contains(view, "╭") || !strings.Contains(view, "Model Usage") {
 		t.Fatalf("model usage should render inside a bordered section: %s", view)
+	}
+}
+
+func TestSectionTitlesDoNotRepeatSortBadge(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	if strings.Contains(view, "Threads [Tokens]") || strings.Contains(view, "Model Usage [Tokens]") {
+		t.Fatalf("section titles should not repeat the global sort badge:\n%s", view)
+	}
+	for _, expected := range []string{"Sort:", "[Tokens]", "Models:", "Threads:", "Search:"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("toolbar metadata missing %q:\n%s", expected, view)
+		}
 	}
 }
 
@@ -451,23 +656,30 @@ func TestThreadsBoxRendersSelectionAndScrollBar(t *testing.T) {
 	}
 }
 
-func TestThreadViewportHeightCapsAtSixRows(t *testing.T) {
+func TestThreadViewportHeightShowsSevenRows(t *testing.T) {
 	m := NewModel(samplePayload())
 	m.width = 160
-	if got := m.threadViewportHeight(); got != 6 {
-		t.Fatalf("large screens should cap threads viewport at 6 rows, got %d", got)
+	if got := m.threadViewportHeight(); got != 7 {
+		t.Fatalf("large screens should show 7 thread rows, got %d", got)
 	}
 	m.width = 80
-	if got := m.threadViewportHeight(); got != 6 {
-		t.Fatalf("narrow screens should keep compact threads viewport at 6 rows, got %d", got)
+	if got := m.threadViewportHeight(); got != 7 {
+		t.Fatalf("narrow screens should keep 7 thread rows, got %d", got)
 	}
 }
 
 func TestTUILayoutUsesCompactToolbarAndCards(t *testing.T) {
 	m := NewModel(samplePayload())
 	toolbar := stripANSI(m.toolbar(copyFor(LanguageEnglish)))
-	if got := len(strings.Split(toolbar, "\n")); got > 3 {
+	if got := len(strings.Split(toolbar, "\n")); got != 5 {
 		t.Fatalf("toolbar should stay compact, got %d lines:\n%s", got, toolbar)
+	}
+	if !strings.Contains(toolbar, "──") {
+		t.Fatalf("toolbar should separate tabs from metadata:\n%s", toolbar)
+	}
+	lines := strings.Split(toolbar, "\n")
+	if strings.Contains(lines[1], "2026-05-08") || !strings.Contains(lines[3], "2026-05-08") {
+		t.Fatalf("toolbar should place the date window on the metadata row:\n%s", toolbar)
 	}
 	card := stripANSI(cardWithWidth("Requests", "4,906", "↯", blue, 28))
 	if got := len(strings.Split(card, "\n")); got > 5 {
@@ -475,11 +687,32 @@ func TestTUILayoutUsesCompactToolbarAndCards(t *testing.T) {
 	}
 }
 
-func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
-	header := stripANSI(threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens"))
-	row := stripANSI(threadRow("019e167b-b…", "修正日期范围与threads列表", "codex", "gpt-5.5", "bcb", "297", "$34.9399", "toska/bcb", "45.5m"))
+func TestTUISectionRightEdgesAlign(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}}}
+	view := stripANSI(RenderWidth(payload, 180))
+	var rightEdges []int
+	for _, line := range strings.Split(view, "\n") {
+		trimmed := strings.TrimRight(line, " ")
+		if (strings.HasSuffix(trimmed, "╮") || strings.HasSuffix(trimmed, "╯")) && !strings.Contains(trimmed, "╮  ╭") && !strings.Contains(trimmed, "╯  ╰") {
+			rightEdges = append(rightEdges, runewidth.StringWidth(trimmed))
+		}
+	}
+	if len(rightEdges) < 4 {
+		t.Fatalf("expected section borders in rendered view, got %v\n%s", rightEdges, view)
+	}
+	for _, edge := range rightEdges {
+		if edge != rightEdges[0] && edge != rightEdges[2] {
+			t.Fatalf("section right edges should align, got %v\n%s", rightEdges, view)
+		}
+	}
+}
 
-	for _, label := range []string{"Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens"} {
+func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
+	header := stripANSI(threadRow("ID", "Name", "Tool", "Req", "Cost", "Tokens"))
+	row := stripANSI(threadRow("019e167b-b…", "Short title", "codex", "297", "$34.9399", "45.5m"))
+
+	for _, label := range []string{"Name", "Tool", "Req", "Cost", "Tokens"} {
 		want := runewidth.StringWidth(header[:strings.Index(header, label)])
 		got := runewidth.StringWidth(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
 		if got != want && label != "Cost" && label != "Tokens" {
@@ -496,19 +729,13 @@ func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
 func columnValueForLabel(label, row string) string {
 	switch label {
 	case "Name":
-		return "修正日期范围与threads列表"
+		return "Short title"
 	case "Tool":
 		return "codex"
-	case "Model":
-		return "gpt-5.5"
-	case "Provider":
-		return "bcb"
 	case "Req":
 		return "297"
 	case "Cost":
 		return "$34.9399"
-	case "Split":
-		return "toska/bcb"
 	case "Tokens":
 		return "45.5m"
 	default:
@@ -541,48 +768,70 @@ func TestThreadsBoxHasNoTrailingColumnAndUsesEdgeAlignment(t *testing.T) {
 	if strings.Contains(box, "Tokens │") || strings.Contains(box, "28.3m │") {
 		t.Fatalf("threads rows should not render a trailing vertical column: %s", box)
 	}
-	if !strings.Contains(box, "ID             Name") {
-		t.Fatalf("ID and Name columns should have a larger left-aligned gap: %s", box)
+	if !strings.Contains(box, "ID              Name") {
+		t.Fatalf("ID and Name columns should keep readable spacing: %s", box)
 	}
 	if strings.Contains(box, "Events") {
 		t.Fatalf("threads compact box should not render a separate Events column: %s", box)
 	}
 }
 
-func TestThreadRowAlignmentPolicy(t *testing.T) {
-	header := threadRow("ID", "Name", "Tool", "Model", "Provider", "Req", "Cost", "Split", "Tokens")
-	row := threadRow("019e", "Fix title", "codex", "gpt-5.5", "bcb", "261", "$31.3324", "toska/bcb", "41.4m")
+func TestThreadsRowsDoNotWrapWhenDetailIsVisible(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "019e313e-d7f5-7331-ad54-f296dc232d9f", Name: "检查 PR #18，没什么问题就合并，之后继续发布", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Requests: 1082, Usage: usage.TokenUsage{Input: 153_300_000}, CostUSD: 306.0250},
+		{ID: "019e2629-2c11-7331-ad54-f296dc232d9f", Name: "Model Usage 不同 provider 统计量是很长的标题", Tool: "codex", Model: "gpt-5.5", Provider: "toska", Requests: 888, Usage: usage.TokenUsage{Input: 129_100_000}, CostUSD: 615.3263},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	panel := stripANSI(m.threadsPanel(m.filteredThreads(), copyFor(LanguageEnglish)))
+	for _, line := range strings.Split(panel, "\n") {
+		if (strings.Contains(line, "153.3m") || strings.Contains(line, "129.1m")) && strings.Contains(line, "codex") {
+			if !strings.Contains(line, "019e") {
+				t.Fatalf("thread tokens should stay on the same row as ID:\n%s", panel)
+			}
+		}
+		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
+			t.Fatalf("thread panel line should stay within dashboard width %d, got %d:\n%s", want, got, panel)
+		}
+	}
+}
 
-	for _, expected := range []string{
-		"Name                       Tool",
-		"Tool    Model",
-		"Model           Provider",
-		"Provider   Req",
-		"Req             Cost",
-		"Cost  Split",
-	} {
-		if !strings.Contains(header, expected) {
-			t.Fatalf("header should keep left-aligned gap %q:\n%s", expected, header)
+func TestThreadRowAlignmentPolicy(t *testing.T) {
+	header := threadRow("ID", "Name", "Tool", "Req", "Cost", "Tokens")
+	row := threadRow("019e", "Fix title", "codex", "261", "$31.3324", "41.4m")
+
+	labels := []string{"ID", "Name", "Tool", "Req", "Cost", "Tokens"}
+	values := []string{"019e", "Fix title", "codex", "261", "$31.3324", "41.4m"}
+	for i, label := range labels {
+		headerStart := strings.Index(header, label)
+		rowStart := strings.Index(row, values[i])
+		if headerStart < 0 || rowStart < 0 {
+			t.Fatalf("missing %q/%q in row output:\n%s\n%s", label, values[i], header, row)
+		}
+		headerColumn := runewidth.StringWidth(header[:headerStart])
+		rowColumn := runewidth.StringWidth(row[:rowStart])
+		switch label {
+		case "Req", "Cost", "Tokens":
+			headerEnd := headerColumn + runewidth.StringWidth(label)
+			rowEnd := rowColumn + runewidth.StringWidth(values[i])
+			if headerEnd != rowEnd {
+				t.Fatalf("numeric column %q should right-align at width %d, got %d:\n%s\n%s", label, headerEnd, rowEnd, header, row)
+			}
+		default:
+			if headerColumn != rowColumn {
+				t.Fatalf("column %q should align at width %d, got %d:\n%s\n%s", label, headerColumn, rowColumn, header, row)
+			}
+		}
+		if headerColumn < 0 || rowColumn < 0 {
+			t.Fatalf("column %q should align at width %d, got %d:\n%s\n%s", label, headerColumn, rowColumn, header, row)
 		}
 	}
-	for _, expected := range []string{
-		"Fix title                  codex",
-		"codex   gpt-5.5",
-		"gpt-5.5         bcb",
-		"bcb        261",
-		"$31.3324  toska/bcb",
-	} {
-		if !strings.Contains(row, expected) {
-			t.Fatalf("row should keep left-aligned gap %q:\n%s", expected, row)
-		}
+	if strings.Contains(header, "Split") || strings.Contains(header, "Model") || strings.Contains(header, "Provider") || strings.Contains(row, "toska/bcb") {
+		t.Fatalf("thread row should omit split/model/provider columns:\n%s\n%s", header, row)
 	}
-	for _, expected := range []string{
-		"261         $31.3324",
-		"toska/bcb      41.4m",
-	} {
-		if !strings.Contains(row, expected) {
-			t.Fatalf("req/cost/split/tokens should preserve the numeric alignment %q:\n%s", expected, row)
-		}
+	if strings.Contains(row, "Fix title                          codex") {
+		t.Fatalf("thread row should not keep the old wide Name column:\n%s", row)
 	}
 }
 
@@ -591,7 +840,7 @@ func TestThreadsBoxShowsProviderListAndCostBreakdown(t *testing.T) {
 	payload.Threads = []query.ThreadResult{
 		{
 			ID:       "019e2491-5335-7420-91bc-d555ae79337e",
-			Name:     "Provider switch",
+			Name:     "Cost switch",
 			Tool:     "codex",
 			Model:    "gpt-5.5",
 			Provider: "bcb,toska",
@@ -608,17 +857,82 @@ func TestThreadsBoxShowsProviderListAndCostBreakdown(t *testing.T) {
 	m := NewModel(payload)
 	m.width = 180
 	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
-	for _, expected := range []string{"bcb,toska", "$301.1100", "toska/bcb", "66.6m"} {
+	for _, expected := range []string{"$301.1100", "66.6m"} {
 		if !strings.Contains(box, expected) {
-			t.Fatalf("threads box should show provider list and cost split %q:\n%s", expected, box)
+			t.Fatalf("threads box should show compact cost/tokens %q:\n%s", expected, box)
 		}
+	}
+	if strings.Contains(box, "Split") || strings.Contains(box, "Model") || strings.Contains(box, "Provider") || strings.Contains(box, "toska/bcb") {
+		t.Fatalf("threads list should not render Split/Model/Provider columns:\n%s", box)
+	}
+	if strings.Contains(box, "bcb,toska") {
+		t.Fatalf("threads list should hide provider values while detail shows full values:\n%s", box)
 	}
 	if strings.Contains(box, "$301.1100+") {
 		t.Fatalf("threads box should keep Cost numeric and use Split instead of plus marker:\n%s", box)
 	}
 }
 
-func TestThreadsBoxUsesSplitPlaceholderWhenCostIsNotSplit(t *testing.T) {
+func TestThreadsListOmitsModelProviderAndDetailShowsFullValues(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{
+			ID:       "thread-a",
+			Name:     "Mixed provider task",
+			Tool:     "codex",
+			Model:    "gpt-5.5,gpt-5.4",
+			Provider: "openai,toska",
+			Usage:    usage.TokenUsage{Input: 10},
+		},
+	}
+	m := NewModel(payload)
+	m.width = 180
+	list := stripANSI(m.threadsBoxWithWidth(m.filteredThreads(), copyFor(LanguageEnglish), 132, 0))
+	if strings.Contains(list, "Model") || strings.Contains(list, "Provider") || strings.Contains(list, "gpt-5.5") || strings.Contains(list, "openai,toska") {
+		t.Fatalf("threads list should omit model/provider values:\n%s", list)
+	}
+	detail := stripANSI(m.threadDetailStripWithWidth(m.filteredThreads(), copyFor(LanguageEnglish), 42, 0))
+	for _, expected := range []string{"Model: gpt-5.5,gpt-5.4", "Provider: openai,toska"} {
+		if !strings.Contains(detail, expected) {
+			t.Fatalf("thread detail should show full model/provider %q:\n%s", expected, detail)
+		}
+	}
+	if strings.Contains(detail, "Model: gpt-5...") || strings.Contains(detail, "Provider: open...") {
+		t.Fatalf("thread detail should not truncate full model/provider values:\n%s", detail)
+	}
+}
+
+func TestThreadDetailShowsFullActiveAndSplitAndOmitsSource(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{
+			ID:           "thread-a",
+			Name:         "Mixed provider task",
+			Tool:         "codex",
+			Model:        "gpt-5.4,gpt-5.5",
+			Provider:     "openai,toska",
+			Source:       "/Users/sosbs/coding/aitok",
+			LastActiveAt: time.Date(2026, 5, 17, 22, 12, 34, 0, time.UTC),
+			Usage:        usage.TokenUsage{Input: 10},
+			CostBreakdown: []query.ThreadCost{
+				{Provider: "toska", USD: 1},
+				{Provider: "openai", USD: 2},
+			},
+		},
+	}
+	m := NewModel(payload)
+	detail := stripANSI(m.threadDetailStripWithWidth(m.filteredThreads(), copyFor(LanguageEnglish), 64, 0))
+	for _, expected := range []string{"gpt-5.4,gpt-5.5", "openai,toska", "2026-05-18 06:12", "Cost: $3.0000 (toska $1.0000 / openai $2.0000)"} {
+		if !strings.Contains(detail, expected) {
+			t.Fatalf("thread detail should show full value %q:\n%s", expected, detail)
+		}
+	}
+	if strings.Contains(detail, "Source:") || strings.Contains(detail, "Split:") || strings.Contains(detail, "/Users/sosbs") || strings.Contains(detail, "...") {
+		t.Fatalf("thread detail should omit Source/Split and avoid truncating full detail values:\n%s", detail)
+	}
+}
+
+func TestThreadsBoxOmitsSplitColumnWhenCostIsNotSplit(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
 		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "Single provider", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
@@ -626,10 +940,13 @@ func TestThreadsBoxUsesSplitPlaceholderWhenCostIsNotSplit(t *testing.T) {
 	m := NewModel(payload)
 	m.width = 180
 	box := stripANSI(m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish)))
-	for _, expected := range []string{"Cost", "Split", "$22.0954", "  -"} {
+	for _, expected := range []string{"Cost", "$22.0954"} {
 		if !strings.Contains(box, expected) {
-			t.Fatalf("threads box should show stable split placeholder %q:\n%s", expected, box)
+			t.Fatalf("threads box should keep cost without split placeholder %q:\n%s", expected, box)
 		}
+	}
+	if strings.Contains(box, "Split") {
+		t.Fatalf("threads list should omit Split column:\n%s", box)
 	}
 }
 
@@ -662,7 +979,7 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 	}
 }
 
-func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
+func TestThreadsBoxAlignsWideCharactersAndKeepsRowsSingleLine(t *testing.T) {
 	payload := samplePayload()
 	payload.Threads = []query.ThreadResult{
 		{ID: "019e167b-b7e8-7743-8bb3-fd9951e5ef2f", Name: "修正日期范围与threads列表很长很长", Tool: "codex", Model: "gpt-5.5", Provider: "bcb", Requests: 199, Events: 199, Usage: usage.TokenUsage{Input: 28_345_680}, CostUSD: 22.0954},
@@ -671,6 +988,7 @@ func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
 	m := NewModel(payload)
 	m.width = 180
 	box := m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish))
+	plain := stripANSI(box)
 	lines := strings.Split(box, "\n")
 	var rowWidths []int
 	for _, line := range lines {
@@ -684,8 +1002,11 @@ func TestThreadsBoxAlignsWideCharactersAndTruncatesName(t *testing.T) {
 	if rowWidths[0] != rowWidths[1] {
 		t.Fatalf("thread row widths must align, got %v\n%s", rowWidths, box)
 	}
-	if strings.Contains(box, "很长很长") || !strings.Contains(box, "...") {
-		t.Fatalf("thread name should be truncated in TUI display: %s", box)
+	if !strings.Contains(plain, "修正日期范围与threads列表很长很长") {
+		t.Fatalf("thread name should use the wider Name column when it fits:\n%s", box)
+	}
+	if strings.Contains(plain, "\n很长很长") {
+		t.Fatalf("thread name should not wrap into a continuation line:\n%s", box)
 	}
 }
 
@@ -720,6 +1041,23 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	m = updated.(model)
 	if m.threadCursor != 1 {
 		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
+	}
+}
+
+func TestTabToModelUsageRemovesThreadHighlight(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(keyMsg("tab"))
+	m = updated.(model)
+	if m.focusedPane != "models" {
+		t.Fatalf("tab should move focus to model usage, got %q", m.focusedPane)
+	}
+	modelsFocused := m.threadsBox(m.filteredThreads(), copyFor(LanguageEnglish))
+	if !strings.Contains(stripANSI(modelsFocused), "thread-a") {
+		t.Fatalf("threads pane should keep the row visible without relying on selected styling:\n%s", modelsFocused)
 	}
 }
 
