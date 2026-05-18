@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -188,12 +190,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.threadCursor = len(m.filteredThreads()) - 1
 				m.ensureThreadVisible()
 			}
-		case "c":
+		case "c", "C":
 			if m.canMoveThreads() {
 				m.focusedPane = "threads"
 				id := m.filteredThreads()[m.threadCursor].ID
 				m.copyStatus = "copied " + id
-				return m, copyOSC52(id)
+				return m, copyToClipboard(id)
 			}
 		}
 	}
@@ -712,12 +714,44 @@ func copyFor(language Language) localizedCopy {
 	}
 }
 
-func copyOSC52(value string) tea.Cmd {
+var writeClipboard = writeSystemClipboard
+
+func copyToClipboard(value string) tea.Cmd {
 	return func() tea.Msg {
-		encoded := base64.StdEncoding.EncodeToString([]byte(value))
-		fmt.Printf("\033]52;c;%s\a", encoded)
+		if err := writeClipboard(value); err == nil {
+			return nil
+		}
+		fmt.Print(osc52Sequence(value))
 		return nil
 	}
+}
+
+func writeSystemClipboard(value string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return runClipboardCommand(value, "pbcopy")
+	case "windows":
+		return runClipboardCommand(value, "clip")
+	default:
+		if err := runClipboardCommand(value, "wl-copy"); err == nil {
+			return nil
+		}
+		if err := runClipboardCommand(value, "xclip", "-selection", "clipboard"); err == nil {
+			return nil
+		}
+		return runClipboardCommand(value, "xsel", "--clipboard", "--input")
+	}
+}
+
+func runClipboardCommand(value, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = strings.NewReader(value)
+	return cmd.Run()
+}
+
+func osc52Sequence(value string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(value))
+	return fmt.Sprintf("\033]52;c;%s\a", encoded)
 }
 
 func normalizeLanguage(language Language) Language {

@@ -706,6 +706,11 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	if cmd == nil || !strings.Contains(m.copyStatus, "thread-b") {
 		t.Fatalf("copy should set status and emit command, status=%q cmd=%v", m.copyStatus, cmd)
 	}
+	updated, cmd = m.Update(keyMsg("C"))
+	m = updated.(model)
+	if cmd == nil || !strings.Contains(m.copyStatus, "thread-b") {
+		t.Fatalf("uppercase C should copy the selected thread, status=%q cmd=%v", m.copyStatus, cmd)
+	}
 	updated, _ = m.Update(keyMsg("home"))
 	m = updated.(model)
 	if m.threadCursor != 0 {
@@ -715,6 +720,26 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	m = updated.(model)
 	if m.threadCursor != 1 {
 		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
+	}
+}
+
+func TestCopyCommandUsesSystemClipboard(t *testing.T) {
+	previous := writeClipboard
+	defer func() { writeClipboard = previous }()
+
+	var copied string
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+
+	cmd := copyToClipboard("thread-123")
+	if cmd == nil {
+		t.Fatal("copy command should not be nil")
+	}
+	cmd()
+	if copied != "thread-123" {
+		t.Fatalf("copy command should write selected thread ID, got %q", copied)
 	}
 }
 
