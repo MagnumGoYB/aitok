@@ -120,6 +120,8 @@ const (
 	codexProviderStrengthWeak   = 1
 	codexProviderStrengthStrong = 2
 	codexProviderStrengthAuth   = 1
+	codexProviderInferenceGap   = 2 * time.Hour
+	codexProviderAdjacentGap    = 10 * time.Minute
 )
 
 func newCodexProviderTargets() codexProviderTargets {
@@ -440,6 +442,10 @@ func (t codexProviderTimeline) inferredProviderForTimeExcludingTurn(threadID, ex
 	case prev == nil:
 		return codexProviderInference{Prev: prev, Next: next}
 	case next == nil:
+		return codexProviderInference{Prev: prev, Next: next}
+	case at.Sub(prev.At) > codexProviderInferenceGap && next.At.Sub(at) <= codexProviderInferenceGap:
+		return codexProviderInference{Provider: next.Provider, Prev: prev, Next: next}
+	case at.Sub(prev.At) > codexProviderInferenceGap:
 		return codexProviderInference{Prev: prev, Next: next}
 	case prev.Provider == next.Provider:
 		return codexProviderInference{Provider: prev.Provider, Prev: prev, Next: next}

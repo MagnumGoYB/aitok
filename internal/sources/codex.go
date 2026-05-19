@@ -650,6 +650,9 @@ func (c Codex) allowedInferredProvider(inference codexProviderInference, pending
 		if inference.Prev == nil || inference.Next == nil {
 			return ""
 		}
+		if inference.Next.Provider == provider && !inference.Next.At.IsZero() && !inference.Prev.At.IsZero() && inference.Next.At.Sub(inference.Prev.At) > codexProviderInferenceGap && codexInferenceAnchorHasSameModel(inference.Next, pending.model) {
+			return provider
+		}
 		if inference.Prev.Provider != provider || inference.Next.Provider != provider {
 			return ""
 		}
@@ -664,6 +667,13 @@ func (c Codex) allowedInferredProvider(inference codexProviderInference, pending
 func codexInferenceAnchorMatchesModel(point *codexProviderPoint, model string) bool {
 	if point == nil || point.TurnID != "" {
 		return true
+	}
+	return codexInferenceAnchorHasSameModel(point, model)
+}
+
+func codexInferenceAnchorHasSameModel(point *codexProviderPoint, model string) bool {
+	if point == nil {
+		return false
 	}
 	model = normalizeCodexModel(model)
 	if model == "" || point.Model == "" {
@@ -727,9 +737,53 @@ func (c Codex) resolveBufferedTurnProviders(threadID string, turns []*codexBuffe
 			provider, attribution := c.providerForBufferedTurn(threadID, turns[k])
 			resolved[k] = codexResolvedProvider{Provider: provider, Attribution: attribution}
 		}
+		c.carryAdjacentInferredProviders(turns, resolved, i, j)
 		i = j
 	}
 	return resolved
+}
+
+func (c Codex) carryAdjacentInferredProviders(turns []*codexBufferedTurn, resolved []codexResolvedProvider, start, end int) {
+	for k := end - 2; k >= start; k-- {
+		current := turns[k]
+		next := turns[k+1]
+		if current == nil || next == nil {
+			continue
+		}
+		if resolved[k].Attribution != string(usage.ProviderAttributionSessionFallback) || resolved[k].Provider == "" {
+			continue
+		}
+		if resolved[k+1].Attribution != string(usage.ProviderAttributionInferredTimeline) || resolved[k+1].Provider == "" {
+			continue
+		}
+		if resolved[k].Provider == resolved[k+1].Provider {
+			continue
+		}
+		if !codexBufferedTurnsAreAdjacent(current, next) || !codexBufferedTurnsHaveSameModel(current, next) {
+			continue
+		}
+		resolved[k] = codexResolvedProvider{
+			Provider:    resolved[k+1].Provider,
+			Attribution: string(usage.ProviderAttributionInferredTimeline),
+		}
+	}
+}
+
+func codexBufferedTurnsAreAdjacent(current, next *codexBufferedTurn) bool {
+	if current == nil || next == nil || current.endedAt.IsZero() || next.startedAt.IsZero() {
+		return false
+	}
+	gap := next.startedAt.Sub(current.endedAt)
+	return gap >= 0 && gap <= codexProviderAdjacentGap
+}
+
+func codexBufferedTurnsHaveSameModel(current, next *codexBufferedTurn) bool {
+	if current == nil || next == nil {
+		return false
+	}
+	currentModel := normalizeCodexModel(current.model)
+	nextModel := normalizeCodexModel(next.model)
+	return currentModel != "" && currentModel == nextModel
 }
 
 func (c Codex) labeledProviderForBufferedTurn(threadID string, pending *codexBufferedTurn) (string, string, bool) {

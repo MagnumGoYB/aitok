@@ -1559,6 +1559,137 @@ base_url = "https://www.aiixiao.shop"
 	}
 }
 
+func TestCodexDoesNotCarryProviderTimelineAcrossIdleDay(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+
+[model_providers.bcb]
+name = "bcb"
+base_url = "https://www.aiixiao.shop"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "14")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-14T03:00:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000021a","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-14T03:01:00Z","payload":{"id":"turn-old","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-14T03:01:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T03:23:00Z","payload":{"id":"turn-resumed","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T03:23:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"total_tokens":200}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T05:00:00Z","payload":{"id":"turn-bcb","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T05:00:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":300,"total_tokens":300}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-14T11-00-00-019e0000-0000-7000-8000-00000000021a.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-14T03:01:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000021a}:turn{turn.id=turn-old model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://api.toskaxy.xyz/v1/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-19T05:00:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000021a}:turn{turn.id=turn-bcb model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://www.aiixiao.shop/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home, WindowStart: time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3", len(events))
+	}
+	if events[1].Provider != "bcb" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("resumed bare turn should use nearby new provider evidence instead of stale session provider: %+v", events[1])
+	}
+	if events[2].Provider != "bcb" || events[2].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("later request evidence should remain exact bcb: %+v", events[2])
+	}
+}
+
+func TestCodexDoesNotInferAcrossIdleDayFromDifferentModelEvidence(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+
+[model_providers.bcb]
+name = "bcb"
+base_url = "https://www.aiixiao.shop"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "14")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-14T03:00:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000022b","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-14T03:01:00Z","payload":{"id":"turn-old","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-14T03:01:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T03:23:00Z","payload":{"id":"turn-resumed","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T03:23:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"total_tokens":200}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T05:00:00Z","payload":{"id":"turn-bcb","model":"gpt-5.4","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T05:00:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":300,"total_tokens":300}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-14T11-00-00-019e0000-0000-7000-8000-00000000022b.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-14T03:01:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000022b}:turn{turn.id=turn-old model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://api.toskaxy.xyz/v1/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-19T05:00:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000022b}:turn{turn.id=turn-bcb model=gpt-5.4}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://www.aiixiao.shop/responses: {"model":"gpt-5.4"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home, WindowStart: time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3", len(events))
+	}
+	if events[1].Provider == "bcb" || events[1].ProviderAttribution == string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("resumed gpt-5.5 turn should not infer from nearby gpt-5.4 request evidence: %+v", events[1])
+	}
+	if events[2].Provider != "bcb" || events[2].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("later different-model request evidence should remain exact bcb: %+v", events[2])
+	}
+}
+
+func TestCodexDoesNotCarrySessionProviderAcrossIdleDayForFirstResumedTurn(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+
+[model_providers.bcb]
+name = "bcb"
+base_url = "https://www.aiixiao.shop"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "14")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-14T03:00:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000023c","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-14T03:01:00Z","payload":{"id":"turn-old","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-14T03:01:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T03:23:19Z","payload":{"id":"turn-resumed","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T03:23:27Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"total_tokens":200}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T03:24:20Z","payload":{"id":"turn-mid","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T03:24:30Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":250,"total_tokens":250}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-19T05:24:00Z","payload":{"id":"turn-bcb","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-19T05:24:10Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":300,"total_tokens":300}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-14T11-00-00-019e0000-0000-7000-8000-00000000023c.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-14T03:01:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000023c}:turn{turn.id=turn-old model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://api.toskaxy.xyz/v1/responses: {"model":"gpt-5.5"}`+"\n"+
+			`2026-05-19T05:24:05.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000023c}:turn{turn.id=turn-bcb model=gpt-5.5}:endpoint_session.stream_with{http.method=POST api.path="responses"}: POST to https://www.aiixiao.shop/responses: {"model":"gpt-5.5"}`+"\n")
+
+	events, err := NewCodex(Options{Home: home, WindowStart: time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 4 {
+		t.Fatalf("len(events) = %d, want 4", len(events))
+	}
+	if events[1].Provider != "bcb" || events[1].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("first resumed turn should follow the adjacent same-model inferred segment instead of stale session provider: %+v", events[1])
+	}
+	if events[2].Provider != "bcb" || events[2].ProviderAttribution != string(usage.ProviderAttributionInferredTimeline) {
+		t.Fatalf("adjacent resumed segment should use nearby same-model provider evidence: %+v", events[2])
+	}
+}
+
 func TestCodexIgnoresUnknownOrAmbiguousRequestHosts(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
