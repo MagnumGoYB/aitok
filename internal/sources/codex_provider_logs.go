@@ -171,10 +171,7 @@ func readCodexProviderTimeline(ctx context.Context, home string, windowStart, wi
 	}
 	timeline := codexProviderTimeline{}
 	timeline.merge(readCodexTextLogProviderTimeline(ctx, textLogPath, matcher, targets))
-	sqliteTargets := targetsWithoutTimeline(targets, timeline)
-	if !sqliteTargets.empty() {
-		timeline.merge(readCodexSQLiteProviderTimeline(ctx, sqlitePath, windowStart, windowEnd, matcher, sqliteTargets))
-	}
+	timeline.merge(readCodexSQLiteProviderTimeline(ctx, sqlitePath, windowStart, windowEnd, matcher, targets))
 	for threadID := range timeline {
 		sort.SliceStable(timeline[threadID], func(i, j int) bool {
 			return timeline[threadID][i].At.Before(timeline[threadID][j].At)
@@ -763,22 +760,6 @@ func codexSQLiteTimeWindowClause(windowStart, windowEnd time.Time) string {
 	}
 	return `  and ts >= ` + strconv.FormatInt(windowStart.Unix(), 10) + `
   and ts < ` + strconv.FormatInt(windowEnd.Unix(), 10)
-}
-
-func targetsWithoutTimeline(targets codexProviderTargets, timeline codexProviderTimeline) codexProviderTargets {
-	if targets.empty() {
-		return targets
-	}
-	if len(timeline) == 0 {
-		return targets
-	}
-	out := newCodexProviderTargets()
-	for threadID := range targets.threads {
-		if len(timeline[threadID]) == 0 {
-			out.addThread(threadID)
-		}
-	}
-	return out
 }
 
 func codexSQLiteProviderTrustedTargetsClause() string {

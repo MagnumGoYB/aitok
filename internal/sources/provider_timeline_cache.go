@@ -77,7 +77,7 @@ func providerTimelineCacheSignature(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}
-	sorted := append([]string(nil), paths...)
+	sorted := providerTimelineCacheSignaturePaths(paths)
 	sort.Strings(sorted)
 	h := sha256.New()
 	for _, path := range sorted {
@@ -95,4 +95,29 @@ func providerTimelineCacheSignature(paths []string) string {
 		_, _ = h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func providerTimelineCacheSignaturePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		for _, candidate := range providerTimelineCacheInputPaths(path) {
+			if candidate == "" {
+				continue
+			}
+			if _, ok := seen[candidate]; ok {
+				continue
+			}
+			seen[candidate] = struct{}{}
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func providerTimelineCacheInputPaths(path string) []string {
+	if filepath.Base(path) != "logs_2.sqlite" {
+		return []string{path}
+	}
+	return []string{path, path + "-wal", path + "-shm"}
 }

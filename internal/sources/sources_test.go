@@ -310,6 +310,71 @@ base_url = "https://team-b.example"
 	}
 }
 
+func TestCodexMergesSQLiteProviderEvidenceWhenTextLogAlreadyHasTimeline(t *testing.T) {
+	home := t.TempDir()
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `
+[model_providers]
+[model_providers.toska]
+name = "toska"
+base_url = "https://api.toskaxy.xyz/v1"
+
+[model_providers.bcb]
+name = "bcb"
+base_url = "https://www.aiixiao.shop"
+`)
+	sessionDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
+	mustMkdir(t, sessionDir)
+	body := `{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"019e0000-0000-7000-8000-00000000019b","model_provider":"toska","cwd":"/repo"}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T01:00:01Z","payload":{"id":"turn-a","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T01:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"total_tokens":100}}}}` + "\n" +
+		`{"type":"turn_context","timestamp":"2026-05-08T02:00:01Z","payload":{"id":"turn-b","model":"gpt-5.5","cwd":"/repo"}}` + "\n" +
+		`{"type":"event_msg","timestamp":"2026-05-08T02:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"total_tokens":200}}}}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "rollout-2026-05-08T09-00-00-019e0000-0000-7000-8000-00000000019b.jsonl"), body)
+	logDir := filepath.Join(home, ".codex", "log")
+	mustMkdir(t, logDir)
+	mustWrite(t, filepath.Join(logDir, "codex-tui.log"),
+		`2026-05-08T01:00:02.000000Z  INFO session_loop{thread_id=019e0000-0000-7000-8000-00000000019b}:turn{turn.id=turn-a model=gpt-5.5}:run_turn:run_sampling_request: Request completed method=POST url=https://api.toskaxy.xyz/v1/responses status=200 OK`+"\n")
+	sqlitePath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	mustWriteSQLite(t, sqlitePath, []string{
+		`create table logs (
+			id integer primary key autoincrement,
+			ts integer not null,
+			ts_nanos integer not null,
+			level text not null,
+			target text not null,
+			feedback_log_body text,
+			module_path text,
+			file text,
+			line integer,
+			thread_id text,
+			process_uuid text,
+			estimated_bytes integer not null default 0
+		);`,
+		`insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) values (
+			1746669602,
+			0,
+			'INFO',
+			'codex_client::transport',
+			'session_loop:turn{otel.name="session_task.turn" thread.id=019e0000-0000-7000-8000-00000000019b turn.id=turn-b model=gpt-5.5}:run_turn:run_sampling_request: Request completed method=POST url=https://www.aiixiao.shop/responses status=200 OK',
+			'019e0000-0000-7000-8000-00000000019b'
+		);`,
+	})
+
+	events, err := NewCodex(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Provider != "toska" || events[0].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("text log provider should still resolve first turn: %+v", events[0])
+	}
+	if events[1].Provider != "bcb" || events[1].ProviderAttribution != string(usage.ProviderAttributionExactRequest) {
+		t.Fatalf("sqlite provider should be merged even after text timeline exists: %+v", events[1])
+	}
+}
+
 func TestCodexPrefersConfiguredProviderHostOverChatgptAuthMode(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), `

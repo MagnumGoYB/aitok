@@ -57,3 +57,19 @@ func TestProviderTimelineCacheRoundTripAndSignatureInvalidation(t *testing.T) {
 		t.Fatal("expected cache miss for changed window")
 	}
 }
+
+func TestProviderTimelineCacheSignatureIncludesSQLiteWAL(t *testing.T) {
+	root := t.TempDir()
+	sqlitePath := filepath.Join(root, "logs_2.sqlite")
+	walPath := sqlitePath + "-wal"
+	mustWrite(t, sqlitePath, "main")
+	mustWrite(t, walPath, "wal-a")
+
+	sig1 := providerTimelineCacheSignature([]string{sqlitePath})
+	mustWrite(t, walPath, "wal-b")
+	sig2 := providerTimelineCacheSignature([]string{sqlitePath})
+
+	if sig1 == sig2 {
+		t.Fatal("expected signature to change when sqlite WAL changes")
+	}
+}
