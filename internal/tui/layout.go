@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type tableAlign int
@@ -121,14 +121,14 @@ func scrollMarker(visibleIndex, offset, visibleHeight, total int) string {
 }
 
 func padRight(value string, width int) string {
-	if padding := width - runewidth.StringWidth(value); padding > 0 {
+	if padding := width - lipgloss.Width(value); padding > 0 {
 		return value + strings.Repeat(" ", padding)
 	}
 	return value
 }
 
 func padLeft(value string, width int) string {
-	if padding := width - runewidth.StringWidth(value); padding > 0 {
+	if padding := width - lipgloss.Width(value); padding > 0 {
 		return strings.Repeat(" ", padding) + value
 	}
 	return value

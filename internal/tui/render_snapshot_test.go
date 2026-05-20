@@ -9,7 +9,7 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/MagnumGoYB/aitok/internal/usage"
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestDashboardRenderHardeningAcrossFixedWidths(t *testing.T) {
@@ -58,7 +58,7 @@ func assertDashboardSectionWidths(t *testing.T, view string, terminalWidth int) 
 	t.Helper()
 	maxWidth := dashboardOuterWidth(terminalWidth)
 	for _, line := range strings.Split(view, "\n") {
-		if got := runewidth.StringWidth(strings.TrimRight(line, " ")); got > maxWidth {
+		if got := lipgloss.Width(strings.TrimRight(line, " ")); got > maxWidth {
 			t.Fatalf("rendered line should stay within dashboard width %d, got %d:\n%s", maxWidth, got, view)
 		}
 	}
@@ -75,12 +75,12 @@ func assertWideThreadsPanelContract(t *testing.T, view string, terminalWidth int
 		switch {
 		case strings.Contains(trimmed, "╭") && strings.Contains(trimmed, "╮  ╭"):
 			foundTop = true
-			if got := runewidth.StringWidth(trimmed); got != wantWidth {
+			if got := lipgloss.Width(trimmed); got != wantWidth {
 				t.Fatalf("threads/detail top border should align to dashboard width %d, got %d:\n%s", wantWidth, got, view)
 			}
 		case strings.Contains(trimmed, "╰") && strings.Contains(trimmed, "╯  ╰"):
 			foundBottom = true
-			if got := runewidth.StringWidth(trimmed); got != wantWidth {
+			if got := lipgloss.Width(trimmed); got != wantWidth {
 				t.Fatalf("threads/detail bottom border should align to dashboard width %d, got %d:\n%s", wantWidth, got, view)
 			}
 		case strings.Contains(trimmed, "019e") && (strings.Contains(trimmed, "$306.0250") || strings.Contains(trimmed, "$615.3263")):

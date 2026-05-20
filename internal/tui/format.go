@@ -8,7 +8,7 @@ import (
 
 	"github.com/MagnumGoYB/aitok/internal/query"
 	"github.com/MagnumGoYB/aitok/internal/report"
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type threadSelectionDetail struct {
@@ -133,17 +133,17 @@ func tableText(value string, width int) string {
 }
 
 func displayTextWithSuffix(value string, width int, suffix string) string {
-	if width <= 0 || runewidth.StringWidth(value) <= width {
+	if width <= 0 || lipgloss.Width(value) <= width {
 		return value
 	}
-	limit := width - runewidth.StringWidth(suffix)
+	limit := width - lipgloss.Width(suffix)
 	if limit <= 0 {
 		return suffix
 	}
 	var b strings.Builder
 	used := 0
 	for _, r := range value {
-		charWidth := runewidth.RuneWidth(r)
+		charWidth := lipgloss.Width(string(r))
 		if used+charWidth > limit {
 			break
 		}

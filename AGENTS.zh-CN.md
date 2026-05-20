@@ -111,6 +111,7 @@
 - Source adapter：`make test`，并覆盖正常、空目录、损坏 JSONL、缺字段、重复事件。
 - Query/report：`make test`，并覆盖时间窗口、过滤、分组、JSON/Markdown 稳定输出。
 - CLI/TUI：`make test`、`make build`，必要时跑 `make run ARGS="doctor"` 或 `make run ARGS="summary --period today"` smoke。
+- TUI 布局或宽度变更：必须验证含 CJK 内容（中日韩字符及标点）的列对齐。统一使用 `lipgloss.Width` 计算显示宽度，不得混用 `runewidth.StringWidth` 与 lipgloss 渲染。渲染包含 CJK 文本和 Ambiguous 宽度 Unicode（智能引号、破折号等）的示例行，确认所有行产生相同的 `lipgloss.Width`。
 - 依赖、CI、发布配置：`make validate`，并说明体积/离线/供应链影响。
 
 ## 7) CI 和提交流程

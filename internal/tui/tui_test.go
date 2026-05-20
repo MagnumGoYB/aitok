@@ -11,7 +11,6 @@ import (
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 )
 
 func TestRenderSmoke(t *testing.T) {
@@ -123,7 +122,7 @@ func TestHeaderNoticeDoesNotBreakViewportLineWidths(t *testing.T) {
 		t.Fatalf("header notice should preserve viewport line count, got %d want %d:\n%s", got, want, view)
 	}
 	for _, line := range strings.Split(view, "\n") {
-		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), 160; got > want {
+		if got, want := lipgloss.Width(strings.TrimRight(line, " ")), 160; got > want {
 			t.Fatalf("header notice should not corrupt viewport line width, got %d > %d:\n%s", got, want, view)
 		}
 	}
@@ -467,8 +466,8 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 			inputValue = "6.1m"
 			inputStart = strings.Index(line, inputValue)
 		}
-		costEnds = append(costEnds, runewidth.StringWidth(line[:costStart])+runewidth.StringWidth(costValue))
-		inputEnds = append(inputEnds, runewidth.StringWidth(line[:inputStart])+runewidth.StringWidth(inputValue))
+		costEnds = append(costEnds, lipgloss.Width(line[:costStart])+lipgloss.Width(costValue))
+		inputEnds = append(inputEnds, lipgloss.Width(line[:inputStart])+lipgloss.Width(inputValue))
 	}
 	if len(costEnds) != 2 || costEnds[0] != costEnds[1] {
 		t.Fatalf("Cost column should right-align for mixed-width model labels, ends=%v\n%s", costEnds, view)
@@ -617,7 +616,7 @@ func TestThreadsPanelUsesQuarterWidthDetailAndAlignsBottom(t *testing.T) {
 	m.width = 180
 	panel := stripANSI(m.threadsPanel(m.filteredThreads(), copyFor(LanguageEnglish)))
 	for _, line := range strings.Split(panel, "\n") {
-		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
+		if got, want := lipgloss.Width(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
 			t.Fatalf("threads panel line should not exceed dashboard width %d, got %d:\n%s", want, got, panel)
 		}
 	}
@@ -632,14 +631,14 @@ func TestThreadsPanelUsesQuarterWidthDetailAndAlignsBottom(t *testing.T) {
 	if topLine == "" {
 		t.Fatalf("wide threads panel should render side-by-side boxes:\n%s", panel)
 	}
-	if got, want := runewidth.StringWidth(topLine), dashboardOuterWidth(m.width); got != want {
+	if got, want := lipgloss.Width(topLine), dashboardOuterWidth(m.width); got != want {
 		t.Fatalf("threads panel top border should align to dashboard width %d, got %d:\n%s", want, got, panel)
 	}
 	parts := strings.Split(topLine, "  ")
 	if len(parts) < 2 {
 		t.Fatalf("wide threads panel should keep a two-column gap:\n%s", panel)
 	}
-	detailWidth := runewidth.StringWidth(parts[len(parts)-1])
+	detailWidth := lipgloss.Width(parts[len(parts)-1])
 	if detailWidth < 43 {
 		t.Fatalf("selected detail should use roughly a quarter of dashboard width, got %d:\n%s", detailWidth, panel)
 	}
@@ -652,7 +651,7 @@ func TestThreadsPanelUsesQuarterWidthDetailAndAlignsBottom(t *testing.T) {
 	if bottomLine == "" {
 		t.Fatalf("threads and selected detail boxes should align their bottom borders:\n%s", panel)
 	}
-	if got, want := runewidth.StringWidth(bottomLine), dashboardOuterWidth(m.width); got != want {
+	if got, want := lipgloss.Width(bottomLine), dashboardOuterWidth(m.width); got != want {
 		t.Fatalf("threads panel bottom border should align to dashboard width %d, got %d:\n%s", want, got, panel)
 	}
 }
@@ -804,7 +803,7 @@ func TestTUISectionRightEdgesAlign(t *testing.T) {
 	for _, line := range strings.Split(view, "\n") {
 		trimmed := strings.TrimRight(line, " ")
 		if (strings.HasSuffix(trimmed, "╮") || strings.HasSuffix(trimmed, "╯")) && !strings.Contains(trimmed, "╮  ╭") && !strings.Contains(trimmed, "╯  ╰") {
-			rightEdges = append(rightEdges, runewidth.StringWidth(trimmed))
+			rightEdges = append(rightEdges, lipgloss.Width(trimmed))
 		}
 	}
 	if len(rightEdges) < 4 {
@@ -822,14 +821,14 @@ func TestThreadRowColumnsAlignHeaderAndContent(t *testing.T) {
 	row := stripANSI(threadRow("019e167b-b…", "Short title", "codex", "297", "$34.9399", "45.5m"))
 
 	for _, label := range []string{"Name", "Tool", "Req", "Cost", "Tokens"} {
-		want := runewidth.StringWidth(header[:strings.Index(header, label)])
-		got := runewidth.StringWidth(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
+		want := lipgloss.Width(header[:strings.Index(header, label)])
+		got := lipgloss.Width(row[:strings.Index(row, strings.TrimSpace(columnValueForLabel(label, row)))])
 		if got != want && label != "Cost" && label != "Tokens" {
 			t.Fatalf("%s column should start at width %d, got %d\nheader=%q\nrow=%q", label, want, got, header, row)
 		}
 	}
-	if runewidth.StringWidth(header) != runewidth.StringWidth(row) {
-		t.Fatalf("header and row should have equal display width, got %d/%d\n%s\n%s", runewidth.StringWidth(header), runewidth.StringWidth(row), header, row)
+	if lipgloss.Width(header) != lipgloss.Width(row) {
+		t.Fatalf("header and row should have equal display width, got %d/%d\n%s\n%s", lipgloss.Width(header), lipgloss.Width(row), header, row)
 	}
 	assertRightAlignedColumn(t, header, row, "Cost", "$34.9399")
 	assertRightAlignedColumn(t, header, row, "Tokens", "45.5m")
@@ -859,8 +858,8 @@ func assertRightAlignedColumn(t *testing.T, header, row, headerLabel, rowValue s
 	if headerStart < 0 || rowStart < 0 {
 		t.Fatalf("missing alignment values %q/%q\nheader=%q\nrow=%q", headerLabel, rowValue, header, row)
 	}
-	headerEnd := runewidth.StringWidth(header[:headerStart]) + runewidth.StringWidth(headerLabel)
-	rowEnd := runewidth.StringWidth(row[:rowStart]) + runewidth.StringWidth(rowValue)
+	headerEnd := lipgloss.Width(header[:headerStart]) + lipgloss.Width(headerLabel)
+	rowEnd := lipgloss.Width(row[:rowStart]) + lipgloss.Width(rowValue)
 	if headerEnd != rowEnd {
 		t.Fatalf("%s column should right-align header and content at width %d, got %d\nheader=%q\nrow=%q", headerLabel, headerEnd, rowEnd, header, row)
 	}
@@ -900,7 +899,7 @@ func TestThreadsRowsDoNotWrapWhenDetailIsVisible(t *testing.T) {
 				t.Fatalf("thread tokens should stay on the same row as ID:\n%s", panel)
 			}
 		}
-		if got, want := runewidth.StringWidth(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
+		if got, want := lipgloss.Width(strings.TrimRight(line, " ")), dashboardOuterWidth(m.width); got > want {
 			t.Fatalf("thread panel line should stay within dashboard width %d, got %d:\n%s", want, got, panel)
 		}
 	}
@@ -918,12 +917,12 @@ func TestThreadRowAlignmentPolicy(t *testing.T) {
 		if headerStart < 0 || rowStart < 0 {
 			t.Fatalf("missing %q/%q in row output:\n%s\n%s", label, values[i], header, row)
 		}
-		headerColumn := runewidth.StringWidth(header[:headerStart])
-		rowColumn := runewidth.StringWidth(row[:rowStart])
+		headerColumn := lipgloss.Width(header[:headerStart])
+		rowColumn := lipgloss.Width(row[:rowStart])
 		switch label {
 		case "Req", "Cost", "Tokens":
-			headerEnd := headerColumn + runewidth.StringWidth(label)
-			rowEnd := rowColumn + runewidth.StringWidth(values[i])
+			headerEnd := headerColumn + lipgloss.Width(label)
+			rowEnd := rowColumn + lipgloss.Width(values[i])
 			if headerEnd != rowEnd {
 				t.Fatalf("numeric column %q should right-align at width %d, got %d:\n%s\n%s", label, headerEnd, rowEnd, header, row)
 			}
@@ -1082,7 +1081,7 @@ func TestThreadsBoxAlignsCostColumnAcrossRows(t *testing.T) {
 		if start < 0 {
 			t.Fatalf("cost text not found in threads row:\n%s\nfull box:\n%s", line, box)
 		}
-		ends = append(ends, runewidth.StringWidth(line[:start])+runewidth.StringWidth(cost))
+		ends = append(ends, lipgloss.Width(line[:start])+lipgloss.Width(cost))
 	}
 	if len(ends) != 2 || ends[0] != ends[1] {
 		t.Fatalf("threads Cost column should right-align across rows, ends=%v\n%s", ends, box)
@@ -1103,7 +1102,7 @@ func TestThreadsBoxAlignsWideCharactersAndKeepsRowsSingleLine(t *testing.T) {
 	var rowWidths []int
 	for _, line := range lines {
 		if strings.Contains(line, "019e") {
-			rowWidths = append(rowWidths, runewidth.StringWidth(stripANSI(line)))
+			rowWidths = append(rowWidths, lipgloss.Width(stripANSI(line)))
 		}
 	}
 	if len(rowWidths) != 2 {

@@ -111,6 +111,7 @@ Before every product or harness iteration, do a short internal review:
 - Source adapter: `make test`, including normal, empty directory, malformed JSONL, missing field, and duplicate event cases.
 - Query/report: `make test`, covering period windows, filters, grouping, and stable JSON/Markdown output.
 - CLI/TUI: `make test`, `make build`, and when useful `make run ARGS="doctor"` or `make run ARGS="summary --period today"` smoke.
+- TUI layout or width changes: must verify column alignment with CJK content (Chinese, Japanese, Korean characters and punctuation). Use `lipgloss.Width` consistently for display-width calculations; do not mix `runewidth.StringWidth` with lipgloss rendering. Render sample rows containing CJK text and Ambiguous-width Unicode (smart quotes, em-dash) and confirm all rows produce identical `lipgloss.Width`.
 - Dependencies, CI, or release config: `make validate`, with binary-size/offline/supply-chain impact noted.
 
 ## 7) CI and Submission Protocol
