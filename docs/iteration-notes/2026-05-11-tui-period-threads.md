@@ -29,7 +29,7 @@ The work therefore shipped two related changes:
 - The date label should not use an emoji.
 - `summary --threads` is opt-in so default JSON payloads do not grow or break existing automation.
 - TUI threads use a fixed box with a header, highlighted current row, and a scrollbar. There is no pagination and no expand/collapse state.
-- Copying a selected thread copies only the thread/session ID with OSC52. It does not copy a resume command.
+- Copying a selected thread copies only the thread/session ID with OSC52. Pressing Enter on a supported thread starts the local tool's resume command instead of changing the copy contract.
 
 ## Thread Title Rules
 
@@ -88,7 +88,7 @@ Current TUI layout constraints to preserve:
 - Threads filtering must stay in sync with the active tool tabs and search term. Any cursor movement, Home/End jump, copy action, and scrollbar math should operate on the filtered thread slice instead of the unfiltered payload.
 - Query output supports two descending sort metrics: `tokens` by default and `cost` when `--sort cost` is passed. TUI can switch the active metric with `s` and must show the current metric badge in Threads and Model Usage.
 - Model Usage chart must use the active metric consistently: Tokens mode scales bars and labels by token count; Cost mode scales bars and labels by USD cost.
-- The old `t threads` focus shortcut has been removed from user-facing help; `j/k/home/end/c` operate directly on the filtered Threads list.
+- The old `t threads` focus shortcut has been removed from user-facing help; `j/k/home/end/enter/c` operate directly on the filtered Threads list.
 - `Cost` should be treated like the other numeric columns: right-aligned by its rendered end edge in both Model Usage and Threads, even when values include `$`.
 
 - Toolbar should stay compact with no vertical padding.
@@ -140,6 +140,6 @@ No pending release follow-up remains for the original PR #13 scope or the 2026-0
 
 ## Future Work
 
-- Add an optional shortcut to copy a resume command, such as `codex resume <id>` or the equivalent Claude command.
+- Consider whether Gemini CLI gains a stable local resume command that should be wired into the TUI Enter action.
 - Improve title extraction as Codex, Claude, or Gemini log schemas evolve.
 - Consider root-normalized project grouping so deep `cwd` values produce cleaner thread and project views.

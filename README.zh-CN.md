@@ -84,7 +84,7 @@ aitok --no-version-check budget check --period this-month --limit-usd 20 --forma
 
 对于 JSON 命令，stdout 只承载结构化 payload。warning、版本提示和预算失败摘要写入 stderr，或通过进程退出状态表达。`budget check` 超过限制时返回状态码 `1`，但仍会把完整 JSON payload 写入 stdout，便于 Agent 解析。
 
-TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也可以在 TUI 中按 `l` 切换语言。Model Usage 和 Threads 默认按 token 用量降序排列；传入 `--sort cost` 可按成本排序，也可以在 TUI 中按 `s` 在 Tokens 和 Cost 之间切换。当存在 threads 时，使用 `j/k` 或方向键移动选中行，`home/end` 跳转首尾，`c` 通过 OSC52 复制选中的 thread ID。
+TUI 默认使用英文文案。传入 `--lang zh-CN` 可默认显示中文，也可以在 TUI 中按 `l` 切换语言。Model Usage 和 Threads 默认按 token 用量降序排列；传入 `--sort cost` 可按成本排序，也可以在 TUI 中按 `s` 在 Tokens 和 Cost 之间切换。当存在 threads 时，使用 `j/k` 或方向键移动选中行，`home/end` 跳转首尾，`enter` 恢复支持的本机会话（`codex resume <id>` 或 `claude --resume <id>`），`c` 通过 OSC52 复制选中的 thread ID。
 
 `aitok update` 会立即检查最新 GitHub Release，并在当前安装方式支持时执行对应的本地升级命令。Homebrew 安装会使用 `brew update && brew upgrade --cask aitok`；Go 安装会使用 `go install github.com/MagnumGoYB/aitok/cmd/aitok@latest`。直接下载的 release 二进制会打印下载地址。
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"io"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -42,6 +43,10 @@ type refreshResultMsg struct {
 }
 
 type clearCopyStatusMsg struct{}
+
+type resumeFinishedMsg struct {
+	err error
+}
 
 func NewModel(payload report.Payload) model {
 	return NewModelWithLanguage(payload, LanguageEnglish)
@@ -106,6 +111,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearCopyStatusMsg:
 		m.copyStatus = ""
 		return m, nil
+	case resumeFinishedMsg:
+		return m, tea.Quit
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -218,9 +225,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.copyStatus = copyFor(m.language).copyStatusPrefix + ": " + id
 				return m, tea.Batch(copyToClipboard(id), clearCopyStatusAfter())
 			}
+		case "enter":
+			if m.canMoveThreads() {
+				m.focusedPane = "threads"
+				thread := m.filteredThreads()[m.threadCursor]
+				resume := resumeCommandForThread(thread)
+				copy := copyFor(m.language)
+				if resume == nil {
+					m.copyStatus = copy.resumeUnsupported + ": " + thread.Tool
+					return m, clearCopyStatusAfter()
+				}
+				m.copyStatus = copy.resumeStatusPrefix + ": " + strings.Join(resume.Args, " ")
+				return m, tea.ExecProcess(resume, func(err error) tea.Msg {
+					return resumeFinishedMsg{err: err}
+				})
+			}
 		}
 	}
 	return m, nil
+}
+
+func resumeCommandForThread(thread query.ThreadResult) *exec.Cmd {
+	switch strings.ToLower(thread.Tool) {
+	case string(usage.ToolCodex):
+		return exec.Command("codex", "resume", thread.ID)
+	case string(usage.ToolClaude):
+		return exec.Command("claude", "--resume", thread.ID)
+	default:
+		return nil
+	}
 }
 
 func clearCopyStatusAfter() tea.Cmd {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1150,6 +1151,62 @@ func TestThreadsKeyboardSelectionAndCopyStatus(t *testing.T) {
 	m = updated.(model)
 	if m.threadCursor != 1 {
 		t.Fatalf("end should move to last thread, got %d", m.threadCursor)
+	}
+}
+
+func TestEnterResumesSelectedThread(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "thread-a", Name: "Login bug", Tool: "codex", Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 10}},
+		{ID: "thread-b", Name: "Deploy", Tool: "claude", Model: "claude-sonnet", Provider: "unknown", Usage: usage.TokenUsage{Input: 8}},
+	}
+	m := NewModel(payload)
+	updated, _ := m.Update(keyMsg("j"))
+	m = updated.(model)
+
+	resume := resumeCommandForThread(m.filteredThreads()[m.threadCursor])
+	if resume == nil {
+		t.Fatal("selected thread should produce a resume command")
+	}
+	if filepath.Base(resume.Path) != "claude" || strings.Join(resume.Args[1:], " ") != "--resume thread-b" {
+		t.Fatalf("resume command = %q args=%v, want claude --resume thread-b", resume.Path, resume.Args)
+	}
+
+	updated, cmd := m.Update(keyMsg("enter"))
+	m = updated.(model)
+	if cmd == nil || !strings.Contains(m.copyStatus, "claude --resume thread-b") {
+		t.Fatalf("enter should start selected thread resume command and show status, status=%q cmd=%v", m.copyStatus, cmd)
+	}
+}
+
+func TestResumeFinishedQuitsTUI(t *testing.T) {
+	m := NewModel(samplePayload())
+	updated, cmd := m.Update(resumeFinishedMsg{})
+	if _, ok := updated.(model); !ok {
+		t.Fatalf("resume finished should keep model type, got %T", updated)
+	}
+	if cmd == nil {
+		t.Fatal("resume finished should emit tea.Quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("resume finished command should be tea.Quit")
+	}
+}
+
+func TestEnterDoesNotResumeUnsupportedThreadTool(t *testing.T) {
+	payload := samplePayload()
+	payload.Threads = []query.ThreadResult{
+		{ID: "gemini-thread", Name: "Gemini task", Tool: "gemini", Model: "gemini-2.5-pro", Provider: "unknown", Usage: usage.TokenUsage{Input: 10}},
+	}
+	m := NewModel(payload)
+
+	if resume := resumeCommandForThread(m.filteredThreads()[m.threadCursor]); resume != nil {
+		t.Fatalf("gemini thread should not produce a resume command: %+v", resume)
+	}
+	updated, cmd := m.Update(keyMsg("enter"))
+	m = updated.(model)
+	if !strings.Contains(m.copyStatus, "Cannot resume") {
+		t.Fatalf("unsupported enter should show a status, status=%q cmd=%v", m.copyStatus, cmd)
 	}
 }
 
