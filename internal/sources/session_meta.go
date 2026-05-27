@@ -228,7 +228,7 @@ func cleanTitleCandidate(value string) string {
 		return ""
 	}
 	switch strings.ToLower(value) {
-	case "none", "null", "nil", "unknown":
+	case "auto", "none", "null", "nil", "unknown":
 		return ""
 	default:
 		return value

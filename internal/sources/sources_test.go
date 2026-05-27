@@ -1850,7 +1850,8 @@ func TestCodexThreadTitleFallsBackToAISummaryThenUserThenCWD(t *testing.T) {
 	home := t.TempDir()
 	base := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
 	mustWrite(t, filepath.Join(home, ".codex", "session_index.jsonl"),
-		`{"id":"ai-thread","thread_name":"Codex UI title"}`+"\n")
+		`{"id":"ai-thread","thread_name":"Codex UI title"}`+"\n"+
+			`{"id":"auto-thread","thread_name":"auto"}`+"\n")
 	mustWrite(t, filepath.Join(base, "ai.jsonl"),
 		`{"type":"session_meta","timestamp":"2026-05-08T01:00:00Z","payload":{"id":"ai-thread","cwd":"/repo-a"}}`+"\n"+
 			`{"type":"response_item","timestamp":"2026-05-08T01:00:01Z","payload":{"type":"message","role":"user","content":"First user"}}`+"\n"+
@@ -1862,6 +1863,11 @@ func TestCodexThreadTitleFallsBackToAISummaryThenUserThenCWD(t *testing.T) {
 			`{"type":"response_item","timestamp":"2026-05-08T02:00:01Z","payload":{"type":"message","role":"user","content":"User title"}}`+"\n"+
 			`{"type":"turn_context","timestamp":"2026-05-08T02:00:03Z","payload":{"model":"gpt-5.4"}}`+"\n"+
 			`{"type":"event_msg","timestamp":"2026-05-08T02:00:04Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}`+"\n")
+	mustWrite(t, filepath.Join(base, "auto.jsonl"),
+		`{"type":"session_meta","timestamp":"2026-05-08T02:10:00Z","payload":{"id":"auto-thread","cwd":"/repo-auto"}}`+"\n"+
+			`{"type":"response_item","timestamp":"2026-05-08T02:10:01Z","payload":{"type":"message","role":"user","content":"Real title beats auto placeholder"}}`+"\n"+
+			`{"type":"turn_context","timestamp":"2026-05-08T02:10:03Z","payload":{"model":"gpt-5.4"}}`+"\n"+
+			`{"type":"event_msg","timestamp":"2026-05-08T02:10:04Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}`+"\n")
 	mustWrite(t, filepath.Join(base, "summary.jsonl"),
 		`{"type":"session_meta","timestamp":"2026-05-08T02:30:00Z","payload":{"id":"summary-thread","cwd":"/repo-summary"}}`+"\n"+
 			`{"type":"response_item","timestamp":"2026-05-08T02:30:01Z","payload":{"type":"message","role":"user","content":"First user summary fallback"}}`+"\n"+
@@ -1898,7 +1904,7 @@ func TestCodexThreadTitleFallsBackToAISummaryThenUserThenCWD(t *testing.T) {
 	for _, event := range events {
 		names[event.ThreadID] = event.ThreadName
 	}
-	if names["ai-thread"] != "Codex UI title" || names["summary-thread"] != "Explicit AI title" || names["assistant-thread"] != "First user wins" || names["ide-thread"] != "Real user title" || names["aborted-thread"] != "Actual request title" || names["user-thread"] != "User title" || names["cwd-thread"] != "my-project" {
+	if names["ai-thread"] != "Codex UI title" || names["auto-thread"] != "Real title beats auto placeholder" || names["summary-thread"] != "Explicit AI title" || names["assistant-thread"] != "First user wins" || names["ide-thread"] != "Real user title" || names["aborted-thread"] != "Actual request title" || names["user-thread"] != "User title" || names["cwd-thread"] != "my-project" {
 		t.Fatalf("unexpected thread names: %+v", names)
 	}
 }
