@@ -38,17 +38,18 @@ func resultLabel(result query.Result) string {
 }
 
 func tuiThreadCost(thread query.ThreadResult) string {
-	return report.FormatUSD(thread.CostUSD)
+	return tuiFormatCost(thread.CostUSD, threadCurrency2(thread))
 }
 
 func tuiThreadCostDetail(thread query.ThreadResult) string {
+	cur := threadCurrency2(thread)
 	totalUSD := thread.CostUSD
 	if totalUSD == 0 && len(thread.CostBreakdown) > 0 {
 		for _, item := range thread.CostBreakdown {
 			totalUSD += item.USD
 		}
 	}
-	total := report.FormatUSD(totalUSD)
+	total := tuiFormatCost(totalUSD, cur)
 	if len(thread.CostBreakdown) == 0 {
 		return total
 	}
@@ -57,12 +58,39 @@ func tuiThreadCostDetail(thread query.ThreadResult) string {
 		if item.Provider == "" {
 			continue
 		}
-		parts = append(parts, item.Provider+" "+report.FormatUSD(item.USD))
+		parts = append(parts, item.Provider+" "+tuiFormatCost(item.USD, cur))
 	}
 	if len(parts) == 0 {
 		return total
 	}
 	return total + " (" + strings.Join(parts, " / ") + ")"
+}
+
+func threadCurrency2(thread query.ThreadResult) string {
+	if thread.Price != nil && thread.Price.Currency != "" {
+		return thread.Price.Currency
+	}
+	return "USD"
+}
+
+func resultCurrency2(result query.Result) string {
+	if result.Price != nil && result.Price.Currency != "" {
+		return result.Price.Currency
+	}
+	return "USD"
+}
+
+func tuiFormatCost(value float64, currency string) string {
+	return report.FormatCost(value, currency)
+}
+
+func tuiCurrencyIcon(currency string) string {
+	switch strings.ToUpper(currency) {
+	case "CNY", "RMB":
+		return "¥"
+	default:
+		return "$"
+	}
 }
 
 func primaryThreadValue(value string) string {

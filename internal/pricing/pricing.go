@@ -13,6 +13,7 @@ const userConfigPath = ".aitok/pricing.json"
 type ModelPrice struct {
 	Match                             string  `json:"match"`
 	Provider                          string  `json:"provider,omitempty"`
+	Currency                          string  `json:"currency,omitempty"`
 	InputUSDPerMTok                   float64 `json:"input_usd_per_mtok"`
 	OutputUSDPerMTok                  float64 `json:"output_usd_per_mtok"`
 	CacheHitUSDPerMTok                float64 `json:"cache_hit_usd_per_mtok"`
@@ -86,6 +87,10 @@ func DefaultCatalog() Catalog {
 		{Match: "gemini-2.5-pro", Provider: "google", InputUSDPerMTok: 1.25, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.125, CacheMakeUSDPerMTok: 1.25, PromptThresholdTokens: 200000, AboveThresholdInputUSDPerMTok: 2.5, AboveThresholdOutputUSDPerMTok: 15, AboveThresholdCacheHitUSDPerMTok: 0.25, AboveThresholdCacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.5-flash", Provider: "google", InputUSDPerMTok: 0.3, OutputUSDPerMTok: 2.5, CacheHitUSDPerMTok: 0.03, CacheMakeUSDPerMTok: 0.3, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.0-flash", Provider: "google", InputUSDPerMTok: 0.1, OutputUSDPerMTok: 0.4, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0.1, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-chat", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.1, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-v4-flash", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-v4-pro", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-reasoner", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 4, OutputUSDPerMTok: 16, CacheHitUSDPerMTok: 1, CacheMakeUSDPerMTok: 4, Multiplier: 1, Source: "default"},
 	}}
 	catalog.refreshSortedModels()
 	return catalog
@@ -111,7 +116,7 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 		perMillion(cacheCreation1h, cacheMake1h)
 	return Cost{
 		USD:                   usd * multiplier,
-		Currency:              "USD",
+		Currency:              modelPriceCurrency(price),
 		Multiplier:            multiplier,
 		Source:                price.Source,
 		InputUSDPerMTok:       price.InputUSDPerMTok,
@@ -264,6 +269,13 @@ func cacheMake1hPrice(price ModelPrice) float64 {
 		return price.CacheMake1hUSDPerMTok
 	}
 	return cacheMakePrice(price)
+}
+
+func modelPriceCurrency(price ModelPrice) string {
+	if price.Currency != "" {
+		return price.Currency
+	}
+	return "USD"
 }
 
 func cacheCreationParts(tokens usage.TokenUsage) (fiveMinute int64, oneHour int64, other int64) {

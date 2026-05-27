@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
-	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -85,6 +84,7 @@ func (m model) toolbar(copy localizedCopy) string {
 		m.tab(string(usage.ToolClaude), "Claude Code"),
 		m.tab(string(usage.ToolCodex), "Codex"),
 		m.tab(string(usage.ToolGemini), "Gemini"),
+		m.tab(string(usage.ToolReasonix), "Reasonix"),
 	}
 	top := strings.Join(tabs, "  ")
 	separator := toolbarSeparator(dashboardWidth(m.width) - 6)
@@ -192,7 +192,7 @@ func (m model) cards(summary totals, copy localizedCopy) string {
 	}
 	cards := []string{
 		cardWithWidth(copy.requests, formatInt(int64(summary.requests)), "↯", blue, cardWidths[0]),
-		cardWithWidth(copy.cost, report.FormatUSD(summary.cost), "$", green, cardWidths[1]),
+		cardWithWidth(copy.cost, tuiFormatCost(summary.cost, summary.currency), tuiCurrencyIcon(summary.currency), green, cardWidths[1]),
 		cardWithWidth(copy.totalTokens, formatInt(summary.total), "▱", purple, cardWidths[2]),
 		cardWithWidth(copy.cachedTokens, formatInt(summary.cached), "◉", orange, cardWidths[3]),
 	}

@@ -346,6 +346,41 @@ func TestDefaultCatalogCoversCodexAutoReview(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogCoversDeepSeekModels(t *testing.T) {
+	catalog := DefaultCatalog()
+	for _, model := range []string{"deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"} {
+		cost := catalog.CostFor(usage.UsageEvent{
+			Tool:     usage.ToolReasonix,
+			Model:    model,
+			Provider: "deepseek",
+			Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
+		})
+		if cost.USD == 0 {
+			t.Fatalf("CostFor(%q) returned $0.00", model)
+		}
+		if cost.Currency != "CNY" {
+			t.Fatalf("CostFor(%q).Currency = %q, want CNY", model, cost.Currency)
+		}
+		if cost.Source == "unknown" {
+			t.Fatalf("CostFor(%q).Source = unknown (unpriced)", model)
+		}
+		// deepseek-chat and deepseek-v4-flash share same pricing: ¥1/M in, ¥2/M out
+		if model == "deepseek-chat" || model == "deepseek-v4-flash" {
+			expected := 1.0 + 1.0 // 1M in × ¥1/M + 0.5M out × ¥2/M
+			if math.Abs(cost.USD-expected) > 0.01 {
+				t.Fatalf("CostFor(%q) = %.4f, want ~%.4f", model, cost.USD, expected)
+			}
+		}
+		// deepseek-v4-pro: ¥3/M in, ¥6/M out
+		if model == "deepseek-v4-pro" {
+			expected := 3.0 + 3.0 // 1M in × ¥3/M + 0.5M out × ¥6/M
+			if math.Abs(cost.USD-expected) > 0.01 {
+				t.Fatalf("CostFor(%q) = %.4f, want ~%.4f", model, cost.USD, expected)
+			}
+		}
+	}
+}
+
 func BenchmarkCostFor(b *testing.B) {
 	catalog := DefaultCatalog()
 	events := make([]usage.UsageEvent, 4096)

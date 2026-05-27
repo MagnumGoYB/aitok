@@ -44,7 +44,7 @@ func threadRowWithWidth(id, name, tool, req, cost, tokens string, maxWidth int) 
 	gaps := []int{2, 2, 3, 4, 3}
 	nameWidth := 38
 	if maxWidth > 0 {
-		fixedWidth := 14 + 6 + 5 + 11 + 9
+		fixedWidth := 14 + 10 + 5 + 11 + 9
 		for _, gap := range gaps {
 			fixedWidth += gap
 		}
@@ -56,7 +56,7 @@ func threadRowWithWidth(id, name, tool, req, cost, tokens string, maxWidth int) 
 	columns := []tableColumn{
 		{value: id, width: 14, align: alignLeft},
 		{value: name, width: nameWidth, align: alignLeft},
-		{value: tool, width: 6, align: alignLeft},
+		{value: tool, width: 10, align: alignLeft},
 		{value: req, width: 5, align: alignRight},
 		{value: cost, width: 11, align: alignRight},
 		{value: tokens, width: 9, align: alignRight},

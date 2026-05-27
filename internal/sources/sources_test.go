@@ -1951,6 +1951,235 @@ func TestGeminiReadsConfiguredTelemetryOutfile(t *testing.T) {
 	}
 }
 
+func TestReasonixReadsUsageJSONL(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	line := `{"ts":1746700000000,"session":"my-project","model":"deepseek-v4-flash","promptTokens":1000,"completionTokens":500,"cacheHitTokens":200,"cacheMissTokens":100,"costUsd":0.042,"claudeEquivUsd":0.15}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	e := events[0]
+	if e.Tool != usage.ToolReasonix {
+		t.Fatalf("Tool = %q, want reasonix", e.Tool)
+	}
+	if e.Model != "deepseek-v4-flash" {
+		t.Fatalf("Model = %q, want deepseek-v4-flash", e.Model)
+	}
+	if e.Provider != "deepseek" {
+		t.Fatalf("Provider = %q, want deepseek", e.Provider)
+	}
+	if e.Usage.Input != 1000 || e.Usage.Output != 500 || e.Usage.CachedInput != 200 || e.Usage.CacheCreation != 100 {
+		t.Fatalf("Usage = %+v, want input=1000 output=500 cached=200 cacheCreation=100", e.Usage)
+	}
+	if e.ThreadID != "my-project" || e.ThreadName != "my-project" {
+		t.Fatalf("ThreadID=%q ThreadName=%q, want my-project", e.ThreadID, e.ThreadName)
+	}
+	if !e.Complete {
+		t.Fatal("Complete should be true for all reasonix records")
+	}
+}
+
+func TestReasonixNullSessionMapsToEphemeral(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	line := `{"ts":1746700000000,"session":null,"model":"deepseek-v4-pro","promptTokens":100,"completionTokens":50,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.01,"claudeEquivUsd":0.03}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ThreadName != "(ephemeral)" {
+		t.Fatalf("ThreadName = %q, want (ephemeral)", events[0].ThreadName)
+	}
+}
+
+func TestReasonixFiltersByTimeWindow(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	// ts for 2025-05-08T01:00:00Z = 1746666000000 ms
+	early := `{"ts":1746666000000,"model":"deepseek-chat","promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0,"claudeEquivUsd":0}` + "\n"
+	onTime := `{"ts":1746669600000,"model":"deepseek-chat","promptTokens":200,"completionTokens":20,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0,"claudeEquivUsd":0}` + "\n"
+	late := `{"ts":1746673200000,"model":"deepseek-chat","promptTokens":300,"completionTokens":30,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0,"claudeEquivUsd":0}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), early+onTime+late)
+
+	start := time.Date(2025, 5, 8, 1, 30, 0, 0, time.UTC)
+	end := time.Date(2025, 5, 8, 2, 30, 0, 0, time.UTC)
+	events, err := NewReasonix(Options{Home: home, WindowStart: start, WindowEnd: end}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1 (only onTime)", len(events))
+	}
+	if events[0].Usage.Input != 200 {
+		t.Fatalf("Usage.Input = %d, want 200", events[0].Usage.Input)
+	}
+}
+
+func TestReasonixSkipsEmptyFile(t *testing.T) {
+	home := t.TempDir()
+	// No .reasonix directory at all — should return no events, not error
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("len(events) = %d, want 0", len(events))
+	}
+}
+
+func TestReasonixSkipsRecordWithoutModel(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	// No model field
+	line := `{"ts":1746700000000,"promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0,"claudeEquivUsd":0}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("len(events) = %d, want 0", len(events))
+	}
+}
+
+func TestReasonixHandlesCacheOnlyEvent(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	line := `{"ts":1746700000000,"session":"cache-test","model":"deepseek-v4-flash","promptTokens":0,"completionTokens":0,"cacheHitTokens":500,"cacheMissTokens":0,"costUsd":0.0014,"claudeEquivUsd":0.005}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Usage.CachedInput != 500 || events[0].Usage.Input != 0 {
+		t.Fatalf("cache-only event: %+v", events[0].Usage)
+	}
+}
+
+func TestReasonixSessionMetaEnrichesThreadName(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	mustMkdir(t, filepath.Join(home, ".reasonix", "sessions", "code-aitok"))
+	// .meta.json with workspace and summary
+	meta := `{"workspace":"/Users/dev/projects/aitok","summary":"Fix TUI currency display"}`
+	mustWrite(t, filepath.Join(home, ".reasonix", "sessions", "code-aitok", ".meta.json"), meta)
+	line := `{"ts":1746700000000,"session":"code-aitok","model":"deepseek-v4-flash","promptTokens":1000,"completionTokens":500,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.042,"claudeEquivUsd":0.15}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	// ThreadName should be the summary from .meta.json, not "code-aitok"
+	if events[0].ThreadName != "Fix TUI currency display" {
+		t.Fatalf("ThreadName = %q, want \"Fix TUI currency display\"", events[0].ThreadName)
+	}
+	if events[0].ThreadID != "code-aitok" {
+		t.Fatalf("ThreadID = %q, want code-aitok", events[0].ThreadID)
+	}
+}
+
+func TestReasonixSessionMetaReadsFirstUserMessage(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	sessionDir := filepath.Join(home, ".reasonix", "sessions", "code-aitok")
+	mustMkdir(t, sessionDir)
+	// No .meta.json — fallback to session JSONL first user message
+	chatLine := `{"role":"user","content":[{"text":"Fix the currency display bug"}]}` + "\n"
+	mustWrite(t, filepath.Join(sessionDir, "code-aitok.jsonl"), chatLine)
+	line := `{"ts":1746700000000,"session":"code-aitok","model":"deepseek-v4-flash","promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.001,"claudeEquivUsd":0.003}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ThreadName != "Fix the currency display bug" {
+		t.Fatalf("ThreadName = %q, want \"Fix the currency display bug\"", events[0].ThreadName)
+	}
+}
+
+func TestReasonixSessionMetaFlatFormat(t *testing.T) {
+	home := t.TempDir()
+	sessionsDir := filepath.Join(home, ".reasonix", "sessions")
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	mustMkdir(t, sessionsDir)
+	// Flat format: sessions/<name>.meta.json (not a directory)
+	meta := `{"workspace":"/Users/dev/projects/aitok","summary":"Add reasonix source"}`
+	mustWrite(t, filepath.Join(sessionsDir, "code-aitok.meta.json"), meta)
+	line := `{"ts":1746700000000,"session":"code-aitok","model":"deepseek-v4-flash","promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.001,"claudeEquivUsd":0.003}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ThreadName != "Add reasonix source" {
+		t.Fatalf("ThreadName = %q, want \"Add reasonix source\"", events[0].ThreadName)
+	}
+}
+
+func TestReasonixSessionMetaFromFlatJSONL(t *testing.T) {
+	home := t.TempDir()
+	sessionsDir := filepath.Join(home, ".reasonix", "sessions")
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	mustMkdir(t, sessionsDir)
+	// Flat format: sessions/<name>.jsonl with first user message (no .meta.json)
+	chatLine := `{"role":"user","content":[{"text":"Implement reasonix support"}]}` + "\n"
+	mustWrite(t, filepath.Join(sessionsDir, "code-aitok.jsonl"), chatLine)
+	line := `{"ts":1746700000000,"session":"code-aitok","model":"deepseek-v4-flash","promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.001,"claudeEquivUsd":0.003}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ThreadName != "Implement reasonix support" {
+		t.Fatalf("ThreadName = %q, want \"Implement reasonix support\"", events[0].ThreadName)
+	}
+}
+
+func TestReasonixSessionMetaFallbackToWorkspace(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".reasonix"))
+	mustMkdir(t, filepath.Join(home, ".reasonix", "sessions", "my-project"))
+	// .meta.json with only workspace, no summary
+	meta := `{"workspace":"/Users/dev/my-project"}`
+	mustWrite(t, filepath.Join(home, ".reasonix", "sessions", "my-project", ".meta.json"), meta)
+	line := `{"ts":1746700000000,"session":"my-project","model":"deepseek-v4-flash","promptTokens":100,"completionTokens":10,"cacheHitTokens":0,"cacheMissTokens":0,"costUsd":0.001,"claudeEquivUsd":0.003}` + "\n"
+	mustWrite(t, filepath.Join(home, ".reasonix", "usage.jsonl"), line)
+	events, err := NewReasonix(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].ThreadName != "my-project" {
+		t.Fatalf("ThreadName = %q, want my-project (fallback to workspace base)", events[0].ThreadName)
+	}
+}
+
 func TestGeminiSkipsUsageWithoutTimestamp(t *testing.T) {
 	home := t.TempDir()
 	mustMkdir(t, filepath.Join(home, ".gemini"))

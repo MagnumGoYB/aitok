@@ -10,6 +10,7 @@ import (
 type totals struct {
 	requests int
 	cost     float64
+	currency string
 	total    int64
 	cached   int64
 }
@@ -63,6 +64,9 @@ func summarize(results []query.Result) totals {
 		out.cost += result.CostUSD
 		out.total += result.Usage.NormalizedTotal()
 		out.cached += result.Usage.CachedInput + result.Usage.CacheCreation
+		if result.Price != nil && result.Price.Currency != "" && out.currency == "" {
+			out.currency = result.Price.Currency
+		}
 	}
 	return out
 }

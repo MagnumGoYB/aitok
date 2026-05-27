@@ -180,6 +180,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTool = string(usage.ToolGemini)
 			m.ensureThreadVisible()
 			m.ensureModelUsageVisible()
+		case "5":
+			m.activeTool = string(usage.ToolReasonix)
+			m.ensureThreadVisible()
+			m.ensureModelUsageVisible()
 		case "tab":
 			m.toggleFocusedPane()
 		case "pgup", "ctrl+u":
