@@ -18,17 +18,17 @@ type Reasonix struct {
 }
 
 type reasonixUsageRecord struct {
-	Ts               int64              `json:"ts"`
-	Session          *string            `json:"session"`
-	Model            string             `json:"model"`
-	PromptTokens     int64              `json:"promptTokens"`
-	CompletionTokens int64              `json:"completionTokens"`
-	CacheHitTokens   int64              `json:"cacheHitTokens"`
-	CacheMissTokens  int64              `json:"cacheMissTokens"`
-	CostUsd          float64            `json:"costUsd"`
-	ClaudeEquivUsd   float64            `json:"claudeEquivUsd"`
-	Kind             string             `json:"kind,omitempty"`
-	Subagent         *reasonixSubagent  `json:"subagent,omitempty"`
+	Ts               int64             `json:"ts"`
+	Session          *string           `json:"session"`
+	Model            string            `json:"model"`
+	PromptTokens     int64             `json:"promptTokens"`
+	CompletionTokens int64             `json:"completionTokens"`
+	CacheHitTokens   int64             `json:"cacheHitTokens"`
+	CacheMissTokens  int64             `json:"cacheMissTokens"`
+	CostUsd          float64           `json:"costUsd"`
+	ClaudeEquivUsd   float64           `json:"claudeEquivUsd"`
+	Kind             string            `json:"kind,omitempty"`
+	Subagent         *reasonixSubagent `json:"subagent,omitempty"`
 }
 
 type reasonixSubagent struct {
@@ -270,7 +270,7 @@ func reasonixEventID(ts time.Time, model string, tokens usage.TokenUsage) string
 }
 
 func reasonixUUID(tsMicro int64, model string, tokens usage.TokenUsage) string {
-	h := tsMicro ^ int64(tokens.Input)^int64(tokens.Output)^int64(tokens.CachedInput)^int64(tokens.CacheCreation)
+	h := tsMicro ^ int64(tokens.Input) ^ int64(tokens.Output) ^ int64(tokens.CachedInput) ^ int64(tokens.CacheCreation)
 	return usage.Unknown(model) + "-" + formatInt64(h)
 }
 
@@ -308,5 +308,3 @@ func formatInt64(n int64) string {
 	}
 	return string(buf[i:])
 }
-
-
