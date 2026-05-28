@@ -70,9 +70,9 @@ func WriteThreadsTable(w io.Writer, threads []query.ThreadResult, opts ...Option
 	if len(opts) > 0 {
 		option = opts[0]
 	}
-	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "COST_USD", "PRICE", "TOTAL"}
+	headers := []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "COST", "PRICE", "TOTAL"}
 	if option.Full {
-		headers = []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "EVENTS", "COST_USD", "PRICE", "TOTAL"}
+		headers = []string{"ID", "NAME", "TOOL", "MODEL", "PROVIDER", "REQ", "EVENTS", "COST", "PRICE", "TOTAL"}
 	}
 	rows := make([][]string, 0, len(threads))
 	for _, thread := range threads {
@@ -111,16 +111,16 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 	if len(opts) > 0 {
 		option = opts[0]
 	}
-	headers := []string{"GROUP", "REQ", "COST_USD", "PRICE", "TOTAL"}
+	headers := []string{"GROUP", "REQ", "COST", "PRICE", "TOTAL"}
 	if option.Full {
-		headers = []string{"GROUP", "REQ", "EVENTS", "COST_USD", "PRICE", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+		headers = []string{"GROUP", "REQ", "EVENTS", "COST", "PRICE", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
 	}
 	rows := make([][]string, 0, len(results))
 	for _, result := range results {
 		row := []string{
 			formatKey(result.Key),
 			fmt.Sprint(result.Requests),
-			FormatUSD(result.CostUSD),
+			FormatCost(result.CostUSD, resultCurrency(result)),
 			formatPrice(result.Price, result.PriceSource),
 			fmt.Sprint(result.Usage.NormalizedTotal()),
 		}
@@ -129,7 +129,7 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 				formatKey(result.Key),
 				fmt.Sprint(result.Requests),
 				fmt.Sprint(result.Events),
-				FormatUSD(result.CostUSD),
+				FormatCost(result.CostUSD, resultCurrency(result)),
 				formatPrice(result.Price, result.PriceSource),
 				fmt.Sprint(result.Usage.Input),
 				fmt.Sprint(result.Usage.Output),
@@ -210,7 +210,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		option = opts[0]
 	}
 	if option.Full {
-		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost USD | Price | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost | Price | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
@@ -221,7 +221,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 				escapeMarkdown(formatKey(result.Key)),
 				result.Requests,
 				result.Events,
-				FormatUSD(result.CostUSD),
+				FormatCost(result.CostUSD, resultCurrency(result)),
 				escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 				result.Usage.Input,
 				result.Usage.Output,
@@ -236,7 +236,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "| Group | Req | Cost USD | Price | Total |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| Group | Req | Cost | Price | Total |"); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | --- | ---: |"); err != nil {
@@ -246,7 +246,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %s | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
 			result.Requests,
-			FormatUSD(result.CostUSD),
+			FormatCost(result.CostUSD, resultCurrency(result)),
 			escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 			result.Usage.NormalizedTotal(),
 		); err != nil {
@@ -262,7 +262,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 		option = opts[0]
 	}
 	if option.Full {
-		if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Events | Cost USD | Price | Total |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Events | Cost | Price | Total |"); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |"); err != nil {
@@ -286,7 +286,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Cost USD | Price | Total |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| ID | Name | Tool | Model | Provider | Req | Cost | Price | Total |"); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(w, "| --- | --- | --- | --- | --- | ---: | ---: | --- | ---: |"); err != nil {
@@ -310,30 +310,74 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 	return nil
 }
 
+func currencySymbol(currency string) string {
+	switch strings.ToUpper(currency) {
+	case "CNY", "RMB":
+		return "¥"
+	default:
+		return "$"
+	}
+}
+
 func FormatUSD(value float64) string {
-	return fmt.Sprintf("$%.4f", value)
+	return FormatCost(value, "")
+}
+
+func FormatCost(value float64, currency string) string {
+	return fmt.Sprintf("%s%.4f", currencySymbol(currency), value)
 }
 
 func FormatThreadCost(thread query.ThreadResult) string {
-	total := FormatUSD(thread.CostUSD)
+	currency := threadCurrency(thread)
+	total := FormatCost(thread.CostUSD, currency)
 	if len(thread.CostBreakdown) == 0 {
 		return total
 	}
 	parts := make([]string, 0, len(thread.CostBreakdown))
 	for _, item := range thread.CostBreakdown {
-		parts = append(parts, item.Provider+" "+FormatUSD(item.USD))
+		parts = append(parts, item.Provider+" "+FormatCost(item.USD, currency))
 	}
 	return total + " (" + strings.Join(parts, ", ") + ")"
+}
+
+func threadCurrency(thread query.ThreadResult) string {
+	if thread.Price != nil && thread.Price.Currency != "" {
+		return thread.Price.Currency
+	}
+	return "USD"
+}
+
+func resultCurrency(result query.Result) string {
+	if result.Price != nil && result.Price.Currency != "" {
+		return result.Price.Currency
+	}
+	return "USD"
 }
 
 func formatPrice(price *query.Price, source string) string {
 	return FormatPrice(price, source)
 }
 
+func priceCurrency(price *query.Price) string {
+	if price == nil {
+		return "USD"
+	}
+	if price.Currency != "" {
+		return price.Currency
+	}
+	if price.Source == "mixed" && len(price.Components) > 0 {
+		if cur := price.Components[0].Currency; cur != "" {
+			return cur
+		}
+	}
+	return "USD"
+}
+
 func FormatPrice(price *query.Price, source string) string {
 	if price == nil {
 		return displayPriceSource(source)
 	}
+	cur := priceCurrency(price)
 	if price.Source == "mixed" {
 		return formatMixedPrice(price, source)
 	}
@@ -342,10 +386,10 @@ func FormatPrice(price *query.Price, source string) string {
 	}
 	return fmt.Sprintf("%s in=%s out=%s cache=%s make=%s",
 		displayPriceSource(price.Source),
-		formatRate(price.InputUSDPerMTok),
-		formatRate(price.OutputUSDPerMTok),
-		formatRate(price.CacheHitUSDPerMTok),
-		formatRate(price.CacheMakeUSDPerMTok),
+		formatRateWithCurrency(price.InputUSDPerMTok, cur),
+		formatRateWithCurrency(price.OutputUSDPerMTok, cur),
+		formatRateWithCurrency(price.CacheHitUSDPerMTok, cur),
+		formatRateWithCurrency(price.CacheMakeUSDPerMTok, cur),
 	)
 }
 
@@ -353,6 +397,7 @@ func FormatPriceCompact(price *query.Price, source string) string {
 	if price == nil {
 		return displayPriceSource(source)
 	}
+	cur := priceCurrency(price)
 	if price.Source == "mixed" {
 		return formatMixedPriceCompact(price, source)
 	}
@@ -361,34 +406,36 @@ func FormatPriceCompact(price *query.Price, source string) string {
 	}
 	return fmt.Sprintf("%s in=%s out=%s",
 		displayPriceSource(price.Source),
-		formatRate(price.InputUSDPerMTok),
-		formatRate(price.OutputUSDPerMTok),
+		formatRateWithCurrency(price.InputUSDPerMTok, cur),
+		formatRateWithCurrency(price.OutputUSDPerMTok, cur),
 	)
 }
 
 func formatMixedPrice(price *query.Price, source string) string {
+	cur := priceCurrency(price)
 	if len(price.Components) == 0 {
 		return displayPriceSource(coalescePriceSource(price.Source, source))
 	}
 	return fmt.Sprintf("%s %s in=%s out=%s cache=%s make=%s",
 		displayPriceSource(price.Source),
 		mixedPriceSources(price.Components),
-		formatRateRange(price.Components, func(component query.Price) float64 { return component.InputUSDPerMTok }),
-		formatRateRange(price.Components, func(component query.Price) float64 { return component.OutputUSDPerMTok }),
-		formatRateRange(price.Components, func(component query.Price) float64 { return component.CacheHitUSDPerMTok }),
-		formatRateRange(price.Components, func(component query.Price) float64 { return component.CacheMakeUSDPerMTok }),
+		formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.InputUSDPerMTok }),
+		formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.OutputUSDPerMTok }),
+		formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.CacheHitUSDPerMTok }),
+		formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.CacheMakeUSDPerMTok }),
 	)
 }
 
 func formatMixedPriceCompact(price *query.Price, source string) string {
+	cur := priceCurrency(price)
 	if len(price.Components) == 0 {
 		return displayPriceSource(coalescePriceSource(price.Source, source))
 	}
 	return fmt.Sprintf("%s %s %s/%s",
 		displayPriceSource(price.Source),
 		mixedPriceSources(price.Components),
-		formatRateValueRange(price.Components, func(component query.Price) float64 { return component.InputUSDPerMTok }),
-		strings.TrimPrefix(formatRateRange(price.Components, func(component query.Price) float64 { return component.OutputUSDPerMTok }), "$"),
+		formatRateValueRange(price.Components, cur, func(component query.Price) float64 { return component.InputUSDPerMTok }),
+		strings.TrimPrefix(formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.OutputUSDPerMTok }), currencySymbol(cur)),
 	)
 }
 
@@ -407,13 +454,13 @@ func mixedPriceSources(components []query.Price) string {
 	return strings.Join(sources, "+")
 }
 
-func formatRateRange(components []query.Price, valueFor func(query.Price) float64) string {
-	return formatRateValueRange(components, valueFor) + "/M"
+func formatRateRange(components []query.Price, currency string, valueFor func(query.Price) float64) string {
+	return formatRateValueRange(components, currency, valueFor) + "/M"
 }
 
-func formatRateValueRange(components []query.Price, valueFor func(query.Price) float64) string {
+func formatRateValueRange(components []query.Price, currency string, valueFor func(query.Price) float64) string {
 	if len(components) == 0 {
-		return formatRateValue(0)
+		return formatRateValueWithCurrency(0, currency)
 	}
 	var minValue, maxValue float64
 	hasValue := false
@@ -428,9 +475,10 @@ func formatRateValueRange(components []query.Price, valueFor func(query.Price) f
 		hasValue = true
 	}
 	if minValue == maxValue {
-		return formatRateValue(minValue)
+		return formatRateValueWithCurrency(minValue, currency)
 	}
-	return fmt.Sprintf("%s..%s", formatRateValue(minValue), strings.TrimPrefix(formatRateValue(maxValue), "$"))
+	sym := currencySymbol(currency)
+	return fmt.Sprintf("%s..%s", formatRateValueWithCurrency(minValue, currency), strings.TrimPrefix(formatRateValueWithCurrency(maxValue, currency), sym))
 }
 
 func coalescePriceSource(primary, fallback string) string {
@@ -448,11 +496,19 @@ func displayPriceSource(source string) string {
 }
 
 func formatRate(value float64) string {
-	return formatRateValue(value) + "/M"
+	return formatRateWithCurrency(value, "") + "/M"
+}
+
+func formatRateWithCurrency(value float64, currency string) string {
+	return formatRateValueWithCurrency(value, currency) + "/M"
 }
 
 func formatRateValue(value float64) string {
-	return fmt.Sprintf("$%.4g", value)
+	return formatRateValueWithCurrency(value, "")
+}
+
+func formatRateValueWithCurrency(value float64, currency string) string {
+	return fmt.Sprintf("%s%.4g", currencySymbol(currency), value)
 }
 
 func formatKey(key map[string]string) string {

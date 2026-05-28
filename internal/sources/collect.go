@@ -13,6 +13,7 @@ func Defaults(opts Options) []Source {
 		NewClaude(opts),
 		NewCodex(opts),
 		NewGemini(opts),
+		NewReasonix(opts),
 	}
 }
 

@@ -408,7 +408,7 @@ type budgetExceededError struct {
 }
 
 func (e budgetExceededError) Error() string {
-	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatUSD(e.Total), report.FormatUSD(e.Limit))
+	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatCost(e.Total, ""), report.FormatCost(e.Limit, ""))
 }
 
 func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.BudgetPayload, error) {
@@ -446,16 +446,31 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 		return report.BudgetPayload{}, err
 	}
 	results := acc.Results()
-	var total float64
+	var totalUSD float64
+	var nonUSDTotal float64
+	var nonUSDCurrency string
 	for _, result := range results {
-		total += result.CostUSD
+		cur := ""
+		if result.Price != nil {
+			cur = result.Price.Currency
+		}
+		if cur == "" || strings.EqualFold(cur, "USD") {
+			totalUSD += result.CostUSD
+		} else {
+			nonUSDTotal += result.CostUSD
+			if nonUSDCurrency == "" {
+				nonUSDCurrency = cur
+			}
+		}
 	}
 	return report.BudgetPayload{
 		GeneratedAt:    now,
 		Window:         window,
 		LimitUSD:       f.limitUSD,
-		TotalUSD:       total,
-		Exceeded:       total > f.limitUSD,
+		TotalUSD:       totalUSD,
+		NonUSDTotal:    nonUSDTotal,
+		NonUSDCurrency: nonUSDCurrency,
+		Exceeded:       totalUSD > f.limitUSD,
 		UnpricedEvents: unpriced.Events,
 		UnpricedTokens: unpriced.Tokens,
 		Results:        results,
@@ -465,6 +480,8 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 func queryCost(cost pricing.Cost) query.Cost {
 	return query.Cost{
 		USD:                   cost.USD,
+		Amount:                cost.Amount,
+		Currency:              cost.Currency,
 		Source:                cost.Source,
 		InputUSDPerMTok:       cost.InputUSDPerMTok,
 		OutputUSDPerMTok:      cost.OutputUSDPerMTok,

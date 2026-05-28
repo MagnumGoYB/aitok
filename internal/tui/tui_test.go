@@ -357,6 +357,34 @@ func TestModelUsageTableShowsPriceSourceAndRates(t *testing.T) {
 	}
 }
 
+func TestEstimatedCostCardSeparatesUSDAndCNY(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{
+				Key:      map[string]string{"tool": "codex", "model": "gpt-5.4"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 1_000_000},
+				CostUSD:  1.25,
+				Price:    &query.Price{Source: "official", Currency: "USD"},
+			},
+			{
+				Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
+				Requests: 1,
+				Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
+				CostUSD:  2,
+				Price:    &query.Price{Source: "default", Currency: "CNY"},
+			},
+		},
+	}
+	view := stripANSI(RenderWidth(payload, 140))
+	if !strings.Contains(view, "$1.2500 (¥2.0000)") {
+		t.Fatalf("estimated cost should show USD first and CNY separately: %s", view)
+	}
+	if strings.Contains(view, "$3.2500") || strings.Contains(view, "¥3.2500") {
+		t.Fatalf("estimated cost should not merge different currencies: %s", view)
+	}
+}
+
 func TestModelUsageTableShowsMixedPriceDetails(t *testing.T) {
 	payload := report.Payload{
 		Results: []query.Result{

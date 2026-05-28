@@ -32,6 +32,8 @@ type BudgetPayload struct {
 	Window         query.Window   `json:"window"`
 	LimitUSD       float64        `json:"limit_usd"`
 	TotalUSD       float64        `json:"total_usd"`
+	NonUSDTotal    float64        `json:"non_usd_total,omitempty"`
+	NonUSDCurrency string         `json:"non_usd_currency,omitempty"`
 	Exceeded       bool           `json:"exceeded"`
 	UnpricedEvents int            `json:"unpriced_events"`
 	UnpricedTokens int64          `json:"unpriced_tokens"`
@@ -130,7 +132,15 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 	switch format {
 	case "", "table":
-		if _, err := fmt.Fprintf(w, "Limit USD: %s\nTotal USD: %s\nExceeded: %t\nUnpriced events: %d\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+		if _, err := fmt.Fprintf(w, "Limit USD: %s\nTotal USD: %s\nExceeded: %t\nUnpriced events: %d\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+			return err
+		}
+		if payload.NonUSDTotal > 0 {
+			if _, err := fmt.Fprintf(w, "Non-USD total (%s): %s (excluded from budget check)\n", payload.NonUSDCurrency, FormatCost(payload.NonUSDTotal, payload.NonUSDCurrency)); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
 		return WriteTable(w, payload.Results)
@@ -145,8 +155,13 @@ func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 		if _, err := fmt.Fprintf(w, "| ---: | ---: | --- | ---: |\n"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "| %s | %s | %t | %d |\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+		if _, err := fmt.Fprintf(w, "| %s | %s | %t | %d |\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
 			return err
+		}
+		if payload.NonUSDTotal > 0 {
+			if _, err := fmt.Fprintf(w, "\nNon-USD total (%s): %s (excluded from budget check)\n", payload.NonUSDCurrency, FormatCost(payload.NonUSDTotal, payload.NonUSDCurrency)); err != nil {
+				return err
+			}
 		}
 		return WriteMarkdown(w, payload.Results)
 	default:

@@ -5,9 +5,10 @@ import "time"
 type Tool string
 
 const (
-	ToolClaude Tool = "claude"
-	ToolCodex  Tool = "codex"
-	ToolGemini Tool = "gemini"
+	ToolClaude   Tool = "claude"
+	ToolCodex    Tool = "codex"
+	ToolGemini   Tool = "gemini"
+	ToolReasonix Tool = "reasonix"
 )
 
 type TokenUsage struct {

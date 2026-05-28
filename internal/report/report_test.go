@@ -35,8 +35,29 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 	if err := Write(&mdOut, "markdown", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mdOut.String(), "| Group | Req | Cost USD | Price | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M | 12 |") {
+	if !strings.Contains(mdOut.String(), "| Group | Req | Cost | Price | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M | 12 |") {
 		t.Fatalf("markdown output unexpected: %s", mdOut.String())
+	}
+}
+
+func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{{
+		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
+		Requests: 1,
+		Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
+		CostUSD:  2,
+		Price:    &query.Price{Source: "default", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "¥2.0000") {
+		t.Fatalf("CNY cost should show ¥2.0000: %s", got)
+	}
+	if strings.Contains(got, "$2.0000") {
+		t.Fatalf("CNY cost should NOT show $: %s", got)
 	}
 }
 
@@ -104,7 +125,7 @@ func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST_USD") || !strings.Contains(got, "PRICE") || !strings.Contains(got, "$1.2345") {
+	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST") || !strings.Contains(got, "PRICE") || !strings.Contains(got, "$1.2345") {
 		t.Fatalf("table missing request/cost fields: %s", got)
 	}
 	if strings.Contains(got, "EVENTS") || strings.Contains(got, "CACHE_CREATE") {

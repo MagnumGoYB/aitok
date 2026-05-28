@@ -19,7 +19,7 @@ var (
 	headerPattern       = regexp.MustCompile(`^(\S+)\s+([a-z]+)(?:\(([^)]+)\))?:\s+(.+)$`)
 	missingEmojiPattern = regexp.MustCompile(`^[a-z]+(?:\([^)]+\))?:\s+.+$`)
 	allowedTypeValues   = []string{"feat", "fix", "docs", "ci", "style", "refactor", "release", "perf", "test", "chore", "build"}
-	allowedScopeValues  = []string{"cli", "sources", "query", "report", "setup", "tui", "usage", "harness", "docs", "github", "config", "deps", "build", "tests", "release"}
+	allowedScopeValues  = []string{"cli", "sources", "query", "report", "setup", "tui", "usage", "harness", "docs", "github", "config", "deps", "build", "tests", "release", "reasonix"}
 	allowedTypes        = set(allowedTypeValues...)
 	allowedScopes       = set(allowedScopeValues...)
 	typeEmojiValues     = map[string]string{
@@ -51,6 +51,7 @@ var (
 		"build",
 		"tests",
 		"release",
+		"reasonix",
 	}, ", ")
 )
 

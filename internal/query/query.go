@@ -45,6 +45,8 @@ const (
 
 type Cost struct {
 	USD                   float64 `json:"usd"`
+	Amount                float64 `json:"amount,omitempty"`
+	Currency              string  `json:"currency,omitempty"`
 	Source                string  `json:"source,omitempty"`
 	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`
 	OutputUSDPerMTok      float64 `json:"output_usd_per_mtok,omitempty"`
@@ -55,6 +57,7 @@ type Cost struct {
 
 type Price struct {
 	Source                string  `json:"source"`
+	Currency              string  `json:"currency,omitempty"`
 	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`
 	OutputUSDPerMTok      float64 `json:"output_usd_per_mtok,omitempty"`
 	CacheHitUSDPerMTok    float64 `json:"cache_hit_usd_per_mtok,omitempty"`
@@ -834,7 +837,20 @@ func mergeAggregatedPrice(existing, next *Price) *Price {
 	if len(components) == 1 {
 		return clonePrice(&components[0])
 	}
-	return &Price{Source: "mixed", Components: components}
+	return &Price{Source: "mixed", Currency: commonCurrency(components), Components: components}
+}
+
+func commonCurrency(components []Price) string {
+	if len(components) == 0 {
+		return ""
+	}
+	first := components[0].Currency
+	for _, c := range components[1:] {
+		if c.Currency != first {
+			return ""
+		}
+	}
+	return first
 }
 
 func hasPriceComponents(price *Price) bool {
@@ -876,8 +892,9 @@ func priceComponents(price *Price) []Price {
 }
 
 func priceComponentKey(price Price) string {
-	return fmt.Sprintf("%s|%.12g|%.12g|%.12g|%.12g|%.12g",
+	return fmt.Sprintf("%s|%s|%.12g|%.12g|%.12g|%.12g|%.12g",
 		price.Source,
+		price.Currency,
 		price.InputUSDPerMTok,
 		price.OutputUSDPerMTok,
 		price.CacheHitUSDPerMTok,
@@ -893,6 +910,7 @@ func priceFromCost(cost Cost) *Price {
 	}
 	return &Price{
 		Source:                source,
+		Currency:              cost.Currency,
 		InputUSDPerMTok:       cost.InputUSDPerMTok,
 		OutputUSDPerMTok:      cost.OutputUSDPerMTok,
 		CacheHitUSDPerMTok:    cost.CacheHitUSDPerMTok,
@@ -903,6 +921,7 @@ func priceFromCost(cost Cost) *Price {
 
 func pricesEqual(left, right Price) bool {
 	return left.Source == right.Source &&
+		left.Currency == right.Currency &&
 		left.InputUSDPerMTok == right.InputUSDPerMTok &&
 		left.OutputUSDPerMTok == right.OutputUSDPerMTok &&
 		left.CacheHitUSDPerMTok == right.CacheHitUSDPerMTok &&

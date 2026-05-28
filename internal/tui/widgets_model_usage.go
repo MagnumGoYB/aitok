@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/MagnumGoYB/aitok/internal/query"
-	"github.com/MagnumGoYB/aitok/internal/report"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -77,7 +76,7 @@ func (m model) modelUsageMetricValue(result query.Result) float64 {
 
 func (m model) modelUsageMetricLabel(result query.Result) string {
 	if normalizePayloadSort(m.sortBy) == query.SortByCost {
-		return report.FormatUSD(result.CostUSD)
+		return tuiFormatCost(result.CostUSD, resultCurrency2(result))
 	}
 	return formatInt(result.Usage.NormalizedTotal())
 }
@@ -106,7 +105,7 @@ func (m model) tableLines(results []query.Result, copy localizedCopy) []string {
 		line := modelUsageTableLine(modelTableRow(
 			resultLabel(result),
 			fmt.Sprint(result.Requests),
-			report.FormatUSD(result.CostUSD),
+			tuiFormatCost(result.CostUSD, resultCurrency2(result)),
 			priceLabel(result.Price, result.PriceSource),
 			compact(result.Usage.NormalizedTotal()),
 			compact(result.Usage.Input),
