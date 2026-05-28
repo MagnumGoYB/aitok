@@ -40,54 +40,6 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 	}
 }
 
-func TestWriteMarkdownDisplaysCNYForDeepSeek(t *testing.T) {
-	payload := Payload{
-		GeneratedAt: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC),
-		Results: []query.Result{{
-			Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
-			Requests: 1,
-			Usage:    usage.TokenUsage{Input: 100, Output: 50},
-			CostUSD:  0.0002,
-			Price:    &query.Price{Source: "default", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2},
-		}},
-	}
-	var mdOut bytes.Buffer
-	if err := Write(&mdOut, "markdown", payload); err != nil {
-		t.Fatal(err)
-	}
-	got := mdOut.String()
-	if strings.Contains(got, "$0.0002") {
-		t.Fatalf("CNY markdown should NOT show $: %s", got)
-	}
-	if !strings.Contains(got, "¥0.0002") {
-		t.Fatalf("CNY markdown missing ¥: %s", got)
-	}
-}
-
-func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
-	var out bytes.Buffer
-	err := WriteTable(&out, []query.Result{{
-		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
-		Requests: 1,
-		Usage:    usage.TokenUsage{Input: 100, Output: 50},
-		CostUSD:  0.0002,
-		Price:    &query.Price{Source: "default", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := out.String()
-	if strings.Contains(got, "$0.0002") {
-		t.Fatalf("CNY price should NOT show $ prefix: %s", got)
-	}
-	if !strings.Contains(got, "¥0.0002") {
-		t.Fatalf("CNY price missing ¥ prefix: %s", got)
-	}
-	if !strings.Contains(got, "¥1/M") || !strings.Contains(got, "¥2/M") {
-		t.Fatalf("CNY rate missing ¥ prefix: %s", got)
-	}
-}
-
 func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{

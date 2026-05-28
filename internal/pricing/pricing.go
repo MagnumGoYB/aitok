@@ -87,10 +87,10 @@ func DefaultCatalog() Catalog {
 		{Match: "gemini-2.5-pro", Provider: "google", InputUSDPerMTok: 1.25, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.125, CacheMakeUSDPerMTok: 1.25, PromptThresholdTokens: 200000, AboveThresholdInputUSDPerMTok: 2.5, AboveThresholdOutputUSDPerMTok: 15, AboveThresholdCacheHitUSDPerMTok: 0.25, AboveThresholdCacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.5-flash", Provider: "google", InputUSDPerMTok: 0.3, OutputUSDPerMTok: 2.5, CacheHitUSDPerMTok: 0.03, CacheMakeUSDPerMTok: 0.3, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.0-flash", Provider: "google", InputUSDPerMTok: 0.1, OutputUSDPerMTok: 0.4, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0.1, Multiplier: 1, Source: "default"},
-		{Match: "deepseek-chat", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.1, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
-		{Match: "deepseek-v4-flash", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
-		{Match: "deepseek-v4-pro", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
-		{Match: "deepseek-reasoner", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 4, OutputUSDPerMTok: 16, CacheHitUSDPerMTok: 1, CacheMakeUSDPerMTok: 4, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-chat", Provider: "deepseek", InputUSDPerMTok: 0.14, OutputUSDPerMTok: 0.28, CacheHitUSDPerMTok: 0.0028, CacheMakeUSDPerMTok: 0.14, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-v4-flash", Provider: "deepseek", InputUSDPerMTok: 0.14, OutputUSDPerMTok: 0.28, CacheHitUSDPerMTok: 0.0028, CacheMakeUSDPerMTok: 0.14, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-v4-pro", Provider: "deepseek", InputUSDPerMTok: 0.435, OutputUSDPerMTok: 0.87, CacheHitUSDPerMTok: 0.003625, CacheMakeUSDPerMTok: 0.435, Multiplier: 1, Source: "default"},
+		{Match: "deepseek-reasoner", Provider: "deepseek", InputUSDPerMTok: 0.55, OutputUSDPerMTok: 2.19, CacheHitUSDPerMTok: 0.14, CacheMakeUSDPerMTok: 0.55, Multiplier: 1, Source: "default"},
 	}}
 	catalog.refreshSortedModels()
 	return catalog
