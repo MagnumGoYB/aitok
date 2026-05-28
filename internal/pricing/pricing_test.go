@@ -392,14 +392,14 @@ func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
 		provider string
 		input    int64
 		output   int64
-		wantUSD  float64
+		wantCNY  float64
 	}{
-		{"mimo-v2.5-pro", "mimo", 1_000_000, 1_000_000, 0.435 + 0.87},
-		{"mimo-v2.5", "mimo", 1_000_000, 1_000_000, 0.14 + 0.28},
-		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.1 + 0.3},         // below threshold
-		{"mimo-v2-pro", "mimo", 300_000, 100_000, 0.6 + 0.6},         // above threshold
-		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 0.4 + 2.0},
-		{"off-v2-flash", "mimo", 1_000_000, 1_000_000, 0.1 + 0.3},
+		{"mimo-v2.5-pro", "mimo", 1_000_000, 1_000_000, 3 + 6},
+		{"mimo-v2.5", "mimo", 1_000_000, 1_000_000, 1 + 2},
+		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.7 + 2.1},         // below threshold
+		{"mimo-v2-pro", "mimo", 300_000, 100_000, 4.2 + 4.2},         // above threshold
+		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 2.8 + 14.0},
+		{"off-v2-flash", "mimo", 1_000_000, 1_000_000, 0.7 + 2.1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -411,8 +411,11 @@ func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
 			if cost.Source == "unknown" {
 				t.Fatalf("CostFor(%q).Source = unknown (unpriced)", tt.model)
 			}
-			if math.Abs(cost.USD-tt.wantUSD) > 0.001 {
-				t.Fatalf("CostFor(%q).USD = %.4f, want %.4f", tt.model, cost.USD, tt.wantUSD)
+			if cost.Currency != "CNY" {
+				t.Fatalf("CostFor(%q).Currency = %q, want CNY", tt.model, cost.Currency)
+			}
+			if math.Abs(cost.Amount-tt.wantCNY) > 0.01 {
+				t.Fatalf("CostFor(%q).Amount = %.4f, want %.4f CNY", tt.model, cost.Amount, tt.wantCNY)
 			}
 		})
 	}
