@@ -84,6 +84,7 @@ func (m model) toolbar(copy localizedCopy) string {
 		m.tab(string(usage.ToolClaude), "Claude Code"),
 		m.tab(string(usage.ToolCodex), "Codex"),
 		m.tab(string(usage.ToolGemini), "Gemini"),
+		m.tab(string(usage.ToolOpenCode), "OpenCode"),
 		m.tab(string(usage.ToolReasonix), "Reasonix"),
 	}
 	top := strings.Join(tabs, "  ")

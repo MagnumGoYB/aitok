@@ -100,6 +100,12 @@ type ThreadResult struct {
 type ThreadCost struct {
 	Provider string  `json:"provider"`
 	USD      float64 `json:"usd"`
+	Currency string  `json:"currency,omitempty"`
+}
+
+type threadProviderCost struct {
+	USD      float64
+	Currency string
 }
 
 type ThreadAttribution struct {
@@ -149,7 +155,7 @@ type threadBucket struct {
 	result                ThreadResult
 	models                map[string]struct{}
 	providers             map[string]struct{}
-	costByProvider        map[string]float64
+	costByProvider        map[string]threadProviderCost
 	attributionByProvider map[string]map[string]*AttributionCost
 	priceSources          map[string]struct{}
 	price                 *Price
@@ -306,7 +312,7 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 			},
 			models:                map[string]struct{}{},
 			providers:             map[string]struct{}{},
-			costByProvider:        map[string]float64{},
+			costByProvider:        map[string]threadProviderCost{},
 			attributionByProvider: map[string]map[string]*AttributionCost{},
 			priceSources:          map[string]struct{}{},
 			groupBuckets:          map[string]*Result{},
@@ -325,7 +331,12 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 		normalizedPriceSource = mergePriceSource("", cost.Source)
 		normalizedPrice = priceFromCost(cost)
 		bucket.result.CostUSD += cost.USD
-		bucket.costByProvider[provider] += cost.USD
+		pc := bucket.costByProvider[provider]
+		pc.USD += cost.USD
+		if pc.Currency == "" {
+			pc.Currency = cost.Currency
+		}
+		bucket.costByProvider[provider] = pc
 		recordThreadAttribution(bucket, provider, event.ProviderAttribution, event.Usage, cost.USD)
 		recordThreadTurn(bucket, event, cost.USD)
 		if normalizedPriceSource != "" {
@@ -1063,16 +1074,16 @@ func (m filterMatcher) matches(event usage.UsageEvent) bool {
 	return true
 }
 
-func summarizeThreadCosts(costs map[string]float64) []ThreadCost {
+func summarizeThreadCosts(costs map[string]threadProviderCost) []ThreadCost {
 	if len(costs) <= 1 {
 		return nil
 	}
 	items := make([]ThreadCost, 0, len(costs))
-	for provider, usd := range costs {
+	for provider, pc := range costs {
 		if provider == "" || provider == "unknown" {
 			continue
 		}
-		items = append(items, ThreadCost{Provider: provider, USD: usd})
+		items = append(items, ThreadCost{Provider: provider, USD: pc.USD, Currency: pc.Currency})
 	}
 	if len(items) <= 1 {
 		return nil

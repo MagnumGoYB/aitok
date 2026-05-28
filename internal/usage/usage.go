@@ -8,6 +8,7 @@ const (
 	ToolClaude   Tool = "claude"
 	ToolCodex    Tool = "codex"
 	ToolGemini   Tool = "gemini"
+	ToolOpenCode Tool = "opencode"
 	ToolReasonix Tool = "reasonix"
 )
 

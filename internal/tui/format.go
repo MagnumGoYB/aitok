@@ -38,7 +38,44 @@ func resultLabel(result query.Result) string {
 }
 
 func tuiThreadCost(thread query.ThreadResult) string {
-	return tuiFormatCost(thread.CostUSD, threadCurrency2(thread))
+	cur := threadCurrency2(thread)
+	if len(thread.CostBreakdown) == 0 {
+		return tuiFormatCost(thread.CostUSD, cur)
+	}
+	markers := tuiThreadCostMarkers(thread.CostBreakdown, cur)
+	if len(markers) > 0 {
+		var usdTotal float64
+		for _, item := range thread.CostBreakdown {
+			if item.Currency == "" || item.Currency == "USD" {
+				usdTotal += item.USD
+			}
+		}
+		return tuiFormatCost(usdTotal, "USD") + "[" + strings.Join(markers, "") + "]"
+	}
+	return tuiFormatCost(thread.CostUSD, cur)
+}
+
+func tuiThreadCostMarkers(breakdown []query.ThreadCost, threadCurrency string) []string {
+	seen := map[string]struct{}{}
+	for _, item := range breakdown {
+		cur := item.Currency
+		if cur == "" {
+			continue
+		}
+		if strings.EqualFold(cur, threadCurrency) {
+			continue
+		}
+		if cur == "USD" {
+			continue
+		}
+		seen["+"+report.CurrencySymbol(cur)] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func tuiThreadCostDetail(thread query.ThreadResult) string {
@@ -58,7 +95,11 @@ func tuiThreadCostDetail(thread query.ThreadResult) string {
 		if item.Provider == "" {
 			continue
 		}
-		parts = append(parts, item.Provider+" "+tuiFormatCost(item.USD, cur))
+		itemCurrency := item.Currency
+		if itemCurrency == "" {
+			itemCurrency = cur
+		}
+		parts = append(parts, item.Provider+" "+tuiFormatCost(item.USD, itemCurrency))
 	}
 	if len(parts) == 0 {
 		return total

@@ -310,7 +310,7 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 	return nil
 }
 
-func currencySymbol(currency string) string {
+func CurrencySymbol(currency string) string {
 	switch strings.ToUpper(currency) {
 	case "CNY", "RMB":
 		return "¥"
@@ -324,20 +324,56 @@ func FormatUSD(value float64) string {
 }
 
 func FormatCost(value float64, currency string) string {
-	return fmt.Sprintf("%s%.4f", currencySymbol(currency), value)
+	return fmt.Sprintf("%s%.4f", CurrencySymbol(currency), value)
 }
 
 func FormatThreadCost(thread query.ThreadResult) string {
 	currency := threadCurrency(thread)
-	total := FormatCost(thread.CostUSD, currency)
 	if len(thread.CostBreakdown) == 0 {
-		return total
+		return FormatCost(thread.CostUSD, currency)
+	}
+	markers := mixedCurrencyMarkers(thread.CostBreakdown, currency)
+	if len(markers) > 0 {
+		sort.Strings(markers)
+		var usdTotal float64
+		for _, item := range thread.CostBreakdown {
+			if item.Currency == "" || item.Currency == "USD" {
+				usdTotal += item.USD
+			}
+		}
+		return FormatCost(usdTotal, "USD") + "[" + strings.Join(markers, "") + "]"
 	}
 	parts := make([]string, 0, len(thread.CostBreakdown))
 	for _, item := range thread.CostBreakdown {
-		parts = append(parts, item.Provider+" "+FormatCost(item.USD, currency))
+		itemCurrency := item.Currency
+		if itemCurrency == "" {
+			itemCurrency = currency
+		}
+		parts = append(parts, item.Provider+" "+FormatCost(item.USD, itemCurrency))
 	}
-	return total + " (" + strings.Join(parts, ", ") + ")"
+	return FormatCost(thread.CostUSD, currency) + " (" + strings.Join(parts, ", ") + ")"
+}
+
+func mixedCurrencyMarkers(breakdown []query.ThreadCost, threadCurrency string) []string {
+	seen := map[string]struct{}{}
+	for _, item := range breakdown {
+		cur := item.Currency
+		if cur == "" {
+			continue
+		}
+		if strings.EqualFold(cur, threadCurrency) {
+			continue
+		}
+		if cur == "USD" {
+			continue
+		}
+		seen["+"+CurrencySymbol(cur)] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	return out
 }
 
 func threadCurrency(thread query.ThreadResult) string {
@@ -435,7 +471,7 @@ func formatMixedPriceCompact(price *query.Price, source string) string {
 		displayPriceSource(price.Source),
 		mixedPriceSources(price.Components),
 		formatRateValueRange(price.Components, cur, func(component query.Price) float64 { return component.InputUSDPerMTok }),
-		strings.TrimPrefix(formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.OutputUSDPerMTok }), currencySymbol(cur)),
+		strings.TrimPrefix(formatRateRange(price.Components, cur, func(component query.Price) float64 { return component.OutputUSDPerMTok }), CurrencySymbol(cur)),
 	)
 }
 
@@ -477,7 +513,7 @@ func formatRateValueRange(components []query.Price, currency string, valueFor fu
 	if minValue == maxValue {
 		return formatRateValueWithCurrency(minValue, currency)
 	}
-	sym := currencySymbol(currency)
+	sym := CurrencySymbol(currency)
 	return fmt.Sprintf("%s..%s", formatRateValueWithCurrency(minValue, currency), strings.TrimPrefix(formatRateValueWithCurrency(maxValue, currency), sym))
 }
 
@@ -508,7 +544,7 @@ func formatRateValue(value float64) string {
 }
 
 func formatRateValueWithCurrency(value float64, currency string) string {
-	return fmt.Sprintf("%s%.4g", currencySymbol(currency), value)
+	return fmt.Sprintf("%s%.4g", CurrencySymbol(currency), value)
 }
 
 func formatKey(key map[string]string) string {
