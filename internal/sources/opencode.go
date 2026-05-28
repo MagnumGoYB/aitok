@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,7 +40,9 @@ func (o OpenCode) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 
 func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
 	dbPath := filepath.Join(o.Home, ".local", "share", "opencode", "opencode.db")
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	// Use file: URI with proper path encoding to handle special characters in path
+	dbURI := "file:" + url.PathEscape(dbPath) + "?mode=ro"
+	db, err := sql.Open("sqlite", dbURI)
 	if err != nil {
 		return nil
 	}
