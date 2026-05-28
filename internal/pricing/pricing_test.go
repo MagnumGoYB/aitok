@@ -396,8 +396,8 @@ func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
 	}{
 		{"mimo-v2.5-pro", "mimo", 1_000_000, 1_000_000, 3 + 6},
 		{"mimo-v2.5", "mimo", 1_000_000, 1_000_000, 1 + 2},
-		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.7 + 2.1},         // below threshold
-		{"mimo-v2-pro", "mimo", 300_000, 100_000, 4.2 + 4.2},         // above threshold
+		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.7 + 2.1}, // below threshold
+		{"mimo-v2-pro", "mimo", 300_000, 100_000, 4.2 + 4.2}, // above threshold
 		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 2.8 + 14.0},
 		{"off-v2-flash", "mimo", 1_000_000, 1_000_000, 0.7 + 2.1},
 	}
