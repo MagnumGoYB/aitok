@@ -688,7 +688,7 @@ func TestBudgetCheckFailsWhenLimitExceeded(t *testing.T) {
 func TestBudgetCheckExcludesCNYFromUSDLimit(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".reasonix", "usage.jsonl"),
-		`{"ts":1778192400000,"session":"budget-cny","model":"deepseek-v4-flash","promptTokens":1000000,"completionTokens":500000,"cacheHitTokens":0,"cacheMissTokens":0}`+"\n")
+		`{"ts":1778202000000,"session":"budget-cny","model":"deepseek-v4-flash","promptTokens":1000000,"completionTokens":500000,"cacheHitTokens":0,"cacheMissTokens":0}`+"\n")
 	var out bytes.Buffer
 	cmd := New(App{Out: &out, Now: func() time.Time {
 		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
