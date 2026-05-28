@@ -446,21 +446,31 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 		return report.BudgetPayload{}, err
 	}
 	results := acc.Results()
-	var total float64
-	var currency string
+	var totalUSD float64
+	var nonUSDTotal float64
+	var nonUSDCurrency string
 	for _, result := range results {
-		total += result.CostUSD
-		if currency == "" && result.Price != nil && result.Price.Currency != "" {
-			currency = result.Price.Currency
+		cur := ""
+		if result.Price != nil {
+			cur = result.Price.Currency
+		}
+		if cur == "" || strings.EqualFold(cur, "USD") {
+			totalUSD += result.CostUSD
+		} else {
+			nonUSDTotal += result.CostUSD
+			if nonUSDCurrency == "" {
+				nonUSDCurrency = cur
+			}
 		}
 	}
 	return report.BudgetPayload{
 		GeneratedAt:    now,
 		Window:         window,
 		LimitUSD:       f.limitUSD,
-		TotalUSD:       total,
-		Currency:       currency,
-		Exceeded:       total > f.limitUSD,
+		TotalUSD:       totalUSD,
+		NonUSDTotal:    nonUSDTotal,
+		NonUSDCurrency: nonUSDCurrency,
+		Exceeded:       totalUSD > f.limitUSD,
 		UnpricedEvents: unpriced.Events,
 		UnpricedTokens: unpriced.Tokens,
 		Results:        results,
