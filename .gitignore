@@ -2,5 +2,6 @@
 dist/
 coverage.out
 .cache/
+.reasonix/
 .DS_Store
 .superpowers/
