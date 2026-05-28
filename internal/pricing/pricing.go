@@ -92,6 +92,13 @@ func DefaultCatalog() Catalog {
 		{Match: "deepseek-v4-flash", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-v4-pro", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-reasoner", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 4, OutputUSDPerMTok: 16, CacheHitUSDPerMTok: 1, CacheMakeUSDPerMTok: 4, Multiplier: 1, Source: "default"},
+		// MiMo-V2.5 Series (effective May 27, 2026)
+		{Match: "mimo-v2.5-pro", Provider: "mimo", InputUSDPerMTok: 0.435, OutputUSDPerMTok: 0.87, CacheHitUSDPerMTok: 0.0036, CacheMakeUSDPerMTok: 0.435, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2.5", Provider: "mimo", InputUSDPerMTok: 0.14, OutputUSDPerMTok: 0.28, CacheHitUSDPerMTok: 0.0028, CacheMakeUSDPerMTok: 0.14, Multiplier: 1, Source: "default"},
+		// MiMo-V2 Series
+		{Match: "mimo-v2-pro", Provider: "mimo", InputUSDPerMTok: 1, OutputUSDPerMTok: 3, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 1, PromptThresholdTokens: 256000, AboveThresholdInputUSDPerMTok: 2, AboveThresholdOutputUSDPerMTok: 6, AboveThresholdCacheHitUSDPerMTok: 0.4, AboveThresholdCacheMakeUSDPerMTok: 2, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2-omni", Provider: "mimo", InputUSDPerMTok: 0.4, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.08, CacheMakeUSDPerMTok: 0.4, Multiplier: 1, Source: "default"},
+		{Match: "off-v2-flash", Provider: "mimo", InputUSDPerMTok: 0.1, OutputUSDPerMTok: 0.3, CacheHitUSDPerMTok: 0.01, CacheMakeUSDPerMTok: 0.1, Multiplier: 1, Source: "default"},
 	}}
 	catalog.refreshSortedModels()
 	return catalog
