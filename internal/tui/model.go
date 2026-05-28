@@ -181,6 +181,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureThreadVisible()
 			m.ensureModelUsageVisible()
 		case "5":
+			m.activeTool = string(usage.ToolOpenCode)
+			m.ensureThreadVisible()
+			m.ensureModelUsageVisible()
+		case "6":
 			m.activeTool = string(usage.ToolReasonix)
 			m.ensureThreadVisible()
 			m.ensureModelUsageVisible()

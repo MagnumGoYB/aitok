@@ -19,11 +19,11 @@ type tableColumn struct {
 	align tableAlign
 }
 
-var modelColumnWidth = 32
+var modelColumnWidth = 36
 
 func modelTableRow(modelName, req, cost, price, tokens, input, output, cached string) string {
 	columns := []tableColumn{
-		{value: modelName, width: 26, align: alignLeft},
+		{value: modelName, width: 30, align: alignLeft},
 		{value: req, width: 5, align: alignRight},
 		{value: cost, width: 10, align: alignRight},
 		{value: tableText(price, 34), width: 34, align: alignLeft},
