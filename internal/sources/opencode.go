@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MagnumGoYB/aitok/internal/usage"
 	_ "modernc.org/sqlite"
@@ -43,6 +44,10 @@ func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error)
 		return nil
 	}
 	defer db.Close()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil
+	}
 
 	sessions, err := o.readSessions(ctx, db)
 	if err != nil {
@@ -84,7 +89,7 @@ func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error)
 		if !o.inWindow(ts) {
 			continue
 		}
-		model := usage.Unknown(normalizeCodexModel(stringValue(data["modelID"])))
+		model := usage.Unknown(stringValue(data["modelID"]))
 		provider := usage.Unknown(stringValue(data["providerID"]))
 		cwd := ""
 		if path := objectValue(data["path"]); path != nil {
@@ -255,7 +260,7 @@ func (o OpenCode) readFirstUserMessages(ctx context.Context, db *sql.DB, session
 
 func isOpenCodeRealTitle(text string) bool {
 	text = strings.TrimSpace(text)
-	if len(text) < 4 {
+	if utf8.RuneCountInString(text) < 4 {
 		return false
 	}
 	if text == "say hi" || text == "hi" {
