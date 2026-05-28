@@ -40,6 +40,27 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 	}
 }
 
+func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{{
+		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
+		Requests: 1,
+		Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
+		CostUSD:  0.2777777,
+		Price:    &query.Price{Source: "default", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "¥2.0000") {
+		t.Fatalf("CNY cost should show ¥2.0000: %s", got)
+	}
+	if strings.Contains(got, "$0.2778") {
+		t.Fatalf("CNY cost should NOT show $: %s", got)
+	}
+}
+
 func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{

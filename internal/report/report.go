@@ -310,6 +310,15 @@ func WriteThreadsMarkdown(w io.Writer, threads []query.ThreadResult, opts ...Opt
 	return nil
 }
 
+func displayAmount(usdValue float64, currency string) float64 {
+	switch strings.ToUpper(currency) {
+	case "CNY", "RMB":
+		return usdValue * 7.2
+	default:
+		return usdValue
+	}
+}
+
 func currencySymbol(currency string) string {
 	switch strings.ToUpper(currency) {
 	case "CNY", "RMB":
@@ -324,7 +333,7 @@ func FormatUSD(value float64) string {
 }
 
 func FormatCost(value float64, currency string) string {
-	return fmt.Sprintf("%s%.4f", currencySymbol(currency), value)
+	return fmt.Sprintf("%s%.4f", currencySymbol(currency), displayAmount(value, currency))
 }
 
 func FormatThreadCost(thread query.ThreadResult) string {

@@ -358,24 +358,30 @@ func TestDefaultCatalogCoversDeepSeekModels(t *testing.T) {
 		if cost.USD == 0 {
 			t.Fatalf("CostFor(%q) returned $0.00", model)
 		}
-		if cost.Currency != "USD" {
-			t.Fatalf("CostFor(%q).Currency = %q, want USD", model, cost.Currency)
+		if cost.Currency != "CNY" {
+			t.Fatalf("CostFor(%q).Currency = %q, want CNY", model, cost.Currency)
 		}
 		if cost.Source == "unknown" {
 			t.Fatalf("CostFor(%q).Source = unknown (unpriced)", model)
 		}
-		// deepseek-chat and deepseek-v4-flash: $0.14/M in, $0.28/M out
 		if model == "deepseek-chat" || model == "deepseek-v4-flash" {
-			expected := 0.14 + 0.14 // 1M in × $0.14/M + 0.5M out × $0.28/M
-			if math.Abs(cost.USD-expected) > 0.001 {
-				t.Fatalf("CostFor(%q) = %.4f, want ~%.4f", model, cost.USD, expected)
+			expectedCNY := 1.0 + 1.0         // 1M in × ¥1/M + 0.5M out × ¥2/M
+			expectedUSD := expectedCNY / 7.2 // ≈ 0.2778
+			if math.Abs(cost.Amount-expectedCNY) > 0.01 {
+				t.Fatalf("CostFor(%q).Amount = %.4f, want ~%.4f CNY", model, cost.Amount, expectedCNY)
+			}
+			if math.Abs(cost.USD-expectedUSD) > 0.001 {
+				t.Fatalf("CostFor(%q).USD = %.4f, want ~%.4f", model, cost.USD, expectedUSD)
 			}
 		}
-		// deepseek-v4-pro: $0.435/M in, $0.87/M out
 		if model == "deepseek-v4-pro" {
-			expected := 0.435 + 0.435 // 1M in × $0.435/M + 0.5M out × $0.87/M
-			if math.Abs(cost.USD-expected) > 0.001 {
-				t.Fatalf("CostFor(%q) = %.4f, want ~%.4f", model, cost.USD, expected)
+			expectedCNY := 3.0 + 3.0         // 1M in × ¥3/M + 0.5M out × ¥6/M
+			expectedUSD := expectedCNY / 7.2 // ≈ 0.8333
+			if math.Abs(cost.Amount-expectedCNY) > 0.01 {
+				t.Fatalf("CostFor(%q).Amount = %.4f, want ~%.4f CNY", model, cost.Amount, expectedCNY)
+			}
+			if math.Abs(cost.USD-expectedUSD) > 0.001 {
+				t.Fatalf("CostFor(%q).USD = %.4f, want ~%.4f", model, cost.USD, expectedUSD)
 			}
 		}
 	}

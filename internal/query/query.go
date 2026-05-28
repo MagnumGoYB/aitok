@@ -45,6 +45,7 @@ const (
 
 type Cost struct {
 	USD                   float64 `json:"usd"`
+	Amount                float64 `json:"amount,omitempty"`
 	Currency              string  `json:"currency,omitempty"`
 	Source                string  `json:"source,omitempty"`
 	InputUSDPerMTok       float64 `json:"input_usd_per_mtok,omitempty"`

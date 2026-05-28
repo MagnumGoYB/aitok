@@ -480,6 +480,7 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 func queryCost(cost pricing.Cost) query.Cost {
 	return query.Cost{
 		USD:                   cost.USD,
+		Amount:                cost.Amount,
 		Currency:              cost.Currency,
 		Source:                cost.Source,
 		InputUSDPerMTok:       cost.InputUSDPerMTok,
