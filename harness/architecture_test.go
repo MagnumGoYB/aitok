@@ -534,7 +534,7 @@ func TestWorkflowFilesKeepHarnessGates(t *testing.T) {
 	prTemplate := read(t, ".github", "pull_request_template.md")
 	gitignore := read(t, ".gitignore")
 
-	for _, target := range []string{"check:", "test:", "test-packages:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "commitlint-range:", "validate:"} {
+	for _, target := range []string{"check:", "test:", "test-packages:", "test-harness:", "build:", "validate-pr-body:", "commitlint:", "commitlint-range:", "validate:", "generate:"} {
 		if !strings.Contains(makefile, target) {
 			t.Fatalf("Makefile missing %s", target)
 		}

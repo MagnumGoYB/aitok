@@ -41,13 +41,14 @@
 | `internal/tui/filters.go` | 按工具过滤 + 搜索过滤 |
 | `internal/tui/copy.go` | TUI i18n 字符串（en/zh-CN） |
 | `internal/tui/format.go` | TUI 专用格式化辅助函数 |
-| `internal/buildinfo/buildinfo.go` | 硬编码版本号 `Version = "0.2.0"` |
+| `internal/buildinfo/buildinfo.go` | 从根目录 `VERSION` 自动生成的 `Version` 常量（禁止手动编辑） |
+| `tools/buildinfo-gen/` | 读取 `VERSION` 文件，生成 `internal/buildinfo/buildinfo.go` |
 | `internal/updatecheck/updatecheck.go` | GitHub Release 版本检查 + homebrew/go 自动升级 |
 | `internal/setup/gemini.go` | 配置 Gemini `settings.json`，启用本地遥测日志输出 |
 | `tools/commitlint/` | 提交信息校验器 — 强制 `<emoji> <type>(<scope>): <subject>` 格式 |
 | `tools/pricing-watch/` | GitHub Action — 监控上游价格 JSON 是否有更新 |
 | `tools/validate-pr-body/` | PR 描述校验器（CI 关卡） |
-| `tools/version/` | 同时更新 `VERSION` 和 `buildinfo.go` 中的版本号 |
+| `tools/version/` | 读取并校验根目录 `VERSION` 文件 |
 | `harness/architecture_test.go` | 架构集成测试（包布局、导入规则） |
 
 ## 常用命令

@@ -39,6 +39,7 @@
 - [ ] `make test`
 - [ ] `make test-harness`
 - [ ] `make build`
+- [ ] `make validate` (includes generate; run when VERSION changed)
 - [ ] Commit message follows `go run ./tools/commitlint --edit <commit-msg-file>`
 - Skipped validation and reason:
 

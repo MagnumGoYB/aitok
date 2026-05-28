@@ -9,6 +9,13 @@
 提交前运行：
 
 ```bash
+make validate
+```
+
+或分步执行：
+
+```bash
+make generate  # 从 VERSION 重新生成 buildinfo.go
 make check
 make test
 make test-harness

@@ -11,7 +11,7 @@ Harness 是一组前馈指南和反馈传感器：前馈指南在代理编辑前
 - `AGENTS.md` 和 `AGENTS.zh-CN.md`：仓库使命、编码约束、验证矩阵、隐私边界和交付规则。
 - `README.md`：面向用户的 CLI 使用和安装路径。
 - `CONTRIBUTING.md`：贡献者验证和离线优先规则。
-- `Makefile`：标准本地命令：`make setup`、`make check`、`make test`、`make test-packages`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body` 和 `make commitlint`。
+- `Makefile`：标准本地命令：`make setup`、`make generate`、`make check`、`make test`、`make test-packages`、`make test-harness`、`make vet`、`make build`、`make validate`、`make validate-pr-body` 和 `make commitlint`。
 - `tools/commitlint` 和 `.githooks/commit-msg`：仓库内 Go 提交消息校验，约束 `{emoji} {type}{scope}: {subject}`，不引入 Node/npm 工具链。每个提交 type 只允许一个 emoji：`✨ feat`、`🐛 fix`、`📝 docs`、`👷 ci`、`💄 style`、`♻️ refactor`、`🔖 release`、`⚡️ perf`、`✅ test`、`🔧 chore`、`🏗️ build`。`make setup` 会为本地提交启用该 hook。
 - `.github/pull_request_template.md`：可重复的 PR 检查清单，覆盖需求分类、验收标准、测试证据、验证、回滚和残余风险。
 - 发版判定策略：工程/流程优化不需要软件发版；feature 和 bugfix 需要跟进发版或明确延后。

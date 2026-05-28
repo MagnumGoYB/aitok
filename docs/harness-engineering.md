@@ -11,7 +11,7 @@ For `aitok`, the harness is intentionally lightweight: Go tests, a Makefile, PR 
 - `AGENTS.md` and `AGENTS.zh-CN.md`: repository mission, coding constraints, validation matrix, privacy boundaries, and handoff rules.
 - `README.md`: user-facing CLI usage and install path.
 - `CONTRIBUTING.md`: contributor validation and offline-first rules.
-- `Makefile`: canonical local commands: `make setup`, `make check`, `make test`, `make test-packages`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
+- `Makefile`: canonical local commands: `make setup`, `make generate`, `make check`, `make test`, `make test-packages`, `make test-harness`, `make vet`, `make build`, `make validate`, `make validate-pr-body`, and `make commitlint`.
 - `tools/commitlint` and `.githooks/commit-msg`: repository-native Go commit-message validation for `{emoji} {type}{scope}: {subject}` without Node/npm tooling. Each commit type has exactly one allowed emoji: `✨ feat`, `🐛 fix`, `📝 docs`, `👷 ci`, `💄 style`, `♻️ refactor`, `🔖 release`, `⚡️ perf`, `✅ test`, `🔧 chore`, and `🏗️ build`. `make setup` enables the hook for local commits.
 - `.github/pull_request_template.md`: repeatable PR checklist for requirement classification, acceptance criteria, test evidence, validation, rollback, and residual risk.
 - Release decision policy: engineering/process-only changes do not require a software release; feature and bugfix changes require a follow-up release or explicit deferral.

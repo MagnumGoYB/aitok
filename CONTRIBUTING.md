@@ -7,6 +7,13 @@
 Run before submitting changes:
 
 ```bash
+make validate
+```
+
+Or step-by-step:
+
+```bash
+make generate  # regenerate buildinfo.go from VERSION
 make check
 make test
 make test-harness

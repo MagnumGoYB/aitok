@@ -41,13 +41,14 @@ Auto-pinned working knowledge for this project.
 | `internal/tui/filters.go` | Per-tool filtering + search filtering in the TUI |
 | `internal/tui/copy.go` | i18n strings (en / zh-CN) for TUI copy + resume labels |
 | `internal/tui/format.go` | TUI-specific formatting helpers |
-| `internal/buildinfo/buildinfo.go` | Hardcoded `Version = "0.2.0"` |
+| `internal/buildinfo/buildinfo.go` | Auto-generated `Version` constant from root `VERSION` (DO NOT EDIT) |
+| `tools/buildinfo-gen/` | Reads `VERSION` and generates `internal/buildinfo/buildinfo.go` |
 | `internal/updatecheck/updatecheck.go` | GitHub Release version check + homebrew/go auto-upgrade |
 | `internal/setup/gemini.go` | Configures Gemini `telemetry.json` to enable local log output |
 | `tools/commitlint/` | Commit message validator — enforces `<emoji> <type>(<scope>): <subject>` |
 | `tools/pricing-watch/` | GitHub Action — monitors upstream pricing source JSON |
 | `tools/validate-pr-body/` | PR description validator (CI gate) |
-| `tools/version/` | Bumps version across VERSION + buildinfo.go |
+| `tools/version/` | Reads and validates root `VERSION` file |
 | `harness/architecture_test.go` | Architecture integration tests (package layout, import rules) |
 
 ## Commands

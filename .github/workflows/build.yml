@@ -37,6 +37,7 @@ jobs:
           go-version: "1.26.3"
           cache: true
       - run: go run ./tools/version
+      - run: go generate ./internal/buildinfo/...
       - run: mkdir -p dist
       - run: go build -trimpath -ldflags "-s -w" -o dist/aitok-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/aitok
         env:
