@@ -116,26 +116,10 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 		perMillion(cacheCreation5m+cacheCreationOther, cacheMake) +
 		perMillion(cacheCreation1h, cacheMake1h)
 	native := usd * multiplier
-	amount := native
 	cur := modelPriceCurrency(price)
-	if strings.EqualFold(cur, "CNY") {
-		usdAmount := native / cnyPerUSD
-		return Cost{
-			USD:                   usdAmount,
-			Amount:                amount,
-			Currency:              cur,
-			Multiplier:            multiplier,
-			Source:                price.Source,
-			InputUSDPerMTok:       price.InputUSDPerMTok,
-			OutputUSDPerMTok:      price.OutputUSDPerMTok,
-			CacheHitUSDPerMTok:    price.CacheHitUSDPerMTok,
-			CacheMakeUSDPerMTok:   cacheMake,
-			CacheMake1hUSDPerMTok: cacheMake1h,
-		}
-	}
 	return Cost{
-		USD:                   amount,
-		Amount:                amount,
+		USD:                   native,
+		Amount:                native,
 		Currency:              cur,
 		Multiplier:            multiplier,
 		Source:                price.Source,
@@ -290,8 +274,6 @@ func cacheMake1hPrice(price ModelPrice) float64 {
 	}
 	return cacheMakePrice(price)
 }
-
-const cnyPerUSD = 7.2
 
 func modelPriceCurrency(price ModelPrice) string {
 	if price.Currency != "" {

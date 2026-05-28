@@ -685,6 +685,23 @@ func TestBudgetCheckFailsWhenLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestBudgetCheckExcludesCNYFromUSDLimit(t *testing.T) {
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, ".reasonix", "usage.jsonl"),
+		`{"ts":1778192400000,"session":"budget-cny","model":"deepseek-v4-flash","promptTokens":1000000,"completionTokens":500000,"cacheHitTokens":0,"cacheMissTokens":0}`+"\n")
+	var out bytes.Buffer
+	cmd := New(App{Out: &out, Now: func() time.Time {
+		return time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	}})
+	cmd.SetArgs([]string{"--home", home, "--no-version-check", "budget", "check", "--period", "today", "--limit-usd", "1", "--format", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("CNY-only usage should not exceed USD budget: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"total_usd": 0`) || !strings.Contains(out.String(), `"non_usd_total": 2`) || !strings.Contains(out.String(), `"non_usd_currency": "CNY"`) {
+		t.Fatalf("budget output should keep CNY separate from USD: %s", out.String())
+	}
+}
+
 func TestAgentBudgetExceededKeepsPayloadOnStdoutAndSummaryOnStderr(t *testing.T) {
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "05", "08", "rollout.jsonl"),

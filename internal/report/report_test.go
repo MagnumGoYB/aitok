@@ -46,7 +46,7 @@ func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
 		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
 		Requests: 1,
 		Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
-		CostUSD:  0.2777777,
+		CostUSD:  2,
 		Price:    &query.Price{Source: "default", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2},
 	}})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
 	if !strings.Contains(got, "¥2.0000") {
 		t.Fatalf("CNY cost should show ¥2.0000: %s", got)
 	}
-	if strings.Contains(got, "$0.2778") {
+	if strings.Contains(got, "$2.0000") {
 		t.Fatalf("CNY cost should NOT show $: %s", got)
 	}
 }

@@ -63,6 +63,31 @@ func TestAggregateIncludesRequestsAndCost(t *testing.T) {
 	}
 }
 
+func TestAggregateSortsCostByRawAmountAcrossCurrencies(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "usd-model", Provider: "openai", Usage: usage.TokenUsage{Input: 1}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolReasonix, Model: "cny-model", Provider: "deepseek", Usage: usage.TokenUsage{Input: 1}},
+	}
+	acc := NewAccumulatorWithSort(window, Filters{}, GroupBy{"model"}, SortByCost, func(event usage.UsageEvent) Cost {
+		if event.Provider == "deepseek" {
+			return Cost{USD: 2, Currency: "CNY", Source: "default"}
+		}
+		return Cost{USD: 10, Currency: "USD", Source: "default"}
+	})
+	for _, event := range events {
+		acc.Add(event)
+	}
+	results := acc.Results()
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[0].Key["model"] != "usd-model" || results[1].Key["model"] != "cny-model" {
+		t.Fatalf("cost sort should use raw amount only, got %+v", results)
+	}
+}
+
 func TestAggregateCarriesPriceDetails(t *testing.T) {
 	loc := time.UTC
 	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}

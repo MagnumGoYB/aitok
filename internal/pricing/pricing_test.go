@@ -365,23 +365,21 @@ func TestDefaultCatalogCoversDeepSeekModels(t *testing.T) {
 			t.Fatalf("CostFor(%q).Source = unknown (unpriced)", model)
 		}
 		if model == "deepseek-chat" || model == "deepseek-v4-flash" {
-			expectedCNY := 1.0 + 1.0         // 1M in × ¥1/M + 0.5M out × ¥2/M
-			expectedUSD := expectedCNY / 7.2 // ≈ 0.2778
+			expectedCNY := 1.0 + 1.0 // 1M in x ¥1/M + 0.5M out x ¥2/M
 			if math.Abs(cost.Amount-expectedCNY) > 0.01 {
 				t.Fatalf("CostFor(%q).Amount = %.4f, want ~%.4f CNY", model, cost.Amount, expectedCNY)
 			}
-			if math.Abs(cost.USD-expectedUSD) > 0.001 {
-				t.Fatalf("CostFor(%q).USD = %.4f, want ~%.4f", model, cost.USD, expectedUSD)
+			if math.Abs(cost.USD-expectedCNY) > 0.001 {
+				t.Fatalf("CostFor(%q).USD = %.4f, want native %.4f CNY", model, cost.USD, expectedCNY)
 			}
 		}
 		if model == "deepseek-v4-pro" {
-			expectedCNY := 3.0 + 3.0         // 1M in × ¥3/M + 0.5M out × ¥6/M
-			expectedUSD := expectedCNY / 7.2 // ≈ 0.8333
+			expectedCNY := 3.0 + 3.0 // 1M in x ¥3/M + 0.5M out x ¥6/M
 			if math.Abs(cost.Amount-expectedCNY) > 0.01 {
 				t.Fatalf("CostFor(%q).Amount = %.4f, want ~%.4f CNY", model, cost.Amount, expectedCNY)
 			}
-			if math.Abs(cost.USD-expectedUSD) > 0.001 {
-				t.Fatalf("CostFor(%q).USD = %.4f, want ~%.4f", model, cost.USD, expectedUSD)
+			if math.Abs(cost.USD-expectedCNY) > 0.001 {
+				t.Fatalf("CostFor(%q).USD = %.4f, want native %.4f CNY", model, cost.USD, expectedCNY)
 			}
 		}
 	}
