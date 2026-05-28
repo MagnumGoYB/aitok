@@ -94,6 +94,7 @@
 - Markdown/table 报告要保持可读且可脚本化。
 - TUI 不得替代 CLI/JSON 输出；自动化场景必须能绕过 TUI。
 - 生产代码不要依赖 `harness/` 或 `tools/`。
+- **版本号唯一来源**：版本升级只需修改根目录的 `VERSION` 文件。`internal/buildinfo/buildinfo.go` 是自动生成的——禁止手动编辑。修改 `VERSION` 后通过 `make validate` 重新生成。
 
 ## 5) Harness 维护规则
 

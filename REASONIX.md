@@ -105,12 +105,12 @@ Common flags across query subcommands: `--period`, `--format` (table/json/markdo
 
 ## Watch out for
 
-- **`buildinfo.Version`** is hardcoded in `internal/buildinfo/buildinfo.go` — must be bumped before release (also update `VERSION` at root).
+- **`buildinfo.Version`** is auto-generated from the root `VERSION` file by `tools/buildinfo-gen` (via `go generate ./internal/buildinfo/...`). Run `make validate` to regenerate; never edit `internal/buildinfo/buildinfo.go` manually.
 - **Pricing catalog** (`internal/pricing/pricing.go:DefaultCatalog()`) has ~20 hardcoded model prices. Upstream pricing changes need a code update + release — `tools/pricing-watch` monitors for this.
 - **sinks/cache dir** — `.cache/` holds Go build cache. `AITOK_CACHE_DIR` env var controls location.
 - **User pricing override** at `~/.aitok/pricing.json` — `Catalog.upsert()` prepends user entries before the `DefaultCatalog()` entries for priority.
 - **Codex provider rebalancing** — `rebalanceMixedProviderThread()` in `query.go` has non-trivial heuristics for splitting inferred-timeline turns across providers. Modify with care.
 - **TUI** won't start gracefully without a real terminal — `--render` flag outputs one-shot to stdout as an escape.
 - **`tools/`** are standalone `package main` — each with its own `main_test.go`. They are NOT part of the main binary.
-- **`VERSION`** at root — separate from `buildinfo.Version`, used by goreleaser and CI.
+- **`VERSION`** at root — the single source of truth for the project version. `tools/buildinfo-gen` reads it to produce `internal/buildinfo/buildinfo.go`. Update only `VERSION` for version bumps.
 - **`.goreleaser.yml`** — homebrew tap + GitHub release automation; sensitive to tag naming.

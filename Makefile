@@ -43,4 +43,7 @@ commitlint-range:
 	@test -n "$(COMMIT_RANGE)" || (echo 'COMMIT_RANGE is required, for example: make commitlint-range COMMIT_RANGE="origin/main..HEAD"' >&2; exit 2)
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) run ./tools/commitlint --range "$(COMMIT_RANGE)"
 
-validate: check test build
+validate: generate check test build
+
+generate:
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) generate ./internal/buildinfo/...

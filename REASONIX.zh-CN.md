@@ -105,12 +105,12 @@
 
 ## 注意事项
 
-- **`buildinfo.Version`** 硬编码在 `internal/buildinfo/buildinfo.go` — 发布前必须手动更新（同时更新根目录的 `VERSION`）。
+- **`buildinfo.Version`** 由 `tools/buildinfo-gen` 从根目录 `VERSION` 文件自动生成（通过 `go generate ./internal/buildinfo/...`）。执行 `make validate` 即可重新生成；禁止手动编辑 `internal/buildinfo/buildinfo.go`。
 - **价格目录**（`internal/pricing/pricing.go:DefaultCatalog()`）内置约 20 个硬编码模型价格。上游价格变动需代码更新 + 发布 — `tools/pricing-watch` 负责监控。
 - **缓存目录** — `.cache/` 存放 Go 构建缓存。可用 `AITOK_CACHE_DIR` 环境变量控制。
 - **用户定价覆盖**在 `~/.aitok/pricing.json` — `Catalog.upsert()` 将用户条目插入 `DefaultCatalog()` 之前以获得优先级。
 - **Codex 提供者重平衡** — `query.go` 的 `rebalanceMixedProviderThread()` 包含复杂启发式逻辑，用于将推断时间线的 turn 跨提供者拆分。修改需充分测试。
 - **TUI** 在没有真实终端时会异常退出 — `--render` 标志可将单次输出打到 stdout 作为逃生出口。
 - **`tools/`** 是独立的 `package main` — 每个工具都有自己的 `main_test.go`。它们不是主二进制的一部分。
-- **根目录 `VERSION`** — 与 `buildinfo.Version` 独立，供 goreleaser 和 CI 使用。
+- **根目录 `VERSION`** — 项目版本的唯一来源。`tools/buildinfo-gen` 从中读取生成 `internal/buildinfo/buildinfo.go`。版本升级只需更新 `VERSION`。
 - **`.goreleaser.yml`** — homebrew tap + GitHub Release 自动化；对 tag 命名敏感。

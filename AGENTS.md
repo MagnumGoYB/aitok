@@ -94,6 +94,7 @@ Before every product or harness iteration, do a short internal review:
 - Markdown/table reports should remain readable and scriptable.
 - TUI must not replace CLI/JSON output; automation must be able to bypass TUI.
 - Production packages must not import `harness/` or `tools/`.
+- **Version single-source-of-truth**: Only edit the root `VERSION` file for version bumps. `internal/buildinfo/buildinfo.go` is auto-generated — never edit it manually. Run `make validate` to regenerate before committing version changes.
 
 ## 5) Harness Maintenance Rules
 
