@@ -408,7 +408,7 @@ type budgetExceededError struct {
 }
 
 func (e budgetExceededError) Error() string {
-	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatUSD(e.Total), report.FormatUSD(e.Limit))
+	return fmt.Sprintf("budget exceeded: total %s > limit %s", report.FormatCost(e.Total, ""), report.FormatCost(e.Limit, ""))
 }
 
 func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.BudgetPayload, error) {
@@ -447,14 +447,19 @@ func buildBudgetCheck(ctx context.Context, f *flags, now time.Time) (report.Budg
 	}
 	results := acc.Results()
 	var total float64
+	var currency string
 	for _, result := range results {
 		total += result.CostUSD
+		if currency == "" && result.Price != nil && result.Price.Currency != "" {
+			currency = result.Price.Currency
+		}
 	}
 	return report.BudgetPayload{
 		GeneratedAt:    now,
 		Window:         window,
 		LimitUSD:       f.limitUSD,
 		TotalUSD:       total,
+		Currency:       currency,
 		Exceeded:       total > f.limitUSD,
 		UnpricedEvents: unpriced.Events,
 		UnpricedTokens: unpriced.Tokens,

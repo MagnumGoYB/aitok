@@ -32,6 +32,7 @@ type BudgetPayload struct {
 	Window         query.Window   `json:"window"`
 	LimitUSD       float64        `json:"limit_usd"`
 	TotalUSD       float64        `json:"total_usd"`
+	Currency       string         `json:"currency,omitempty"`
 	Exceeded       bool           `json:"exceeded"`
 	UnpricedEvents int            `json:"unpriced_events"`
 	UnpricedTokens int64          `json:"unpriced_tokens"`
@@ -128,9 +129,10 @@ func WritePricingAudit(w io.Writer, format string, payload PricingAuditPayload) 
 }
 
 func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
+	limitLabel := budgetCurrencyLabel(payload.Currency)
 	switch format {
 	case "", "table":
-		if _, err := fmt.Fprintf(w, "Limit USD: %s\nTotal USD: %s\nExceeded: %t\nUnpriced events: %d\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+		if _, err := fmt.Fprintf(w, "Limit %s: %s\nTotal %s: %s\nExceeded: %t\nUnpriced events: %d\n\n", limitLabel, FormatCost(payload.LimitUSD, payload.Currency), limitLabel, FormatCost(payload.TotalUSD, payload.Currency), payload.Exceeded, payload.UnpricedEvents); err != nil {
 			return err
 		}
 		return WriteTable(w, payload.Results)
@@ -139,18 +141,27 @@ func WriteBudget(w io.Writer, format string, payload BudgetPayload) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(payload)
 	case "markdown":
-		if _, err := fmt.Fprintf(w, "| Limit USD | Total USD | Exceeded | Unpriced Events |\n"); err != nil {
+		if _, err := fmt.Fprintf(w, "| Limit %s | Total %s | Exceeded | Unpriced Events |\n", limitLabel, limitLabel); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintf(w, "| ---: | ---: | --- | ---: |\n"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "| %s | %s | %t | %d |\n\n", FormatUSD(payload.LimitUSD), FormatUSD(payload.TotalUSD), payload.Exceeded, payload.UnpricedEvents); err != nil {
+		if _, err := fmt.Fprintf(w, "| %s | %s | %t | %d |\n\n", FormatCost(payload.LimitUSD, payload.Currency), FormatCost(payload.TotalUSD, payload.Currency), payload.Exceeded, payload.UnpricedEvents); err != nil {
 			return err
 		}
 		return WriteMarkdown(w, payload.Results)
 	default:
 		return fmt.Errorf("unknown format %q", format)
+	}
+}
+
+func budgetCurrencyLabel(currency string) string {
+	switch strings.ToUpper(currency) {
+	case "CNY", "RMB":
+		return "CNY"
+	default:
+		return "USD"
 	}
 }
 

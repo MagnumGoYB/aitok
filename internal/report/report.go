@@ -221,7 +221,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 				escapeMarkdown(formatKey(result.Key)),
 				result.Requests,
 				result.Events,
-				FormatUSD(result.CostUSD),
+				FormatCost(result.CostUSD, resultCurrency(result)),
 				escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 				result.Usage.Input,
 				result.Usage.Output,
@@ -246,7 +246,7 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %s | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
 			result.Requests,
-			FormatUSD(result.CostUSD),
+			FormatCost(result.CostUSD, resultCurrency(result)),
 			escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
 			result.Usage.NormalizedTotal(),
 		); err != nil {
