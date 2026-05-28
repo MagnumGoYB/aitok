@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,7 +40,9 @@ func (o OpenCode) Read(ctx context.Context) ([]usage.UsageEvent, error) {
 
 func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error) error {
 	dbPath := filepath.Join(o.Home, ".local", "share", "opencode", "opencode.db")
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	// Use file: URI with proper path encoding to handle special characters in path
+	dbURI := "file:" + url.PathEscape(dbPath) + "?mode=ro"
+	db, err := sql.Open("sqlite", dbURI)
 	if err != nil {
 		return nil
 	}
@@ -81,11 +84,15 @@ func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error)
 			continue
 		}
 		ts := time.UnixMilli(timeCreated)
+		// Use data.time.created if available (may differ from time_created column)
 		if dataTime := objectValue(data["time"]); dataTime != nil {
 			if created := intValue(dataTime["created"]); created > 0 {
 				ts = time.UnixMilli(created)
 			}
 		}
+		// Double-check window in Go: SQL filters on time_created column,
+		// but we re-check here using the JSON data.time.created field
+		// which may differ from the column value.
 		if !o.inWindow(ts) {
 			continue
 		}
@@ -132,14 +139,15 @@ func (o OpenCode) inWindow(ts time.Time) bool {
 }
 
 func (o OpenCode) messageQuery() string {
-	base := "select id, session_id, time_created, data from message where json_extract(data, '$.role') = 'assistant'"
+	// Fetch all messages; role filtering happens in Go to handle malformed JSON gracefully.
+	base := "select id, session_id, time_created, data from message"
 	if o.WindowStart.IsZero() {
 		return base + " order by time_created asc"
 	}
 	if o.WindowEnd.IsZero() {
-		return fmt.Sprintf("%s and time_created >= %d order by time_created asc", base, o.WindowStart.UnixMilli())
+		return fmt.Sprintf("%s where time_created >= %d order by time_created asc", base, o.WindowStart.UnixMilli())
 	}
-	return fmt.Sprintf("%s and time_created >= %d and time_created < %d order by time_created asc", base, o.WindowStart.UnixMilli(), o.WindowEnd.UnixMilli())
+	return fmt.Sprintf("%s where time_created >= %d and time_created < %d order by time_created asc", base, o.WindowStart.UnixMilli(), o.WindowEnd.UnixMilli())
 }
 
 func (o OpenCode) parseTokens(data map[string]any) usage.TokenUsage {
@@ -165,18 +173,19 @@ func (o OpenCode) parseTokens(data map[string]any) usage.TokenUsage {
 }
 
 type opencodeSession struct {
-	name             string
-	slug             string
-	directory        string
-	firstUserMessage string
-	titleIsDefault   bool
-	timeCreated      time.Time
-	timeUpdated      time.Time
+	name           string
+	slug           string
+	directory      string
+	titleIsDefault bool
+	timeCreated    time.Time
+	timeUpdated    time.Time
 }
 
 func (o OpenCode) readSessions(ctx context.Context, db *sql.DB) (map[string]opencodeSession, error) {
 	rows, err := db.QueryContext(ctx, `select id, title, slug, directory, time_created, time_updated from session`)
 	if err != nil {
+		// If session table is missing or query fails, return empty map.
+		// Messages will still be processed but without thread metadata.
 		return map[string]opencodeSession{}, nil
 	}
 	defer rows.Close()
@@ -190,13 +199,12 @@ func (o OpenCode) readSessions(ctx context.Context, db *sql.DB) (map[string]open
 		}
 		title = strings.TrimSpace(title)
 		sessions[id] = opencodeSession{
-			name:             opencodeThreadName(title, "", slug, directory),
-			slug:             slug,
-			directory:        directory,
-			firstUserMessage: "",
-			titleIsDefault:   title == "" || strings.HasPrefix(title, "New session - "),
-			timeCreated:      time.UnixMilli(timeCreated),
-			timeUpdated:      time.UnixMilli(timeUpdated),
+			name:           opencodeThreadName(title, "", slug, directory),
+			slug:           slug,
+			directory:      directory,
+			titleIsDefault: title == "" || strings.HasPrefix(title, "New session - "),
+			timeCreated:    time.UnixMilli(timeCreated),
+			timeUpdated:    time.UnixMilli(timeUpdated),
 		}
 	}
 	return sessions, rows.Err()
@@ -250,17 +258,16 @@ func (o OpenCode) readFirstUserMessages(ctx context.Context, db *sql.DB, session
 		if !ok {
 			continue
 		}
-		session.firstUserMessage = text
 		if session.titleIsDefault {
 			session.name = truncateTitle(text)
+			sessions[sessionID] = session
 		}
-		sessions[sessionID] = session
 	}
 }
 
 func isOpenCodeRealTitle(text string) bool {
 	text = strings.TrimSpace(text)
-	if utf8.RuneCountInString(text) < 4 {
+	if utf8.RuneCountInString(text) < 2 {
 		return false
 	}
 	if text == "say hi" || text == "hi" {

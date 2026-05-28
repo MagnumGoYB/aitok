@@ -385,6 +385,42 @@ func TestDefaultCatalogCoversDeepSeekModels(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
+	catalog := DefaultCatalog()
+	tests := []struct {
+		model    string
+		provider string
+		input    int64
+		output   int64
+		wantCNY  float64
+	}{
+		{"mimo-v2.5-pro", "mimo", 1_000_000, 1_000_000, 3 + 6},
+		{"mimo-v2.5", "mimo", 1_000_000, 1_000_000, 1 + 2},
+		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.7 + 2.1}, // below threshold
+		{"mimo-v2-pro", "mimo", 300_000, 100_000, 4.2 + 4.2}, // above threshold
+		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 2.8 + 14.0},
+		{"off-v2-flash", "mimo", 1_000_000, 1_000_000, 0.7 + 2.1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			cost := catalog.CostFor(usage.UsageEvent{
+				Model:    tt.model,
+				Provider: tt.provider,
+				Usage:    usage.TokenUsage{Input: tt.input, Output: tt.output},
+			})
+			if cost.Source == "unknown" {
+				t.Fatalf("CostFor(%q).Source = unknown (unpriced)", tt.model)
+			}
+			if cost.Currency != "CNY" {
+				t.Fatalf("CostFor(%q).Currency = %q, want CNY", tt.model, cost.Currency)
+			}
+			if math.Abs(cost.Amount-tt.wantCNY) > 0.01 {
+				t.Fatalf("CostFor(%q).Amount = %.4f, want %.4f CNY", tt.model, cost.Amount, tt.wantCNY)
+			}
+		})
+	}
+}
+
 func BenchmarkCostFor(b *testing.B) {
 	catalog := DefaultCatalog()
 	events := make([]usage.UsageEvent, 4096)

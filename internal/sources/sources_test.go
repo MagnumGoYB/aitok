@@ -175,6 +175,294 @@ func TestOpenCodeKeepsOriginalModelID(t *testing.T) {
 	}
 }
 
+func TestOpenCodeMissingDatabaseReturnsEmptyEvents(t *testing.T) {
+	home := t.TempDir()
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("len(events) = %d, want 0", len(events))
+	}
+}
+
+func TestOpenCodeSkipsMalformedJSON(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	mustMkdir(t, filepath.Dir(dbPath))
+	mustWriteSQLite(t, dbPath, []string{
+		`create table session (
+			id text primary key,
+			title text not null,
+			slug text not null,
+			directory text not null,
+			time_created integer not null,
+			time_updated integer not null
+		);`,
+		`create table message (
+			id text primary key,
+			session_id text not null,
+			time_created integer not null,
+			data text not null
+		);`,
+		`create table part (
+			id text primary key,
+			message_id text not null,
+			data text not null
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-1',
+			'Test Session',
+			'session-1',
+			'/repo',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-malformed',
+			'session-1',
+			1746666000000,
+			'{bad json'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-valid',
+			'session-1',
+			1746666001000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+	})
+
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1 (malformed JSON should be skipped)", len(events))
+	}
+	if events[0].ID != "msg-valid" {
+		t.Fatalf("id = %q, want msg-valid", events[0].ID)
+	}
+}
+
+func TestOpenCodeSkipsZeroTokenMessages(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	mustMkdir(t, filepath.Dir(dbPath))
+	mustWriteSQLite(t, dbPath, []string{
+		`create table session (
+			id text primary key,
+			title text not null,
+			slug text not null,
+			directory text not null,
+			time_created integer not null,
+			time_updated integer not null
+		);`,
+		`create table message (
+			id text primary key,
+			session_id text not null,
+			time_created integer not null,
+			data text not null
+		);`,
+		`create table part (
+			id text primary key,
+			message_id text not null,
+			data text not null
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-1',
+			'Test Session',
+			'session-1',
+			'/repo',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-zero',
+			'session-1',
+			1746666000000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":0,"output":0,"total":0}}'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-valid',
+			'session-1',
+			1746666001000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+	})
+
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1 (zero-token messages should be skipped)", len(events))
+	}
+	if events[0].ID != "msg-valid" {
+		t.Fatalf("id = %q, want msg-valid", events[0].ID)
+	}
+}
+
+func TestOpenCodeSkipsNonAssistantMessages(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	mustMkdir(t, filepath.Dir(dbPath))
+	mustWriteSQLite(t, dbPath, []string{
+		`create table session (
+			id text primary key,
+			title text not null,
+			slug text not null,
+			directory text not null,
+			time_created integer not null,
+			time_updated integer not null
+		);`,
+		`create table message (
+			id text primary key,
+			session_id text not null,
+			time_created integer not null,
+			data text not null
+		);`,
+		`create table part (
+			id text primary key,
+			message_id text not null,
+			data text not null
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-1',
+			'Test Session',
+			'session-1',
+			'/repo',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-user',
+			'session-1',
+			1746666000000,
+			'{"role":"user","text":"Hello"}'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-valid',
+			'session-1',
+			1746666001000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+	})
+
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1 (non-assistant messages should be skipped)", len(events))
+	}
+	if events[0].ID != "msg-valid" {
+		t.Fatalf("id = %q, want msg-valid", events[0].ID)
+	}
+}
+
+func TestOpenCodeThreadNameResolution(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	mustMkdir(t, filepath.Dir(dbPath))
+	mustWriteSQLite(t, dbPath, []string{
+		`create table session (
+			id text primary key,
+			title text not null,
+			slug text not null,
+			directory text not null,
+			time_created integer not null,
+			time_updated integer not null
+		);`,
+		`create table message (
+			id text primary key,
+			session_id text not null,
+			time_created integer not null,
+			data text not null
+		);`,
+		`create table part (
+			id text primary key,
+			message_id text not null,
+			data text not null
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-title',
+			'My Custom Title',
+			'session-1',
+			'/repo',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-default',
+			'New session - 2026-05-08',
+			'session-2',
+			'/tmp/my-project',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-empty',
+			'',
+			'session-3',
+			'/home/user/code',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-1',
+			'session-title',
+			1746666000000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-2',
+			'session-default',
+			1746666001000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-3',
+			'session-empty',
+			1746666002000,
+			'{"role":"assistant","modelID":"claude-sonnet-4-20250514","providerID":"anthropic","tokens":{"input":10,"output":5,"total":15}}'
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-user',
+			'session-default',
+			1746665000000,
+			'{"role":"user","text":"Fix the bug"}'
+		);`,
+		`insert into part (id, message_id, data) values (
+			'part-1',
+			'msg-user',
+			'{"type":"text","text":"Fix the bug"}'
+		);`,
+	})
+
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3", len(events))
+	}
+
+	names := map[string]string{}
+	for _, e := range events {
+		names[e.ThreadID] = e.ThreadName
+	}
+
+	if names["session-title"] != "My Custom Title" {
+		t.Fatalf("session-title name = %q, want 'My Custom Title'", names["session-title"])
+	}
+	if names["session-default"] != "Fix the bug" {
+		t.Fatalf("session-default name = %q, want 'Fix the bug' (from first user message)", names["session-default"])
+	}
+	if names["session-empty"] != "code" {
+		t.Fatalf("session-empty name = %q, want 'code' (from directory base)", names["session-empty"])
+	}
+}
+
 func TestCodexSkipsSessionFilesBeforeWindow(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".codex", "sessions", "2026", "05", "08")
