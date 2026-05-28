@@ -192,7 +192,7 @@ func (m model) cards(summary totals, copy localizedCopy) string {
 	}
 	cards := []string{
 		cardWithWidth(copy.requests, formatInt(int64(summary.requests)), "↯", blue, cardWidths[0]),
-		cardWithWidth(copy.cost, tuiFormatCost(summary.cost, summary.currency), tuiCurrencyIcon(summary.currency), green, cardWidths[1]),
+		cardWithWidth(copy.cost, tuiFormatCosts(summary.costs), tuiCurrencyIcon(tuiPrimaryCurrency(summary.costs)), green, cardWidths[1]),
 		cardWithWidth(copy.totalTokens, formatInt(summary.total), "▱", purple, cardWidths[2]),
 		cardWithWidth(copy.cachedTokens, formatInt(summary.cached), "◉", orange, cardWidths[3]),
 	}

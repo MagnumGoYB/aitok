@@ -84,6 +84,62 @@ func tuiFormatCost(value float64, currency string) string {
 	return report.FormatCost(value, currency)
 }
 
+func tuiFormatCosts(costs map[string]float64) string {
+	if len(costs) == 0 {
+		return tuiFormatCost(0, "USD")
+	}
+	usd := costs["USD"]
+	cny := costs["CNY"] + costs["RMB"]
+	parts := make([]string, 0, len(costs))
+	if usd != 0 || cny == 0 {
+		parts = append(parts, tuiFormatCost(usd, "USD"))
+	}
+	if cny != 0 {
+		cnyPart := tuiFormatCost(cny, "CNY")
+		if len(parts) == 0 {
+			parts = append(parts, cnyPart)
+		} else {
+			parts = append(parts, "("+cnyPart+")")
+		}
+	}
+	otherCurrencies := make([]string, 0, len(costs))
+	for currency := range costs {
+		upper := strings.ToUpper(currency)
+		if upper == "" || upper == "USD" || upper == "CNY" || upper == "RMB" {
+			continue
+		}
+		otherCurrencies = append(otherCurrencies, currency)
+	}
+	sort.Strings(otherCurrencies)
+	for _, currency := range otherCurrencies {
+		parts = append(parts, "("+tuiFormatCost(costs[currency], currency)+")")
+	}
+	return strings.Join(parts, " ")
+}
+
+func tuiPrimaryCurrency(costs map[string]float64) string {
+	if len(costs) == 0 {
+		return "USD"
+	}
+	if costs["USD"] != 0 {
+		return "USD"
+	}
+	if costs["CNY"] != 0 || costs["RMB"] != 0 {
+		return "CNY"
+	}
+	currencies := make([]string, 0, len(costs))
+	for currency, amount := range costs {
+		if amount != 0 {
+			currencies = append(currencies, currency)
+		}
+	}
+	if len(currencies) == 0 {
+		return "USD"
+	}
+	sort.Strings(currencies)
+	return currencies[0]
+}
+
 func tuiCurrencyIcon(currency string) string {
 	switch strings.ToUpper(currency) {
 	case "CNY", "RMB":

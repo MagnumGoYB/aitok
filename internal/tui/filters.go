@@ -9,8 +9,7 @@ import (
 
 type totals struct {
 	requests int
-	cost     float64
-	currency string
+	costs    map[string]float64
 	total    int64
 	cached   int64
 }
@@ -58,15 +57,12 @@ func (m model) filteredResults() []query.Result {
 }
 
 func summarize(results []query.Result) totals {
-	var out totals
+	out := totals{costs: map[string]float64{}}
 	for _, result := range results {
 		out.requests += result.Requests
-		out.cost += result.CostUSD
 		out.total += result.Usage.NormalizedTotal()
 		out.cached += result.Usage.CachedInput + result.Usage.CacheCreation
-		if result.Price != nil && result.Price.Currency != "" && out.currency == "" {
-			out.currency = result.Price.Currency
-		}
+		out.costs[resultCurrency2(result)] += result.CostUSD
 	}
 	return out
 }
