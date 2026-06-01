@@ -98,12 +98,13 @@ func (m model) tableLines(results []query.Result, copy localizedCopy) []string {
 		end = len(results)
 	}
 	overflow := len(results) > height
-	header := mutedStyle.Render(modelUsageTableLine(modelTableRow(copy.headerModel, copy.headerReq, copy.headerCost, copy.headerPrice, copy.headerTokens, copy.headerInput, copy.headerOutput, copy.headerCached), -1, m.modelOffset, height, len(results), overflow))
+	header := mutedStyle.Render(modelUsageTableLine(modelTableRow(copy.headerModel, copy.headerTool, copy.headerReq, copy.headerCost, copy.headerPrice, copy.headerTokens, copy.headerInput, copy.headerOutput, copy.headerCached), -1, m.modelOffset, height, len(results), overflow))
 	lines := []string{header}
 	for i := m.modelOffset; i < end; i++ {
 		result := results[i]
 		line := modelUsageTableLine(modelTableRow(
 			resultLabel(result),
+			resultToolLabel(result),
 			fmt.Sprint(result.Requests),
 			tuiFormatCost(result.CostUSD, resultCurrency2(result)),
 			priceLabel(result.Price, result.PriceSource),
@@ -118,6 +119,16 @@ func (m model) tableLines(results []query.Result, copy localizedCopy) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func resultToolLabel(result query.Result) string {
+	if result.Tool != "" {
+		return result.Tool
+	}
+	if tool := result.Key["tool"]; tool != "" && tool != "unknown" {
+		return tool
+	}
+	return "-"
 }
 
 func (m model) modelUsageTableRows() int {

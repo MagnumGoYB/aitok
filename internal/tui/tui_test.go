@@ -390,6 +390,7 @@ func TestModelUsageTableShowsMixedPriceDetails(t *testing.T) {
 		Results: []query.Result{
 			{
 				Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "toska"},
+				Tool:     "codex",
 				Requests: 1410,
 				Usage:    usage.TokenUsage{Input: 199_100_000, Output: 1_100_000, CachedInput: 180_800_000},
 				CostUSD:  947.9961,
@@ -401,10 +402,10 @@ func TestModelUsageTableShowsMixedPriceDetails(t *testing.T) {
 		},
 	}
 	view := stripANSI(RenderWidth(payload, 180))
-	if strings.Contains(view, " mixed ") && !strings.Contains(view, "mixed custom+official $5/30..40/M") {
+	if strings.Contains(view, " mixed ") && !strings.Contains(view, "mixed custom+official") {
 		t.Fatalf("TUI should show compact mixed price details, got: %s", view)
 	}
-	if !strings.Contains(view, "mixed custom+official $5/30..40/M") {
+	if !strings.Contains(view, "mixed custom+official") {
 		t.Fatalf("TUI missing mixed price details: %s", view)
 	}
 }
@@ -430,9 +431,9 @@ func TestModelUsageChartAndTableAreSeparated(t *testing.T) {
 func TestModelUsageChartKeepsSmallTokenRatiosVisible(t *testing.T) {
 	payload := report.Payload{
 		Results: []query.Result{
-			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"}, Usage: usage.TokenUsage{Input: 107_947_474}},
-			{Key: map[string]string{"tool": "claude", "model": "claude-opus-4-7"}, Usage: usage.TokenUsage{Input: 955_754}},
-			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openai"}, Usage: usage.TokenUsage{Input: 585_484}},
+			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"}, Tool: "codex", Usage: usage.TokenUsage{Input: 107_947_474}},
+			{Key: map[string]string{"tool": "claude", "model": "claude-opus-4-7"}, Tool: "claude", Usage: usage.TokenUsage{Input: 955_754}},
+			{Key: map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "openai"}, Tool: "codex", Usage: usage.TokenUsage{Input: 585_484}},
 		},
 	}
 	view := stripANSI(RenderWidth(payload, 160))
@@ -507,12 +508,12 @@ func TestModelUsageTableAlignsMixedWidthLabels(t *testing.T) {
 }
 
 func TestModelUsageTableAddsBreathingRoomAroundCost(t *testing.T) {
-	header := stripANSI(modelTableRow("Model", "Req", "Cost", "Price", "Tokens", "Input", "Output", "Cached"))
+	header := stripANSI(modelTableRow("Model", "Tool", "Req", "Cost", "Price", "Tokens", "Input", "Output", "Cached"))
 	reqEnd := strings.Index(header, "Req") + len("Req")
 	costStart := strings.Index(header, "Cost")
 	costEnd := costStart + len("Cost")
 	priceStart := strings.Index(header, "Price")
-	if costStart-reqEnd < 3 || priceStart-costEnd < 3 {
+	if costStart-reqEnd < 2 || priceStart-costEnd < 2 {
 		t.Fatalf("model usage table should keep wider spacing around Cost:\n%s", header)
 	}
 }
@@ -521,6 +522,7 @@ func TestModelUsageTableIncludesTotalTokens(t *testing.T) {
 	payload := report.Payload{
 		Results: []query.Result{{
 			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "bcb"},
+			Tool:     "codex",
 			Requests: 1,
 			Usage:    usage.TokenUsage{Input: 1000, Output: 200, CachedInput: 50, CacheCreation: 25},
 			CostUSD:  0.1234,
@@ -530,8 +532,27 @@ func TestModelUsageTableIncludesTotalTokens(t *testing.T) {
 	if !strings.Contains(view, "Tokens") {
 		t.Fatalf("model usage table must include a total Tokens column:\n%s", view)
 	}
+	if !strings.Contains(view, "Tool") || !strings.Contains(view, "codex") {
+		t.Fatalf("model usage table must include a tool column:\n%s", view)
+	}
 	if !strings.Contains(view, "1.2k") {
 		t.Fatalf("model usage table Tokens column should include normalized total tokens:\n%s", view)
+	}
+}
+
+func TestModelUsageTableDisambiguatesDuplicateModelProviderLabelsByTool(t *testing.T) {
+	payload := report.Payload{
+		Results: []query.Result{
+			{Key: map[string]string{"tool": "codex", "model": "deepseek-v4-pro", "provider": "deepseek"}, Tool: "codex", Requests: 1, Usage: usage.TokenUsage{Input: 100}},
+			{Key: map[string]string{"tool": "reasonix", "model": "deepseek-v4-pro", "provider": "deepseek"}, Tool: "reasonix", Requests: 1, Usage: usage.TokenUsage{Input: 200}},
+		},
+	}
+	view := stripANSI(RenderWidth(payload, 160))
+	if !strings.Contains(view, "Tool") || !strings.Contains(view, "codex") || !strings.Contains(view, "reasonix") {
+		t.Fatalf("model usage table should show an explicit tool column:\n%s", view)
+	}
+	if strings.Contains(view, "· codex") || strings.Contains(view, "· reas") {
+		t.Fatalf("model usage table should not append tool into the model label anymore:\n%s", view)
 	}
 }
 
@@ -541,6 +562,7 @@ func TestModelUsageScrollsWhenProvidersAreMany(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		payload.Results = append(payload.Results, query.Result{
 			Key:      map[string]string{"tool": "codex", "model": "gpt-5.5", "provider": "provider-" + string(rune('a'+i))},
+			Tool:     "codex",
 			Requests: 10 - i,
 			Usage:    usage.TokenUsage{Input: int64(1_000_000 - i*10_000)},
 			CostUSD:  float64(12 - i),
@@ -1446,6 +1468,7 @@ func samplePayload() report.Payload {
 		Window: query.Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},
 		Results: []query.Result{{
 			Key:      map[string]string{"tool": "codex", "model": "gpt-5.4"},
+			Tool:     "codex",
 			Requests: 2,
 			Events:   2,
 			Usage:    usage.TokenUsage{Input: 1000, Output: 200, CachedInput: 50, CacheCreation: 25},
@@ -1461,8 +1484,8 @@ func keyMsg(value string) tea.KeyMsg {
 func TestModelFiltersBySearchAndTool(t *testing.T) {
 	m := NewModel(report.Payload{
 		Results: []query.Result{
-			{Key: map[string]string{"tool": "codex", "model": "gpt-5.4"}, Requests: 1, Usage: usage.TokenUsage{Input: 100}},
-			{Key: map[string]string{"tool": "claude", "model": "claude-sonnet-4"}, Requests: 1, Usage: usage.TokenUsage{Input: 200}},
+			{Key: map[string]string{"tool": "codex", "model": "gpt-5.4"}, Tool: "codex", Requests: 1, Usage: usage.TokenUsage{Input: 100}},
+			{Key: map[string]string{"tool": "claude", "model": "claude-sonnet-4"}, Tool: "claude", Requests: 1, Usage: usage.TokenUsage{Input: 200}},
 		},
 	})
 	m.activeTool = "codex"

@@ -68,6 +68,7 @@ type Price struct {
 
 type Result struct {
 	Key         map[string]string `json:"key"`
+	Tool        string            `json:"tool,omitempty"`
 	Events      int               `json:"events"`
 	Requests    int               `json:"requests"`
 	CostUSD     float64           `json:"cost_usd"`
@@ -245,7 +246,7 @@ func (a *Accumulator) Add(event usage.UsageEvent) {
 	bucketKey := serializeKey(a.groupBy, key)
 	bucket := a.buckets[bucketKey]
 	if bucket == nil {
-		bucket = &Result{Key: key, Examples: map[string]string{}}
+		bucket = &Result{Key: key, Tool: string(event.Tool), Examples: map[string]string{}}
 		a.buckets[bucketKey] = bucket
 	}
 	bucket.Events++
@@ -259,6 +260,11 @@ func (a *Accumulator) Add(event usage.UsageEvent) {
 	}
 	if event.CWD != "" && bucket.Examples["cwd"] == "" {
 		bucket.Examples["cwd"] = event.CWD
+	}
+	if bucket.Tool == "" || bucket.Tool == "unknown" {
+		bucket.Tool = string(event.Tool)
+	} else if string(event.Tool) != "" && string(event.Tool) != "unknown" && bucket.Tool != string(event.Tool) {
+		bucket.Tool = "mixed"
 	}
 }
 
@@ -373,7 +379,7 @@ func (a *ThreadAccumulator) Add(event usage.UsageEvent) {
 	groupBucketID := serializeKey(defaultGroupBy, groupKey)
 	groupBucket := bucket.groupBuckets[groupBucketID]
 	if groupBucket == nil {
-		groupBucket = &Result{Key: groupKey}
+		groupBucket = &Result{Key: groupKey, Tool: string(event.Tool)}
 		bucket.groupBuckets[groupBucketID] = groupBucket
 	}
 	groupBucket.Events++
@@ -477,6 +483,7 @@ func (a *ThreadAccumulator) groupBucketsForThread(thread *threadBucket, groupBy 
 		if grouped[bucketID] == nil {
 			grouped[bucketID] = &Result{
 				Key:         key,
+				Tool:        thread.result.Tool,
 				PriceSource: item.PriceSource,
 				Price:       clonePrice(item.Price),
 			}
@@ -495,9 +502,10 @@ func (a *ThreadAccumulator) groupBucketsForThread(thread *threadBucket, groupBy 
 func mergeGroupedResult(buckets map[string]*Result, groupBy GroupBy, key map[string]string, next Result) {
 	bucketKey := serializeKey(groupBy, key)
 	if buckets[bucketKey] == nil {
-		buckets[bucketKey] = &Result{Key: key}
+		buckets[bucketKey] = &Result{Key: key, Tool: next.Tool}
 	}
 	bucket := buckets[bucketKey]
+	bucket.Tool = mergeTool(bucket.Tool, next.Tool)
 	bucket.Events += next.Events
 	bucket.Requests += next.Requests
 	bucket.CostUSD += next.CostUSD
@@ -516,12 +524,29 @@ func mergeGroupedResultByID(buckets map[string]*Result, bucketID string, next *R
 		buckets[bucketID] = &copy
 		return
 	}
+	bucket.Tool = mergeTool(bucket.Tool, next.Tool)
 	bucket.Events += next.Events
 	bucket.Requests += next.Requests
 	bucket.CostUSD += next.CostUSD
 	bucket.Usage = bucket.Usage.Add(next.Usage)
 	bucket.PriceSource = mergePriceSource(bucket.PriceSource, next.PriceSource)
 	bucket.Price = mergeAggregatedPrice(bucket.Price, next.Price)
+}
+
+func mergeTool(current, next string) string {
+	if next == "" {
+		return current
+	}
+	if current == "" || current == "unknown" {
+		return next
+	}
+	if next == "unknown" {
+		return current
+	}
+	if current != next {
+		return "mixed"
+	}
+	return current
 }
 
 func sameGroupBy(left, right GroupBy) bool {

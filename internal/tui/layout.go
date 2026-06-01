@@ -21,18 +21,19 @@ type tableColumn struct {
 
 var modelColumnWidth = 36
 
-func modelTableRow(modelName, req, cost, price, tokens, input, output, cached string) string {
+func modelTableRow(modelName, tool, req, cost, price, tokens, input, output, cached string) string {
 	columns := []tableColumn{
-		{value: modelName, width: 30, align: alignLeft},
+		{value: modelName, width: 24, align: alignLeft},
+		{value: tool, width: 8, align: alignLeft},
 		{value: req, width: 5, align: alignRight},
-		{value: cost, width: 10, align: alignRight},
-		{value: tableText(price, 34), width: 34, align: alignLeft},
+		{value: cost, width: 9, align: alignRight},
+		{value: tableText(price, 28), width: 28, align: alignLeft},
 		{value: tokens, width: 8, align: alignRight},
-		{value: input, width: 8, align: alignRight},
+		{value: input, width: 7, align: alignRight},
 		{value: output, width: 7, align: alignRight},
-		{value: cached, width: 7, align: alignRight},
+		{value: cached, width: 6, align: alignRight},
 	}
-	gaps := []int{2, 3, 3, 2, 2, 1, 1}
+	gaps := []int{2, 2, 2, 2, 2, 1, 1, 1}
 	return tableRow(columns, gaps)
 }
 

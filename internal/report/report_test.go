@@ -17,6 +17,7 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 		GroupBy:     query.GroupBy{"tool"},
 		Results: []query.Result{{
 			Key:      map[string]string{"tool": "codex"},
+			Tool:     "codex",
 			Events:   1,
 			Requests: 1,
 			Usage:    usage.TokenUsage{Input: 5, Output: 7},
@@ -28,15 +29,33 @@ func TestWriteJSONAndMarkdown(t *testing.T) {
 	if err := Write(&jsonOut, "json", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(jsonOut.String(), `"generated_at"`) || !strings.Contains(jsonOut.String(), `"requests": 1`) || !strings.Contains(jsonOut.String(), `"cost_usd": 0.0123`) || !strings.Contains(jsonOut.String(), `"source": "official"`) {
+	if !strings.Contains(jsonOut.String(), `"generated_at"`) || !strings.Contains(jsonOut.String(), `"requests": 1`) || !strings.Contains(jsonOut.String(), `"cost_usd": 0.0123`) || !strings.Contains(jsonOut.String(), `"source": "official"`) || !strings.Contains(jsonOut.String(), `"tool": "codex"`) {
 		t.Fatalf("json output missing stable fields: %s", jsonOut.String())
 	}
 	var mdOut bytes.Buffer
 	if err := Write(&mdOut, "markdown", payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mdOut.String(), "| Group | Req | Cost | Price | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | 1 | $0.0123 | official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M | 12 |") {
+	if !strings.Contains(mdOut.String(), "| Group | Tool | Req | Cost | Price | Total |") || !strings.Contains(mdOut.String(), "| tool=codex | codex | 1 | $0.0123 | official in=$2.5/M out=$15/M cache=$0.25/M make=$2.5/M | 12 |") {
 		t.Fatalf("markdown output unexpected: %s", mdOut.String())
+	}
+}
+
+func TestWriteTableShowsToolColumn(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteTable(&out, []query.Result{{
+		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-pro", "provider": "deepseek"},
+		Tool:     "reasonix",
+		Requests: 1,
+		Usage:    usage.TokenUsage{Input: 1_000_000},
+		CostUSD:  2,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "GROUP") || !strings.Contains(got, "TOOL") || !strings.Contains(got, "reasonix") {
+		t.Fatalf("table should show the tool column: %s", got)
 	}
 }
 
@@ -44,6 +63,7 @@ func TestWriteTableDisplaysCNYForDeepSeek(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{{
 		Key:      map[string]string{"tool": "reasonix", "model": "deepseek-v4-flash"},
+		Tool:     "reasonix",
 		Requests: 1,
 		Usage:    usage.TokenUsage{Input: 1_000_000, Output: 500_000},
 		CostUSD:  2,
@@ -66,6 +86,7 @@ func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
 	err := WriteTable(&out, []query.Result{
 		{
 			Key:      map[string]string{"model": "gpt-5.4", "provider": "team-a"},
+			Tool:     "codex",
 			Requests: 1,
 			Usage:    usage.TokenUsage{Input: 1_000_000},
 			CostUSD:  2,
@@ -73,6 +94,7 @@ func TestWriteTableDisplaysCustomAndOfficialPriceRates(t *testing.T) {
 		},
 		{
 			Key:      map[string]string{"model": "gpt-5.4", "provider": "openai"},
+			Tool:     "codex",
 			Requests: 1,
 			Usage:    usage.TokenUsage{Input: 1_000_000},
 			CostUSD:  2.5,
@@ -93,6 +115,7 @@ func TestWriteTableDisplaysMixedPriceComponentRates(t *testing.T) {
 	err := WriteTable(&out, []query.Result{
 		{
 			Key:      map[string]string{"model": "gpt-5.5", "provider": "toska"},
+			Tool:     "reasonix",
 			Requests: 2,
 			Usage:    usage.TokenUsage{Input: 2_000_000},
 			CostUSD:  70,
@@ -115,6 +138,7 @@ func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{{
 		Key:      map[string]string{"model": "gpt-5.4"},
+		Tool:     "codex",
 		Requests: 3,
 		Events:   3,
 		Usage:    usage.TokenUsage{Input: 100, Output: 20},
@@ -125,13 +149,13 @@ func TestWriteTableUsesCompactDefaultColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "REQ") || !strings.Contains(got, "COST") || !strings.Contains(got, "PRICE") || !strings.Contains(got, "$1.2345") {
+	if !strings.Contains(got, "TOOL") || !strings.Contains(got, "REQ") || !strings.Contains(got, "COST") || !strings.Contains(got, "PRICE") || !strings.Contains(got, "$1.2345") {
 		t.Fatalf("table missing request/cost fields: %s", got)
 	}
 	if strings.Contains(got, "EVENTS") || strings.Contains(got, "CACHE_CREATE") {
 		t.Fatalf("default table should stay compact: %s", got)
 	}
-	if !strings.Contains(got, "+-") || !strings.Contains(got, "| GROUP") || !strings.Contains(got, "| REQ") {
+	if !strings.Contains(got, "+-") || !strings.Contains(got, "GROUP") || !strings.Contains(got, "TOOL") || !strings.Contains(got, "REQ") {
 		t.Fatalf("table must render borders and column separators: %s", got)
 	}
 }
@@ -140,6 +164,7 @@ func TestWriteTableFullShowsExpandedColumns(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTable(&out, []query.Result{{
 		Key:      map[string]string{"model": "gpt-5.4"},
+		Tool:     "codex",
 		Requests: 3,
 		Events:   3,
 		Usage:    usage.TokenUsage{Input: 100, Output: 20},
@@ -149,7 +174,7 @@ func TestWriteTableFullShowsExpandedColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "EVENTS") || !strings.Contains(got, "CACHE_CREATE") || !strings.Contains(got, "REASONING") {
+	if !strings.Contains(got, "TOOL") || !strings.Contains(got, "EVENTS") || !strings.Contains(got, "CACHE_CREATE") || !strings.Contains(got, "REASONING") || !strings.Contains(got, "TOOL_TOK") {
 		t.Fatalf("full table should show expanded columns: %s", got)
 	}
 }

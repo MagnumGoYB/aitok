@@ -58,8 +58,49 @@ func TestAggregateIncludesRequestsAndCost(t *testing.T) {
 	if got := results[0].Requests; got != 2 {
 		t.Fatalf("requests = %d, want 2", got)
 	}
+	if got := results[0].Tool; got != "codex" {
+		t.Fatalf("tool = %q, want codex", got)
+	}
 	if got := results[0].CostUSD; got != 2 {
 		t.Fatalf("cost = %.4f, want 2", got)
+	}
+}
+
+func TestThreadAccumulatorGroupResultsPopulatesTool(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	acc := NewThreadAccumulator(window, Filters{}, nil)
+	acc.Add(usage.UsageEvent{
+		ID:        "evt-1",
+		ThreadID:  "thread-1",
+		Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc),
+		Tool:      usage.ToolCodex,
+		Model:     "gpt-5.4",
+		Provider:  "openai",
+		Usage:     usage.TokenUsage{Input: 1},
+	})
+	results := acc.GroupResults(DefaultGroupBy())
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if got := results[0].Tool; got != "codex" {
+		t.Fatalf("tool = %q, want codex", got)
+	}
+}
+
+func TestAggregateMarksMixedToolWhenGroupCombinesTools(t *testing.T) {
+	loc := time.UTC
+	window := Window{Start: time.Date(2026, 5, 8, 0, 0, 0, 0, loc), End: time.Date(2026, 5, 9, 0, 0, 0, 0, loc)}
+	events := []usage.UsageEvent{
+		{Timestamp: time.Date(2026, 5, 8, 1, 0, 0, 0, loc), Tool: usage.ToolCodex, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 1}},
+		{Timestamp: time.Date(2026, 5, 8, 2, 0, 0, 0, loc), Tool: usage.ToolClaude, Model: "gpt-5.4", Provider: "openai", Usage: usage.TokenUsage{Input: 2}},
+	}
+	results := Aggregate(events, window, Filters{}, GroupBy{"model"})
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if got := results[0].Tool; got != "mixed" {
+		t.Fatalf("tool = %q, want mixed", got)
 	}
 }
 

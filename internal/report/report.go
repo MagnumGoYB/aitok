@@ -111,14 +111,15 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 	if len(opts) > 0 {
 		option = opts[0]
 	}
-	headers := []string{"GROUP", "REQ", "COST", "PRICE", "TOTAL"}
+	headers := []string{"GROUP", "TOOL", "REQ", "COST", "PRICE", "TOTAL"}
 	if option.Full {
-		headers = []string{"GROUP", "REQ", "EVENTS", "COST", "PRICE", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL", "TOTAL"}
+		headers = []string{"GROUP", "TOOL", "REQ", "EVENTS", "COST", "PRICE", "INPUT", "OUTPUT", "CACHED", "CACHE_CREATE", "REASONING", "TOOL_TOK", "TOTAL"}
 	}
 	rows := make([][]string, 0, len(results))
 	for _, result := range results {
 		row := []string{
 			formatKey(result.Key),
+			result.Tool,
 			fmt.Sprint(result.Requests),
 			FormatCost(result.CostUSD, resultCurrency(result)),
 			formatPrice(result.Price, result.PriceSource),
@@ -127,6 +128,7 @@ func WriteTable(w io.Writer, results []query.Result, opts ...Options) error {
 		if option.Full {
 			row = []string{
 				formatKey(result.Key),
+				result.Tool,
 				fmt.Sprint(result.Requests),
 				fmt.Sprint(result.Events),
 				FormatCost(result.CostUSD, resultCurrency(result)),
@@ -210,15 +212,16 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		option = opts[0]
 	}
 	if option.Full {
-		if _, err := fmt.Fprintln(w, "| Group | Req | Events | Cost | Price | Input | Output | Cached | Cache Create | Reasoning | Tool | Total |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| Group | Tool | Req | Events | Cost | Price | Input | Output | Cached | Cache Create | Reasoning | Tool Tokens | Total |"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
+		if _, err := fmt.Fprintln(w, "| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"); err != nil {
 			return err
 		}
 		for _, result := range results {
-			if _, err := fmt.Fprintf(w, "| %s | %d | %d | %s | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+			if _, err := fmt.Fprintf(w, "| %s | %s | %d | %d | %s | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 				escapeMarkdown(formatKey(result.Key)),
+				escapeMarkdown(result.Tool),
 				result.Requests,
 				result.Events,
 				FormatCost(result.CostUSD, resultCurrency(result)),
@@ -236,15 +239,16 @@ func WriteMarkdown(w io.Writer, results []query.Result, opts ...Options) error {
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "| Group | Req | Cost | Price | Total |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| Group | Tool | Req | Cost | Price | Total |"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "| --- | ---: | ---: | --- | ---: |"); err != nil {
+	if _, err := fmt.Fprintln(w, "| --- | --- | ---: | ---: | --- | ---: |"); err != nil {
 		return err
 	}
 	for _, result := range results {
-		if _, err := fmt.Fprintf(w, "| %s | %d | %s | %s | %d |\n",
+		if _, err := fmt.Fprintf(w, "| %s | %s | %d | %s | %s | %d |\n",
 			escapeMarkdown(formatKey(result.Key)),
+			escapeMarkdown(result.Tool),
 			result.Requests,
 			FormatCost(result.CostUSD, resultCurrency(result)),
 			escapeMarkdown(formatPrice(result.Price, result.PriceSource)),
@@ -550,7 +554,16 @@ func formatRateValueWithCurrency(value float64, currency string) string {
 func formatKey(key map[string]string) string {
 	keys := make([]string, 0, len(key))
 	for k := range key {
+		if k == "tool" {
+			continue
+		}
 		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		if tool := key["tool"]; tool != "" {
+			return "tool=" + tool
+		}
+		return ""
 	}
 	sort.Strings(keys)
 	var parts []string
