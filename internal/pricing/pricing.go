@@ -18,7 +18,9 @@ type ModelPrice struct {
 	OutputUSDPerMTok                  float64 `json:"output_usd_per_mtok"`
 	CacheHitUSDPerMTok                float64 `json:"cache_hit_usd_per_mtok"`
 	CacheMakeUSDPerMTok               float64 `json:"cache_make_usd_per_mtok"`
+	CacheMakeExplicit                 bool    `json:"-"`
 	CacheMake1hUSDPerMTok             float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
+	ReasoningAsOutput                 bool    `json:"reasoning_as_output,omitempty"`
 	PromptThresholdTokens             int64   `json:"prompt_threshold_tokens,omitempty"`
 	AboveThresholdInputUSDPerMTok     float64 `json:"above_threshold_input_usd_per_mtok,omitempty"`
 	AboveThresholdOutputUSDPerMTok    float64 `json:"above_threshold_output_usd_per_mtok,omitempty"`
@@ -92,13 +94,12 @@ func DefaultCatalog() Catalog {
 		{Match: "deepseek-v4-flash", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-v4-pro", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-reasoner", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 4, OutputUSDPerMTok: 16, CacheHitUSDPerMTok: 1, CacheMakeUSDPerMTok: 4, Multiplier: 1, Source: "default"},
-		// MiMo-V2.5 Series (effective May 27, 2026)
-		{Match: "mimo-v2.5-pro", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
-		{Match: "mimo-v2.5", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
-		// MiMo-V2 Series
-		{Match: "mimo-v2-pro", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 7, OutputUSDPerMTok: 21, CacheHitUSDPerMTok: 1.4, CacheMakeUSDPerMTok: 7, PromptThresholdTokens: 256000, AboveThresholdInputUSDPerMTok: 14, AboveThresholdOutputUSDPerMTok: 42, AboveThresholdCacheHitUSDPerMTok: 2.8, AboveThresholdCacheMakeUSDPerMTok: 14, Multiplier: 1, Source: "default"},
-		{Match: "mimo-v2-omni", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 2.8, OutputUSDPerMTok: 14, CacheHitUSDPerMTok: 0.56, CacheMakeUSDPerMTok: 2.8, Multiplier: 1, Source: "default"},
-		{Match: "off-v2-flash", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 0.7, OutputUSDPerMTok: 2.1, CacheHitUSDPerMTok: 0.07, CacheMakeUSDPerMTok: 0.7, Multiplier: 1, Source: "default"},
+		// MiMo pricing snapshot (official Xiaomi pay-as-you-go page updated 2026-06-02)
+		{Match: "mimo-v2.5-pro", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0, CacheMakeExplicit: true, ReasoningAsOutput: true, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2.5", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 0, CacheMakeExplicit: true, ReasoningAsOutput: true, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2-pro", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0, CacheMakeExplicit: true, ReasoningAsOutput: true, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2-omni", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 0, CacheMakeExplicit: true, ReasoningAsOutput: true, Multiplier: 1, Source: "default"},
+		{Match: "mimo-v2-flash", Provider: "mimo", Currency: "CNY", InputUSDPerMTok: 0.7, OutputUSDPerMTok: 2.1, CacheHitUSDPerMTok: 0.07, CacheMakeUSDPerMTok: 0, CacheMakeExplicit: true, ReasoningAsOutput: true, Multiplier: 1, Source: "default"},
 	}}
 	catalog.refreshSortedModels()
 	return catalog
@@ -119,6 +120,7 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 	cacheCreation5m, cacheCreation1h, cacheCreationOther := cacheCreationParts(event.Usage)
 	usd := perMillion(billableInput(event), price.InputUSDPerMTok) +
 		perMillion(event.Usage.Output, price.OutputUSDPerMTok) +
+		perMillion(billableReasoning(price, event.Usage), price.OutputUSDPerMTok) +
 		perMillion(event.Usage.CachedInput, price.CacheHitUSDPerMTok) +
 		perMillion(cacheCreation5m+cacheCreationOther, cacheMake) +
 		perMillion(cacheCreation1h, cacheMake1h)
@@ -144,6 +146,9 @@ func (c Catalog) Covers(event usage.UsageEvent) bool {
 }
 
 func billableInput(event usage.UsageEvent) int64 {
+	if event.InputCostMode == usage.InputExcludesCached {
+		return event.Usage.Input
+	}
 	input := event.Usage.Input
 	cached := event.Usage.CachedInput + event.Usage.CacheCreation
 	if input <= cached {
@@ -269,7 +274,7 @@ func priceForUsage(price ModelPrice, tokens usage.TokenUsage) ModelPrice {
 }
 
 func cacheMakePrice(price ModelPrice) float64 {
-	if price.CacheMakeUSDPerMTok != 0 {
+	if price.CacheMakeUSDPerMTok != 0 || price.CacheMakeExplicit {
 		return price.CacheMakeUSDPerMTok
 	}
 	return price.InputUSDPerMTok
@@ -280,6 +285,13 @@ func cacheMake1hPrice(price ModelPrice) float64 {
 		return price.CacheMake1hUSDPerMTok
 	}
 	return cacheMakePrice(price)
+}
+
+func billableReasoning(price ModelPrice, tokens usage.TokenUsage) int64 {
+	if price.ReasoningAsOutput {
+		return tokens.Reasoning
+	}
+	return 0
 }
 
 func modelPriceCurrency(price ModelPrice) string {

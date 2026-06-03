@@ -88,6 +88,63 @@ func TestCostForClaudeDoesNotChargeCachedInputAtFullInputRate(t *testing.T) {
 	}
 }
 
+func TestCostForOpenCodeChargesDirectInputWithoutSubtractingCachedInput(t *testing.T) {
+	catalog := Catalog{
+		Models: []ModelPrice{{
+			Match:              "mimo-v2.5-pro",
+			Provider:           "xiaomi",
+			Currency:           "CNY",
+			InputUSDPerMTok:    3,
+			OutputUSDPerMTok:   6,
+			CacheHitUSDPerMTok: 0.025,
+			CacheMakeExplicit:  true,
+			ReasoningAsOutput:  true,
+		}},
+	}
+	cost := catalog.CostFor(usage.UsageEvent{
+		Tool:          usage.ToolOpenCode,
+		Model:         "mimo-v2.5-pro",
+		Provider:      "xiaomi",
+		InputCostMode: usage.InputExcludesCached,
+		Usage: usage.TokenUsage{
+			Input:       1_000_000,
+			Output:      1_000_000,
+			Reasoning:   100_000,
+			CachedInput: 8_000_000,
+		},
+	})
+	if got, want := cost.USD, 9.8; math.Abs(got-want) > 0.000001 {
+		t.Fatalf("cost = %.4f, want %.4f", got, want)
+	}
+	if cost.Currency != "CNY" || math.Abs(cost.Amount-9.8) > 0.000001 {
+		t.Fatalf("unexpected cost metadata: %+v", cost)
+	}
+}
+
+func TestCostForDoesNotChargeReasoningByDefault(t *testing.T) {
+	catalog := Catalog{
+		Models: []ModelPrice{{
+			Match:            "gpt-5.5",
+			Provider:         "openai",
+			InputUSDPerMTok:  5,
+			OutputUSDPerMTok: 30,
+		}},
+	}
+	cost := catalog.CostFor(usage.UsageEvent{
+		Tool:     usage.ToolCodex,
+		Model:    "gpt-5.5",
+		Provider: "openai",
+		Usage: usage.TokenUsage{
+			Input:     1_000_000,
+			Output:    1_000_000,
+			Reasoning: 1_000_000,
+		},
+	})
+	if got, want := cost.USD, 35.0; got != want {
+		t.Fatalf("cost = %.4f, want %.4f", got, want)
+	}
+}
+
 func TestDefaultCatalogPricesClaudeOpus47BeforeOpus4(t *testing.T) {
 	cost := DefaultCatalog().CostFor(usage.UsageEvent{
 		Tool:  usage.ToolClaude,
@@ -396,10 +453,9 @@ func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
 	}{
 		{"mimo-v2.5-pro", "mimo", 1_000_000, 1_000_000, 3 + 6},
 		{"mimo-v2.5", "mimo", 1_000_000, 1_000_000, 1 + 2},
-		{"mimo-v2-pro", "mimo", 100_000, 100_000, 0.7 + 2.1}, // below threshold
-		{"mimo-v2-pro", "mimo", 300_000, 100_000, 4.2 + 4.2}, // above threshold
-		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 2.8 + 14.0},
-		{"off-v2-flash", "mimo", 1_000_000, 1_000_000, 0.7 + 2.1},
+		{"mimo-v2-pro", "mimo", 1_000_000, 1_000_000, 3 + 6},
+		{"mimo-v2-omni", "mimo", 1_000_000, 1_000_000, 1 + 2},
+		{"mimo-v2-flash", "mimo", 1_000_000, 1_000_000, 0.7 + 2.1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -417,7 +473,26 @@ func TestDefaultCatalogCoversMiMoModels(t *testing.T) {
 			if math.Abs(cost.Amount-tt.wantCNY) > 0.01 {
 				t.Fatalf("CostFor(%q).Amount = %.4f, want %.4f CNY", tt.model, cost.Amount, tt.wantCNY)
 			}
+			if strings.HasPrefix(tt.model, "mimo-v2") && cost.CacheMakeUSDPerMTok != 0 {
+				t.Fatalf("CostFor(%q).CacheMakeUSDPerMTok = %.4f, want 0 for free cache writes", tt.model, cost.CacheMakeUSDPerMTok)
+			}
 		})
+	}
+}
+
+func TestDefaultCatalogChargesMiMoReasoningAsOutput(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:     usage.ToolOpenCode,
+		Model:    "mimo-v2.5-pro",
+		Provider: "xiaomi",
+		Usage: usage.TokenUsage{
+			Input:     1_000_000,
+			Output:    1_000_000,
+			Reasoning: 500_000,
+		},
+	})
+	if got, want := cost.Amount, 12.0; math.Abs(got-want) > 0.000001 {
+		t.Fatalf("CostFor MiMo with reasoning = %.4f, want %.4f CNY", got, want)
 	}
 }
 

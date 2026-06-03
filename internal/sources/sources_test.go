@@ -360,6 +360,58 @@ func TestOpenCodeSkipsNonAssistantMessages(t *testing.T) {
 	}
 }
 
+func TestOpenCodeMarksInputAsCacheExcluded(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	mustMkdir(t, filepath.Dir(dbPath))
+	mustWriteSQLite(t, dbPath, []string{
+		`create table session (
+			id text primary key,
+			title text not null,
+			slug text not null,
+			directory text not null,
+			time_created integer not null,
+			time_updated integer not null
+		);`,
+		`create table message (
+			id text primary key,
+			session_id text not null,
+			time_created integer not null,
+			data text not null
+		);`,
+		`create table part (
+			id text primary key,
+			message_id text not null,
+			data text not null
+		);`,
+		`insert into session (id, title, slug, directory, time_created, time_updated) values (
+			'session-1',
+			'Test Session',
+			'session-1',
+			'/repo',
+			1746666000000,
+			1746666000000
+		);`,
+		`insert into message (id, session_id, time_created, data) values (
+			'msg-1',
+			'session-1',
+			1746666000000,
+			'{"role":"assistant","modelID":"mimo-v2.5-pro","providerID":"xiaomi","tokens":{"input":10,"output":5,"total":30,"cache":{"read":12}}}'
+		);`,
+	})
+
+	events, err := NewOpenCode(Options{Home: home}).Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].InputCostMode != usage.InputExcludesCached {
+		t.Fatalf("input cost mode = %q, want %q", events[0].InputCostMode, usage.InputExcludesCached)
+	}
+}
+
 func TestOpenCodeThreadNameResolution(t *testing.T) {
 	home := t.TempDir()
 	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")

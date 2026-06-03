@@ -109,6 +109,7 @@ func (o OpenCode) Scan(ctx context.Context, handle func(usage.UsageEvent) error)
 			Tool:               usage.ToolOpenCode,
 			Model:              model,
 			Provider:           provider,
+			InputCostMode:      usage.InputExcludesCached,
 			CWD:                cwd,
 			Source:             dbPath,
 			ThreadID:           sessionID,
