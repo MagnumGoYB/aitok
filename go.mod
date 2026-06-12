@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.13.0
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/spf13/cobra v1.10.1
-	modernc.org/sqlite v1.51.0
+	modernc.org/sqlite v1.52.0
 )
 
 require (
