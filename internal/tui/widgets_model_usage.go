@@ -102,23 +102,27 @@ func (m model) tableLines(results []query.Result, copy localizedCopy) []string {
 	lines := []string{header}
 	for i := m.modelOffset; i < end; i++ {
 		result := results[i]
-		line := modelUsageTableLine(modelTableRow(
-			resultLabel(result),
-			resultToolLabel(result),
-			fmt.Sprint(result.Requests),
-			tuiFormatCost(result.CostUSD, resultCurrency2(result)),
-			priceLabel(result.Price, result.PriceSource),
-			compact(result.Usage.NormalizedTotal()),
-			compact(result.Usage.Input),
-			compact(result.Usage.Output),
-			compact(result.Usage.CachedInput+result.Usage.CacheCreation),
-		), i-m.modelOffset, m.modelOffset, height, len(results), overflow)
+		line := modelUsageTableLine(modelUsageTableRow(result), i-m.modelOffset, m.modelOffset, height, len(results), overflow)
 		if m.focusedPane == "models" && i == m.modelCursor {
 			line = selectedRowStyle.Render(line)
 		}
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func modelUsageTableRow(result query.Result) string {
+	return modelTableRow(
+		resultLabel(result),
+		resultToolLabel(result),
+		fmt.Sprint(result.Requests),
+		tuiFormatCost(result.CostUSD, resultCurrency2(result)),
+		priceLabel(result.Price, result.PriceSource),
+		compact(result.Usage.NormalizedTotal()),
+		compact(result.Usage.Input),
+		compact(result.Usage.Output),
+		compact(result.Usage.CachedInput+result.Usage.CacheCreation),
+	)
 }
 
 func resultToolLabel(result query.Result) string {

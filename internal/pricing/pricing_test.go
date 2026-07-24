@@ -496,6 +496,96 @@ func TestDefaultCatalogChargesMiMoReasoningAsOutput(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogCoversReportedModels(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		provider   string
+		usage      usage.TokenUsage
+		wantAmount float64
+		currency   string
+	}{
+		{
+			name:       "GLM 5.2 China",
+			model:      "glm-5.2",
+			provider:   "zhipuai",
+			usage:      usage.TokenUsage{Input: 1_000_000, Output: 1_000_000, CachedInput: 1_000_000, CacheCreation: 1_000_000},
+			wantAmount: 46,
+			currency:   "CNY",
+		},
+		{
+			name:       "Kimi K3 China",
+			model:      "kimi-k3",
+			provider:   "moonshotai-cn",
+			usage:      usage.TokenUsage{Input: 1_000_000, Output: 1_000_000, CachedInput: 1_000_000, CacheCreation: 1_000_000},
+			wantAmount: 142,
+			currency:   "CNY",
+		},
+		{
+			name:       "Claude Sonnet 5",
+			model:      "claude-sonnet-5",
+			provider:   "anthropic",
+			usage:      usage.TokenUsage{Input: 1_000_000, Output: 1_000_000, CachedInput: 1_000_000, CacheCreation: 2_000_000, CacheCreation5m: 1_000_000, CacheCreation1h: 1_000_000},
+			wantAmount: 18.7,
+			currency:   "USD",
+		},
+		{
+			name:       "Grok 4.5",
+			model:      "grok-4.5",
+			provider:   "xai",
+			usage:      usage.TokenUsage{Input: 50_000, Output: 100_000, CachedInput: 50_000, CacheCreation: 50_000, Reasoning: 100_000},
+			wantAmount: 1.415,
+			currency:   "USD",
+		},
+	}
+	catalog := DefaultCatalog()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cost := catalog.CostFor(usage.UsageEvent{
+				Tool:          usage.ToolOpenCode,
+				Model:         tt.model,
+				Provider:      tt.provider,
+				InputCostMode: usage.InputExcludesCached,
+				Usage:         tt.usage,
+			})
+			if cost.Source != "default" || cost.Currency != tt.currency || math.Abs(cost.Amount-tt.wantAmount) > 0.000001 {
+				t.Fatalf("CostFor(%q, %q) = %+v, want %.4f %s from default catalog", tt.model, tt.provider, cost, tt.wantAmount, tt.currency)
+			}
+		})
+	}
+}
+
+func TestRegionalDefaultPricesRequireMatchingProvider(t *testing.T) {
+	catalog := DefaultCatalog()
+	for _, event := range []usage.UsageEvent{
+		{Model: "glm-5.2", Provider: "zai", Usage: usage.TokenUsage{Input: 1_000_000}},
+		{Model: "kimi-k3", Provider: "moonshotai", Usage: usage.TokenUsage{Input: 1_000_000}},
+	} {
+		if cost := catalog.CostFor(event); cost.Source != "unknown" {
+			t.Fatalf("regional price must not fall back across providers for %q: %+v", event.Model, cost)
+		}
+	}
+}
+
+func TestGrok45LongContextPricingIncludesCachedPromptAtThreshold(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:          usage.ToolOpenCode,
+		Model:         "grok-4.5",
+		Provider:      "xai",
+		InputCostMode: usage.InputExcludesCached,
+		Usage: usage.TokenUsage{
+			Input:       100_000,
+			CachedInput: 100_000,
+		},
+	})
+	if got, want := cost.Amount, 0.46; math.Abs(got-want) > 0.000001 {
+		t.Fatalf("Grok 4.5 threshold cost = %.4f, want %.4f", got, want)
+	}
+	if cost.InputUSDPerMTok != 4 || cost.CacheHitUSDPerMTok != 0.6 {
+		t.Fatalf("Grok 4.5 should use long-context rates at 200k prompt tokens: %+v", cost)
+	}
+}
+
 func BenchmarkCostFor(b *testing.B) {
 	catalog := DefaultCatalog()
 	events := make([]usage.UsageEvent, 4096)

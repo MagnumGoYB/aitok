@@ -21,7 +21,10 @@ type ModelPrice struct {
 	CacheMakeExplicit                 bool    `json:"-"`
 	CacheMake1hUSDPerMTok             float64 `json:"cache_make_1h_usd_per_mtok,omitempty"`
 	ReasoningAsOutput                 bool    `json:"reasoning_as_output,omitempty"`
+	ProviderRequired                  bool    `json:"-"`
 	PromptThresholdTokens             int64   `json:"prompt_threshold_tokens,omitempty"`
+	PromptThresholdInclusive          bool    `json:"-"`
+	PromptThresholdIncludesCached     bool    `json:"-"`
 	AboveThresholdInputUSDPerMTok     float64 `json:"above_threshold_input_usd_per_mtok,omitempty"`
 	AboveThresholdOutputUSDPerMTok    float64 `json:"above_threshold_output_usd_per_mtok,omitempty"`
 	AboveThresholdCacheHitUSDPerMTok  float64 `json:"above_threshold_cache_hit_usd_per_mtok,omitempty"`
@@ -76,6 +79,8 @@ func DefaultCatalog() Catalog {
 		{Match: "gpt-5", Provider: "openai", InputUSDPerMTok: 1.25, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.125, CacheMakeUSDPerMTok: 1.25, Multiplier: 1, Source: "default"},
 		{Match: "gpt-4.1", Provider: "openai", InputUSDPerMTok: 2, OutputUSDPerMTok: 8, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 2, Multiplier: 1, Source: "default"},
 		{Match: "gpt-4o", Provider: "openai", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 1.25, CacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
+		// Introductory Anthropic pricing through 2026-08-31; standard rates start 2026-09-01.
+		{Match: "claude-sonnet-5", Provider: "anthropic", InputUSDPerMTok: 2, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2.5, CacheMake1hUSDPerMTok: 4, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-7", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-6", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-5", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
@@ -87,9 +92,13 @@ func DefaultCatalog() Catalog {
 		{Match: "claude-3-5-haiku", Provider: "anthropic", InputUSDPerMTok: 0.8, OutputUSDPerMTok: 4, CacheHitUSDPerMTok: 0.08, CacheMakeUSDPerMTok: 1, CacheMake1hUSDPerMTok: 1.6, Multiplier: 1, Source: "default"},
 		{Match: "claude-3-haiku", Provider: "anthropic", InputUSDPerMTok: 0.25, OutputUSDPerMTok: 1.25, CacheHitUSDPerMTok: 0.03, CacheMakeUSDPerMTok: 0.3, CacheMake1hUSDPerMTok: 0.5, Multiplier: 1, Source: "default"},
 		{Match: "claude-3-7-sonnet", Provider: "anthropic", InputUSDPerMTok: 3, OutputUSDPerMTok: 15, CacheHitUSDPerMTok: 0.3, CacheMakeUSDPerMTok: 3.75, CacheMake1hUSDPerMTok: 6, Multiplier: 1, Source: "default"},
+		{Match: "grok-4.5", Provider: "xai", InputUSDPerMTok: 2, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.3, CacheMakeUSDPerMTok: 2, ReasoningAsOutput: true, PromptThresholdTokens: 200000, PromptThresholdInclusive: true, PromptThresholdIncludesCached: true, AboveThresholdInputUSDPerMTok: 4, AboveThresholdOutputUSDPerMTok: 12, AboveThresholdCacheHitUSDPerMTok: 0.6, AboveThresholdCacheMakeUSDPerMTok: 4, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.5-pro", Provider: "google", InputUSDPerMTok: 1.25, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.125, CacheMakeUSDPerMTok: 1.25, PromptThresholdTokens: 200000, AboveThresholdInputUSDPerMTok: 2.5, AboveThresholdOutputUSDPerMTok: 15, AboveThresholdCacheHitUSDPerMTok: 0.25, AboveThresholdCacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.5-flash", Provider: "google", InputUSDPerMTok: 0.3, OutputUSDPerMTok: 2.5, CacheHitUSDPerMTok: 0.03, CacheMakeUSDPerMTok: 0.3, Multiplier: 1, Source: "default"},
 		{Match: "gemini-2.0-flash", Provider: "google", InputUSDPerMTok: 0.1, OutputUSDPerMTok: 0.4, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 0.1, Multiplier: 1, Source: "default"},
+		// China-region prices differ from each provider's international platform.
+		{Match: "glm-5.2", Provider: "zhipuai", ProviderRequired: true, Currency: "CNY", InputUSDPerMTok: 8, OutputUSDPerMTok: 28, CacheHitUSDPerMTok: 2, CacheMakeUSDPerMTok: 8, Multiplier: 1, Source: "default"},
+		{Match: "kimi-k3", Provider: "moonshotai-cn", ProviderRequired: true, Currency: "CNY", InputUSDPerMTok: 20, OutputUSDPerMTok: 100, CacheHitUSDPerMTok: 2, CacheMakeUSDPerMTok: 20, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-chat", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.1, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-v4-flash", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 1, OutputUSDPerMTok: 2, CacheHitUSDPerMTok: 0.02, CacheMakeUSDPerMTok: 1, Multiplier: 1, Source: "default"},
 		{Match: "deepseek-v4-pro", Provider: "deepseek", Currency: "CNY", InputUSDPerMTok: 3, OutputUSDPerMTok: 6, CacheHitUSDPerMTok: 0.025, CacheMakeUSDPerMTok: 3, Multiplier: 1, Source: "default"},
@@ -110,7 +119,7 @@ func (c Catalog) CostFor(event usage.UsageEvent) Cost {
 	if !ok {
 		return Cost{Currency: "USD", Multiplier: 1, Source: "unknown"}
 	}
-	price = priceForUsage(price, event.Usage)
+	price = priceForUsage(price, event)
 	multiplier := price.Multiplier
 	if multiplier == 0 {
 		multiplier = 1
@@ -178,7 +187,7 @@ func (c Catalog) match(event usage.UsageEvent) (ModelPrice, bool) {
 		}
 	}
 	for _, candidate := range models {
-		if candidate.providerLower == "" || candidate.price.Source != "default" {
+		if candidate.providerLower == "" || candidate.price.Source != "default" || candidate.price.ProviderRequired {
 			continue
 		}
 		if strings.Contains(model, candidate.matchLower) {
@@ -254,8 +263,16 @@ func perMillion(tokens int64, price float64) float64 {
 	return float64(tokens) / 1_000_000 * price
 }
 
-func priceForUsage(price ModelPrice, tokens usage.TokenUsage) ModelPrice {
-	if price.PromptThresholdTokens <= 0 || tokens.Input <= price.PromptThresholdTokens {
+func priceForUsage(price ModelPrice, event usage.UsageEvent) ModelPrice {
+	promptTokens := event.Usage.Input
+	if price.PromptThresholdIncludesCached && event.InputCostMode == usage.InputExcludesCached {
+		promptTokens += event.Usage.CachedInput + event.Usage.CacheCreation
+	}
+	aboveThreshold := promptTokens > price.PromptThresholdTokens
+	if price.PromptThresholdInclusive && promptTokens == price.PromptThresholdTokens {
+		aboveThreshold = true
+	}
+	if price.PromptThresholdTokens <= 0 || !aboveThreshold {
 		return price
 	}
 	if price.AboveThresholdInputUSDPerMTok != 0 {

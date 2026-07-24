@@ -212,19 +212,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusedPane == "models" && m.canMoveModels() {
 				m.modelCursor = 0
 				m.ensureModelUsageVisible()
+				m.ensureFocusedPaneVisible()
 			} else if m.canMoveThreads() {
 				m.focusedPane = "threads"
 				m.threadCursor = 0
 				m.ensureThreadVisible()
+				m.ensureFocusedPaneVisible()
 			}
 		case "end":
 			if m.focusedPane == "models" && m.canMoveModels() {
 				m.modelCursor = len(m.filteredResults()) - 1
 				m.ensureModelUsageVisible()
+				m.ensureFocusedPaneVisible()
 			} else if m.canMoveThreads() {
 				m.focusedPane = "threads"
 				m.threadCursor = len(m.filteredThreads()) - 1
 				m.ensureThreadVisible()
+				m.ensureFocusedPaneVisible()
 			}
 		case "c", "C":
 			if m.canMoveThreads() {
@@ -316,16 +320,53 @@ func (m *model) toggleFocusedPane() {
 	if m.focusedPane == "models" {
 		if m.canMoveThreads() {
 			m.focusedPane = "threads"
+			m.ensureFocusedPaneVisible()
 		}
 		return
 	}
 	if m.canMoveModels() {
 		m.focusedPane = "models"
+		m.ensureFocusedPaneVisible()
 		return
 	}
 	if m.canMoveThreads() {
 		m.focusedPane = "threads"
+		m.ensureFocusedPaneVisible()
 	}
+}
+
+func (m *model) ensureFocusedPaneVisible() {
+	if m.height <= 0 {
+		return
+	}
+	view := m.fullView()
+	needle := ""
+	if m.focusedPane == "models" {
+		results := m.filteredResults()
+		if m.modelCursor >= 0 && m.modelCursor < len(results) {
+			needle = modelUsageTableRow(results[m.modelCursor])
+		}
+	} else {
+		threads := m.filteredThreads()
+		if m.threadCursor >= 0 && m.threadCursor < len(threads) {
+			needle = tableText(threads[m.threadCursor].ID, 14)
+		}
+	}
+	if needle == "" {
+		return
+	}
+	index := strings.Index(view, needle)
+	if index < 0 {
+		return
+	}
+	line := strings.Count(view[:index], "\n")
+	if line < m.scrollOffset {
+		m.scrollOffset = line - 3
+	}
+	if line >= m.scrollOffset+m.height {
+		m.scrollOffset = line - m.height + 1
+	}
+	m.clampScrollOffset()
 }
 
 func (m model) scheduleRefresh() tea.Cmd {
@@ -353,6 +394,7 @@ func (m *model) moveModelUsageCursor(delta int) {
 		m.modelCursor = len(results) - 1
 	}
 	m.ensureModelUsageVisible()
+	m.ensureFocusedPaneVisible()
 }
 
 func (m *model) ensureModelUsageVisible() {
@@ -402,6 +444,7 @@ func (m *model) moveThreadCursor(delta int) {
 		m.threadCursor = len(threads) - 1
 	}
 	m.ensureThreadVisible()
+	m.ensureFocusedPaneVisible()
 }
 
 func (m *model) ensureThreadVisible() {

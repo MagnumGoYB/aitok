@@ -1277,6 +1277,36 @@ func TestTabToModelUsageRemovesThreadHighlight(t *testing.T) {
 	}
 }
 
+func TestTabKeepsFocusedPaneVisibleInShortViewport(t *testing.T) {
+	m := NewModel(hardeningPayload())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 12})
+	m = updated.(model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.focusedPane != "models" {
+		t.Fatalf("tab should focus Model Usage, got %q", m.focusedPane)
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, "Model Usage") || !strings.Contains(view, "provider-a") {
+		t.Fatalf("tab should bring the focused Model Usage row into the viewport:\n%s", view)
+	}
+
+	updated, _ = m.Update(keyMsg("end"))
+	m = updated.(model)
+	if view := stripANSI(m.View()); !strings.Contains(view, "provider-l") {
+		t.Fatalf("moving within Model Usage should keep the selected row visible:\n%s", view)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	if m.focusedPane != "threads" {
+		t.Fatalf("second tab should focus Threads, got %q", m.focusedPane)
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, "Threads") || !strings.Contains(view, "019e313e") {
+		t.Fatalf("tab should bring the focused Threads row back into the viewport:\n%s", view)
+	}
+}
+
 func TestCopyCommandUsesSystemClipboard(t *testing.T) {
 	previous := writeClipboard
 	defer func() { writeClipboard = previous }()
