@@ -160,6 +160,21 @@ func TestDefaultCatalogPricesClaudeOpus47BeforeOpus4(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogCoversClaudeOpus5(t *testing.T) {
+	cost := DefaultCatalog().CostFor(usage.UsageEvent{
+		Tool:     usage.ToolClaude,
+		Model:    "claude-opus-5",
+		Provider: "anthropic",
+		Usage:    usage.TokenUsage{Input: 1_000_000},
+	})
+	if cost.Source != "default" {
+		t.Fatalf("claude-opus-5 should be priced by default: %+v", cost)
+	}
+	if cost.InputUSDPerMTok != 5 || cost.OutputUSDPerMTok != 25 || cost.CacheHitUSDPerMTok != 0.5 || cost.CacheMakeUSDPerMTok != 6.25 || cost.CacheMake1hUSDPerMTok != 10 {
+		t.Fatalf("claude-opus-5 rates do not match Anthropic pricing: %+v", cost)
+	}
+}
+
 func TestCostForGemini25ProUsesAboveThresholdPricing(t *testing.T) {
 	cost := DefaultCatalog().CostFor(usage.UsageEvent{
 		Tool:     usage.ToolGemini,

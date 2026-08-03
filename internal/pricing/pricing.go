@@ -81,6 +81,7 @@ func DefaultCatalog() Catalog {
 		{Match: "gpt-4o", Provider: "openai", InputUSDPerMTok: 2.5, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 1.25, CacheMakeUSDPerMTok: 2.5, Multiplier: 1, Source: "default"},
 		// Introductory Anthropic pricing through 2026-08-31; standard rates start 2026-09-01.
 		{Match: "claude-sonnet-5", Provider: "anthropic", InputUSDPerMTok: 2, OutputUSDPerMTok: 10, CacheHitUSDPerMTok: 0.2, CacheMakeUSDPerMTok: 2.5, CacheMake1hUSDPerMTok: 4, Multiplier: 1, Source: "default"},
+		{Match: "claude-opus-5", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-7", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-6", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
 		{Match: "claude-opus-4-5", Provider: "anthropic", InputUSDPerMTok: 5, OutputUSDPerMTok: 25, CacheHitUSDPerMTok: 0.5, CacheMakeUSDPerMTok: 6.25, CacheMake1hUSDPerMTok: 10, Multiplier: 1, Source: "default"},
