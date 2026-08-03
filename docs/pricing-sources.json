@@ -14,9 +14,9 @@
       "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
       "manual_review": true,
       "sha256": "",
-      "required_text": ["Claude Opus 4.7", "Claude Sonnet 4.5", "1h Cache writes", "Cache reads"],
+      "required_text": ["Claude Opus 5", "Claude Opus 4.7", "Claude Sonnet 4.5", "1h Cache writes", "Cache reads"],
       "review_hint": "Review Claude model input/output, 5m cache write, 1h cache write, and cache read pricing. Update claude-* defaults when official prices change.",
-      "models_owned": ["claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5", "claude-opus-4", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet", "claude-3-5-haiku", "claude-3-haiku"]
+      "models_owned": ["claude-opus-5", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5", "claude-opus-4", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet", "claude-3-5-haiku", "claude-3-haiku"]
     },
     {
       "name": "gemini",
